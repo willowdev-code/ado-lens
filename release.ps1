@@ -148,7 +148,7 @@ $binary = '\.(exe|dll|pdb|zip|png|jpg|ico|snk)$'
 $hits = New-Object System.Collections.Generic.List[string]
 # Text broken by an encoding round trip (UTF-8 read as ANSI, e.g. an ellipsis turned into three odd characters)
 # must not be published either.
-$mojibake = New-Object regex 'Ã[\u0080-¿]|â€|â†'
+$mojibake = New-Object regex ("{0}[{1}-{2}]|{3}{4}|{3}{5}" -f [char]0xC3, [char]0x80, [char]0xBF, [char]0xE2, [char]0x20AC, [char]0x2020)
 $broken = New-Object System.Collections.Generic.List[string]
 foreach ($f in $files) {
     if ($f -match $binary -or -not (Test-Path $f -PathType Leaf)) { continue }

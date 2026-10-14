@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-10-14
 
 First release: work items, sprints, boards, backlogs and the wiki for Claude Desktop and Claude Code.
 
