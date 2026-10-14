@@ -44,6 +44,10 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           board [<board>]  --team <t>  --move <id> --column <name>  --detail summary|normal|full
           backlog          --level requirement|portfolio|task|<name>  --top 30  --move <id> --above <id> | --below <id>
           myday            --since 1d|3d|2w|yyyy-MM-dd (default: the previous working day)
+          trace <id>       was it done as asked, and where is it (DEV / UAT / PROD)   --detail summary|full
+          changes <523 | C523 | "PR 482" | sha --repo <r>>   files, X++ methods; --file <name> for a diff
+          pr [<id>]        PRs waiting for my review and mine (--list active: all); with id: reviewers, checks, threads
+          pipeline [<build id>]   recent builds (--definition <name> --branch <b> --top 10); with id: why it failed
           wiki [<page path>]  --search <text>  --depth 2  --detail full  --wiki <name>
           wiki-write <page path>  --file <page.md> (or standard input)  --mode create|append|prepend|replace
                             --version <v> (for replace, from 'wiki <path>')  --comment <text>
@@ -467,6 +471,24 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     {
         if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens changes <523 | C523 | \"PR 482\" | sha --repo <name>> [--file <name>]"); return 2; }
         Print(await TraceQueries.ChangesAsync(NewLens(), cl.Opt("connection"), string.Join(' ', cl.Positional), cl.Opt("repo"), cl.Opt("file"), cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> PrAsync()
+    {
+        var lens = NewLens();
+        Print(Int(cl.Positional.FirstOrDefault()) is { } id
+            ? await PullRequestQueries.ShowAsync(lens, cl.Opt("connection"), id, cl.Opt("repo"), cl.Opt("detail"))
+            : await PullRequestQueries.ListAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("list")));
+        return 0;
+    }
+
+    public async Task<int> PipelineAsync()
+    {
+        var lens = NewLens();
+        Print(Int(cl.Positional.FirstOrDefault()) is { } build
+            ? await PipelineQueries.BuildAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("detail"))
+            : await PipelineQueries.ListAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("definition"), cl.Opt("branch"), Int(cl.Opt("top")) ?? 10));
         return 0;
     }
 

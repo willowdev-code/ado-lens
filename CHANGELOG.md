@@ -18,7 +18,14 @@ Checking work against what was asked, and where it is.
 - Skill `po-verify` (`skills/po-verify`): guides Claude through checking a work item for a Product Owner.
 - Server instructions keep only advice the tool descriptions do not give (fewer tokens per session); the tool size
   check measures the JSON Claude really receives and only guards against accidental growth.
-- CLI: `trace`, `changes`.
+- Pull requests (tool set `pr`): `ado_pr` (waiting for my review, mine, all active; one PR with votes, checks, work
+  items and the open threads people wrote) and `ado_pr_update` (create, comment on a file and line, reply, resolve,
+  vote, publish, complete, abandon; `@[name]` mentions).
+- Pipelines (tool set `pipelines`): `ado_pipeline` (recent builds; a failed build with its failed steps, errors and the
+  error lines of the log without MSBuild noise) and `ado_pipeline_run`.
+- `ado_settings`: shows the connection and saves the environment map; when the map is missing, `ado_trace` ends with a
+  SETUP note (the flow it found and a first guess) so Claude asks the user once and saves the answer.
+- CLI: `trace`, `changes`, `pr`, `pipeline`.
 
 ## 0.1.0 — 2026-10-14
 

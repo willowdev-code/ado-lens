@@ -273,9 +273,23 @@ public static partial class TraceQueries
                     : "NOT merged yet"));
             }
         if (where.Count > 0) sb.AppendLine("\nWHERE").AppendLine(string.Join('\n', where));
-        else if (changes.Count > 0)
-            sb.AppendLine("\nWHERE").AppendLine("no release stage deploys the branches of this change" +
-                (env.Count == 0 ? $"; map branches to environments with 'adolens config --connection {session.Config.Connection} --env staging=UAT'" : ""));
+        else if (changes.Count > 0) sb.AppendLine("\nWHERE").AppendLine("no release stage deploys the branches of this change");
+
+        // No environment names yet: propose the flow found here, so Claude asks once and saves it for good.
+        if (env.Count == 0 && changes.Count > 0)
+        {
+            var candidates = deployments
+                .Where(d => where.Any(w => w.Contains($"{d.Definition} / {d.Stage}", StringComparison.Ordinal)))
+                .Select(d => d.Branch?.StartsWith("$/", StringComparison.Ordinal) == true ? $"{d.Definition}/{d.Stage}" : Code.Short(d.Branch))
+                .Concat(changes.Select(x => x.Change.TargetBranch))
+                .Where(k => !string.IsNullOrEmpty(k)).Select(k => k!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var proposal = ProposeFlow(candidates);
+            if (proposal.Count > 0)
+                sb.AppendLine("\nSETUP").AppendLine(
+                    $"environment names are not set for connection {session.Config.Connection}. Found: {string.Join(", ", proposal.Select(p => p.Guess is null ? p.Key : $"{p.Key} (looks like {p.Guess})"))}. " +
+                    "Ask the user what each is called and in which order code moves through them (e.g. DEV sbx01 -> UAT sbx03 -> PROD), " +
+                    "save it once with ado_settings environments=\"" + string.Join("; ", proposal.Select(p => $"{p.Key}={p.Guess ?? "…"}")) + "\", then answer with those names.");
+        }
         if (changes.Count > 0 && where.Count > 0 && !anyIn)
             signals.Add("not deployed to any stage yet");
 
@@ -292,6 +306,27 @@ public static partial class TraceQueries
 
         sb.AppendLine("\nSIGNALS").AppendLine(signals.Count == 0 ? "- none" : string.Join('\n', signals.Select(x => "- " + x)));
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// A first guess of the flow from branch and stage names: development branches, then test / staging, then
+    /// production; release branches (R350, release/2.1) are steps on the way, not environments.
+    /// </summary>
+    internal static List<(string Key, string? Guess)> ProposeFlow(IEnumerable<string> keys)
+    {
+        static (int Order, string? Guess) Classify(string key)
+        {
+            var k = key.ToLowerInvariant();
+            var last = k[(k.LastIndexOf('/') + 1)..];
+            if (Regex.IsMatch(k, @"^(r\d+|release.*|hotfix.*|feature.*|bugfix.*|users/.*)$")) return (-1, null);
+            if (last is "dev" or "develop" or "development" or "sit" or "int" or "integration") return (0, "DEV");
+            if (last is "staging" or "stage" or "uat" or "test" or "qa" or "preprod") return (1, "UAT");
+            if (last is "master" or "main" or "prod" or "production") return (2, "PROD");
+            return (3, null);
+        }
+        return keys.Select(k => (Key: k, C: Classify(k))).Where(x => x.C.Order >= 0)
+            .OrderBy(x => x.C.Order).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(x => (x.Key, x.C.Guess)).ToList();
     }
 
     [GeneratedRegex(@"^Merged PR (?<n>\d+)")]

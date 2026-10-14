@@ -44,6 +44,34 @@ public static class Queries
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Shows the settings of a connection, or replaces its environment map ("dev=DEV (sbx01); staging=UAT; master=PROD",
+    /// in flow order; empty clears it). Saved for good, so the question is asked only once.
+    /// </summary>
+    public static string SettingsAnswer(Lens lens, string? connection, string? environments)
+    {
+        var cfg = lens.For(connection).Config;
+        if (!lens.Settings.Connections.TryGetValue(cfg.Connection, out var conn))
+            throw new InvalidOperationException($"connection '{cfg.Connection}' comes from environment variables and cannot be changed here");
+        if (environments is not null)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var part in environments.Split([';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var eq = part.IndexOf('=');
+                if (eq <= 0 || eq == part.Length - 1) throw new ArgumentException($"'{part}' is not key=label (e.g. staging=UAT (sbx03))");
+                map[part[..eq].Trim()] = part[(eq + 1)..].Trim();
+            }
+            conn.Environments = map;
+            lens.SaveSettings();
+        }
+        var sb = new StringBuilder(environments is null ? "" : "saved.\n");
+        sb.AppendLine($"connection {cfg.Connection}: https://dev.azure.com/{conn.Organization}, project {conn.Project ?? "-"}, team {conn.Team ?? "-"}, mode {lens.Settings.Mode}");
+        sb.Append(conn.Environments.Count == 0 ? "environments: not set (ado_trace proposes them)"
+            : "environments (in flow order): " + string.Join(" -> ", conn.Environments.Select(e => $"{e.Value} [{e.Key}]")));
+        return sb.ToString();
+    }
+
     public static async Task<string> FieldsAsync(Lens lens, string? connection, string? project, string? type, string? field,
         string? changes, bool all, bool refresh, CancellationToken ct = default)
     {

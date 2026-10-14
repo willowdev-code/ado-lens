@@ -253,7 +253,10 @@ public class ToolBudgetTests
 {
     static List<McpServerTool> RegisteredTools(Settings settings)
     {
+        // As in Program.cs: Lens is a service, so it is injected and never part of a tool's parameters.
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(services,
+            new Lens(settings, "0.0.0", Path.GetTempPath(), _ => null, _ => null));
         Microsoft.Extensions.DependencyInjection.McpServerServiceCollectionExtensions.AddMcpServer(services).WithActiveTools(settings);
         var sp = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
         return Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetServices<McpServerTool>(sp).ToList();
@@ -266,21 +269,25 @@ public class ToolBudgetTests
     /// Raise the limit on purpose when new tools need it.
     /// </summary>
     [Theory]
-    [InlineData("po", 6000)]
-    [InlineData("dev", 6000)]
+    [InlineData("po", 8000)]
+    [InlineData("dev", 8000)]
     public void Tool_definitions_do_not_grow_by_accident(string mode, int maxTokens)
     {
         var settings = new Settings { Mode = mode };
+        // What a client gets per tool: its name, description and input schema (plus a few annotation flags).
         var chars = McpTools.Instructions(settings).Length
-                    + RegisteredTools(settings).Sum(t => System.Text.Json.JsonSerializer.Serialize(t.ProtocolTool, ModelContextProtocol.McpJsonUtilities.DefaultOptions).Length);
-        Assert.True(chars / 4 < maxTokens, $"mode {mode}: tool definitions take ~{chars / 4} tokens ({chars} characters)");
+                    + RegisteredTools(settings).Sum(t => t.ProtocolTool.Name.Length + (t.ProtocolTool.Description?.Length ?? 0)
+                                                         + System.Text.Json.JsonSerializer.Serialize(t.ProtocolTool.InputSchema).Length + 60);
+        var detail = string.Join(", ", RegisteredTools(settings).Select(t => $"{t.ProtocolTool.Name}={System.Text.Json.JsonSerializer.Serialize(t.ProtocolTool.InputSchema).Length}"));
+        Assert.DoesNotContain("\"lens\"", string.Join("", RegisteredTools(settings).Select(t => t.ProtocolTool.InputSchema.GetRawText())));
+        Assert.True(chars / 4 < maxTokens, $"mode {mode}: tool definitions take ~{chars / 4} tokens ({chars} characters): {detail}");
     }
 
     [Fact]
     public void The_server_really_registers_the_tools_of_the_mode()
     {
         var names = RegisteredTools(new Settings { Mode = "po" }).Select(t => t.ProtocolTool.Name).Order().ToList();
-        Assert.Equal(["ado_backlog", "ado_board", "ado_changes", "ado_comment", "ado_create", "ado_fields", "ado_link", "ado_my_day", "ado_query",
+        Assert.Equal(["ado_backlog", "ado_board", "ado_changes", "ado_comment", "ado_create", "ado_fields", "ado_link", "ado_my_day", "ado_query", "ado_settings",
             "ado_sprint", "ado_status", "ado_trace", "ado_update", "ado_wiki", "ado_wiki_write", "ado_work_item"], names);
     }
 

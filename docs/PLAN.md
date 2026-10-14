@@ -434,6 +434,20 @@ pola konfiguracji w UI, sekrety w magazynie systemu. Nie obejmuje Claude Code an
 
 ---
 
+### Środowiska (DEV / UAT / PROD…) dla użytkowników końcowych
+
+Mapa „gałąź / etap release'u → środowisko” musi być dla PO niewidoczna albo trywialna. Trzy warstwy, od najmniejszego
+wysiłku:
+1. **Wspólna mapa zespołu w Azure DevOps** (strona wiki „ADO Lens” albo plik `.adolens/environments.json` w repo —
+   do decyzji): ustawiana raz dla projektu, czytana automatycznie przez każdego użytkownika; lokalna konfiguracja tylko
+   ją nadpisuje.
+2. **Wykrywanie z propozycją**: z nazw gałęzi (`dev`/`develop`/`sit` → DEV, `staging`/`uat`/`test` → UAT,
+   `master`/`main`/`prod` → PROD), definicji i etapów release'ów oraz kolejności wdrożeń; kreator i rozmowa pytają
+   tylko o nazwy („jak nazywacie te środowiska?” → „sbx01, sbx03, produkcja”).
+3. **Zmiana w rozmowie** narzędziem ustawień (bez terminala): „najpierw sbx01, potem sbx03”, „ten release wdraża na
+   UAT i SCM naraz”.
+Bez mapy `ado_trace` podpowiada jednym zdaniem wykryty przepływ i jak go zapisać.
+
 ## 6. Bezpieczeństwo i prywatność
 
 - Sekrety tylko w Menedżerze poświadczeń (albo w zmiennej środowiskowej, jeśli użytkownik tak woli); `adolens doctor` wykrywa i przenosi PAT-y zapisane

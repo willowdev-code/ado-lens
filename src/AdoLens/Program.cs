@@ -76,6 +76,10 @@ try
             return await cli.TraceAsync();
         case "changes":
             return await cli.ChangesAsync();
+        case "pr":
+            return await cli.PrAsync();
+        case "pipeline":
+            return await cli.PipelineAsync();
         case "wiki":
             return await cli.WikiAsync();
         case "wiki-write":

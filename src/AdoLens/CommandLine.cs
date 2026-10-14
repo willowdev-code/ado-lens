@@ -16,6 +16,8 @@ public sealed partial class CommandLine
         ["logout"] = ["connection="],
         ["connections"] = [],
         ["trace"] = ["connection=", "detail="],
+        ["pr"] = ["connection=", "project=", "repo=", "list=", "detail="],
+        ["pipeline"] = ["connection=", "project=", "definition=", "branch=", "top=", "detail="],
         ["changes"] = ["connection=", "repo=", "file=", "detail="],
         ["config"] = ["env=", "remove-env=", "connection=", "default-connection=", "project=", "team=", "mode=", "usage-log=", "add-toolset=", "remove-toolset=", "confirm-above=", "show-tokens="],
         ["item"] = ["connection=", "include=", "detail="],

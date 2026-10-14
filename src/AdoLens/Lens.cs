@@ -24,15 +24,26 @@ public sealed record Session(Config Config, AdoClient Client, MetadataService Me
 /// created on first use so a server with several connections only talks to the ones Claude needs.
 /// </summary>
 public sealed class Lens(Settings settings, string version, string dataDir,
-    Func<string, string?> env, Func<string, string?> credential, Func<Config, AdoClient>? clientFactory = null)
+    Func<string, string?> env, Func<string, string?> credential, Func<Config, AdoClient>? clientFactory = null, string? settingsPath = null)
 {
     readonly ConcurrentDictionary<string, Session> _sessions = new(StringComparer.OrdinalIgnoreCase);
 
     public Settings Settings => settings;
     public string Version => version;
 
+    /// <summary>Where settings changed through tools (ado_settings) are saved.</summary>
+    public string SettingsPath => settingsPath ?? Path.Combine(dataDir, "adolens.json");
+
     public static Lens Default(string version) =>
-        new(Settings.Load(Settings.DefaultPath), version, Settings.DataDir, Environment.GetEnvironmentVariable, CredentialStore.Read);
+        new(Settings.Load(Settings.DefaultPath), version, Settings.DataDir, Environment.GetEnvironmentVariable, CredentialStore.Read,
+            settingsPath: Settings.DefaultPath);
+
+    /// <summary>Saves the settings and drops the cached sessions, so the next call sees the change.</summary>
+    public void SaveSettings()
+    {
+        settings.Save(SettingsPath);
+        _sessions.Clear();
+    }
 
     public string MetaPath(string connection) => Path.Combine(dataDir, "meta", connection + ".db");
 
