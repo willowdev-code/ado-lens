@@ -85,6 +85,44 @@ public static partial class WorkQueries
         if (t.Disabled) throw new InvalidOperationException($"{t.Name} is disabled in this process");
 
         var notes = new List<string>();
+        if (r.Template is { } template)
+        {
+            // The template's values go in as fields given by name; what the call sets itself wins.
+            var values = await Templates.FieldsAsync(session, s.Project.Name, t.Name, template, ct);
+            var given = new Dictionary<string, string>(r.Fields ?? [], StringComparer.OrdinalIgnoreCase);
+            foreach (var (reference, value) in values)
+            {
+                if (string.IsNullOrEmpty(value)) continue;
+                switch (reference)
+                {
+                    case WorkItems.TitleRef or "System.State" or "System.Reason":
+                        break;
+                    case WorkItems.DescriptionRef or WorkItems.ReproStepsRef:
+                        r = r with { Description = r.Description ?? Html.ToMarkdown(value) };
+                        break;
+                    case WorkItems.AcceptanceRef:
+                        r = r with { AcceptanceCriteria = r.AcceptanceCriteria ?? Html.ToMarkdown(value) };
+                        break;
+                    case "System.Tags":
+                        r = r with { Tags = r.Tags is null ? value : r.Tags.TrimStart().StartsWith('+') || r.Tags.TrimStart().StartsWith('-') ? r.Tags : $"{value}; {r.Tags}" };
+                        break;
+                    case "System.AssignedTo":
+                        r = r with { AssignedTo = r.AssignedTo ?? value };
+                        break;
+                    case "System.AreaPath":
+                        r = r with { Area = r.Area ?? value };
+                        break;
+                    case "System.IterationPath":
+                        r = r with { Iteration = r.Iteration ?? value };
+                        break;
+                    default:
+                        if (!given.ContainsKey(reference) && s.FieldsOf(t.Name).Any(f => f.Ref.Equals(reference, StringComparison.OrdinalIgnoreCase)))
+                            given[reference] = value;
+                        break;
+                }
+            }
+            r = r with { Fields = given, Template = null };
+        }
         var ops = await session.Work.BuildOpsAsync(s, t, r, null, notes, ct);
         var created = await session.Work.CreateAsync(s.Project.Name, t.Name, ops, ct);
         Audit.Write(lens, session.Config.Connection, [new AuditEntry { Batch = Audit.NewBatch(), Tool = "ado_create", Kind = "create",

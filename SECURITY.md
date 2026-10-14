@@ -33,6 +33,11 @@ organization and a `Demo` project) is enough.
 - **Never in files or command lines:** the PAT is typed with hidden input (or piped through standard input with
   `--pat-stdin`). It is not accepted as a command-line argument, so it does not end up in shell history or process
   listings. It is not written to `adolens.json`, to the Claude configuration, to the metadata or usage files, or to logs.
+  The installer EXE checks the PAT by running `adolens login --pat-env` with the PAT in an environment variable of that
+  one process, cleared right after.
+- **Claude Desktop extension (`.mcpb`):** there the PAT is a setting of the extension marked as sensitive; Claude
+  Desktop keeps it in the operating system's secure storage and hands it to the server as `AZURE_DEVOPS_PAT`. A PAT in
+  Credential Manager still wins. Prefer the installer when Claude Code is used too.
 - **Other servers:** `adolens status` reports other MCP entries in the Claude configuration that keep a PAT in plain
   text (for example an older Azure DevOps server). It never changes them; remove the PAT there yourself.
 - **Network:** the server talks only to `https://dev.azure.com/<organization>` (and the `vsrm` / `vssps` hosts of the

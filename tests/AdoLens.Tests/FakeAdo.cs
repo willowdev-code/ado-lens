@@ -53,6 +53,7 @@ sealed class DemoProject
     public string Severity = """["1 - Critical","2 - High","3 - Medium","4 - Low"]""";
     public bool CustomerRequired;
     public bool ExtraState;
+    public bool TestCaseType;
 
     public FakeAdo Routes(FakeAdo ado) => ado
         .On("/contoso/_apis/projects/Demo", """
@@ -86,8 +87,11 @@ sealed class DemoProject
               {"name":"Task","referenceName":"Microsoft.VSTS.WorkItemTypes.Task","isDisabled":false,
                "states":[{"name":"To Do","category":"Proposed"},{"name":"Done","category":"Completed"}],"transitions":{}},
               {"name":"Feature","referenceName":"Microsoft.VSTS.WorkItemTypes.Feature","isDisabled":false,"states":[],"transitions":{}},
-              {"name":"Old Thing","referenceName":"Contoso.Old","isDisabled":true,"states":[],"transitions":{}}
+              {"name":"Old Thing","referenceName":"Contoso.Old","isDisabled":true,"states":[],"transitions":{}}{{{(TestCaseType ? ",{\"name\":\"Test Case\",\"referenceName\":\"Microsoft.VSTS.WorkItemTypes.TestCase\",\"isDisabled\":false,\"states\":[{\"name\":\"Design\",\"category\":\"Proposed\"}],\"transitions\":{}}" : "")}}}
             ]}
+            """)
+        .On("/contoso/Demo/_apis/wit/workitemtypes/Test Case/fields", """
+            {"value":[{"referenceName":"System.Title","name":"Title","alwaysRequired":true},{"referenceName":"Microsoft.VSTS.TCM.Steps","name":"Steps"}]}
             """)
         .On("/contoso/Demo/_apis/wit/workitemtypes/Product Backlog Item/fields", () => $$$"""
             {"value":[

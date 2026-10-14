@@ -43,6 +43,18 @@ signed) program. Nothing else is needed on the machine, not even .NET.
 
 The install package is not part of the repository (`dist\` is excluded by `.gitignore`). Other ways:
 
+**With a wizard (installer EXE).** Download `ado-lens-setup-X.Y.Z.exe` from the **Releases** tab and run it — no
+administrator rights. It asks for the Azure DevOps link and the PAT (checked before anything is installed), who uses
+it (Product Owner / developer / everything), installs the skills and registers ADO Lens in Claude; an update skips the
+questions. Until the program is signed, Windows SmartScreen may show "Windows protected your PC" for a file downloaded
+in a browser: *More info → Run anyway* (or use the one-line install above, which avoids it). Uninstall it from
+*Settings → Apps*.
+
+**Claude Desktop only (extension).** `ado-lens-X.Y.Z.mcpb` from **Releases**: open it with Claude Desktop (or drag it
+into *Settings → Extensions*) and fill in the project link and the PAT, which Claude Desktop keeps in the system's secure
+storage. It does not set up Claude Code or the skills; when ADO Lens is already signed in on the machine, leave the
+fields empty.
+
 **A. From a release package** — nothing needs to be installed on the target machine, not even .NET.
 
 1. Download `ado-lens-X.Y.Z.zip` from the **Releases** tab of this repository.
@@ -162,6 +174,7 @@ never a permission.
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
 | `trace` | `ado_trace`, `ado_changes`, `ado_file` | ✓ | ✓ | ✓ |
 | `recipes` | `ado_recipe` | ✓ | ✓ | ✓ |
+| `test` | `ado_tests`, `ado_test_create` | ✓ | – | ✓ |
 | `test`, `recipes` | planned | ✓ | (recipes) | ✓ |
 | `code` | planned | – | ✓ | ✓ |
 
@@ -177,7 +190,7 @@ What each MCP tool answers, when Claude should reach for it, and the CLI command
 | `ado_fields` | types by backlog level; for a type: states, transitions, fields, required flags, allowed values; for a field: where it is used and its values; structure changes over time | before writing fields or WIQL; "which fields does a Bug have", "what changed in our process this month" | `adolens fields --type Bug`, `adolens fields --field Severity`, `adolens fields --changes 30d` |
 | `ado_work_item` | one or more items: state, people, paths, filled fields, description and acceptance criteria as markdown, parent / children / related, linked changesets, commits, PRs and builds; with `include`: comments, history | "what is #123 about", "who changed the criteria and when" | `adolens item 123 456 --include comments,history --detail summary` |
 | `ado_query` | items found by WIQL (with `@Me`, `@CurrentIteration`…) or a saved query, one line each | lists, filters, "open bugs of the sprint" | `adolens query --wiql "SELECT …"`, `adolens query --query "Shared Queries/Open bugs"` |
-| `ado_create` | creates an item from markdown; required fields, allowed values and people are checked first; soft length notes | writing stories, bugs, tasks | `adolens create --type Bug --title "…" --description "…" --field "Severity=2 - High"` |
+| `ado_create` | creates an item from markdown; required fields, allowed values and people are checked first; `template` fills what is not given from a team template; soft length notes | writing stories, bugs, tasks | `adolens create --type Bug --title "…" --description "…" --field "Severity=2 - High"` |
 | `ado_update` | changes one or many items (ids or WIQL): fields, state along the transitions, people, tags `+a; -b`, iteration `current`, a comment; many items → preview + `confirm` token | closing, moving to a sprint, mass changes | `adolens update 123 --state Done --comment "…"`, `adolens update --wiql "…" --tags "+reviewed"` |
 | `ado_comment` | markdown comment; `@[name]` mentions notify the person | asking, deciding, reporting | `adolens comment 123 "@[Anna] please confirm"` |
 | `ado_link` | parent, child, related, predecessor, successor, duplicate, duplicate-of, tested-by, tests; `remove` unlinks | structuring the backlog | `adolens link 123 456 --type child` |
@@ -192,6 +205,8 @@ What each MCP tool answers, when Claude should reach for it, and the CLI command
 | `ado_pipeline_run` | queues a pipeline by name or id, optionally on a branch, with variables | re-running a build | — |
 | `ado_wiki` | the project wiki: page tree (`depth`), one page as markdown with its version and subpages, or search across the project's wikis with snippets; long pages are cut unless `detail=full` | "how does X work", finding documentation | `adolens wiki`, `adolens wiki "Team/Setup"`, `adolens wiki --search "dual write"` |
 | `ado_wiki_write` | `create` a page, `append` / `prepend` to it, or `replace` it with the version from the last full read — a page changed by someone else in the meantime is never overwritten; optional change comment | release notes, keeping docs current | `adolens wiki-write "Team/Release notes" --file notes.md --mode append` |
+| `ado_tests` | the tests of work items (ids) or of a sprint's requirements and bugs: their Test Cases with the latest outcome per plan, suite and configuration (who, when), items without tests; `detail=full` adds the steps | "is it tested", sprint review | `adolens tests 123`, `adolens tests` (current sprint) |
+| `ado_test_create` | Test Cases for a work item from markdown (`## title`, steps `1. action => expected`), linked as tested-by, in the item's area and iteration; `plan` + `suite` (id or name) add them to a suite | turning acceptance criteria into tests | `adolens test-create 123 --file cases.md --plan R1 --suite Login` |
 | `ado_my_day` | since the previous working day (or `since`): where you were mentioned (all projects), your items and followed items changed by others, pull requests waiting for your review | the start of the day | `adolens myday --since 3d` |
 | `ado_search` | one search over work items (full text, with the field that matched), wiki pages and code (Git and TFVC, X++ objects named), grouped; a part that is not available (e.g. Code Search not installed) is reported and the rest still answers | "how does X work", "where is Y" | `adolens search "credit limit" --scope work;wiki` |
 | `ado_file` | a file by TFVC path, Git path + repo, or just its name (found through Code Search); X++ objects as their list of methods, `part` shows one method; `history=true`: who changed it, when, through which pull request and for which work items | "what does this object do", "why is it like this" | `adolens file CreditCheck.xml --part validate`, `adolens file CreditCheck.xml --history` |
@@ -248,6 +263,8 @@ pack.ps1                    release package (ZIP + SHA-256)
 release.ps1 release-notes.ps1   releases (see below); .github\ CI and Release workflows, issue forms
 install.ps1 uninstall.ps1   installation; get.ps1 is the one-line download and install
 skills\                     skills for Claude (po-verify, po-story, po-sprint, po-explain)
+packaging\inno\             installer with a wizard (Inno Setup script, built by pack.ps1 when ISCC.exe is there)
+packaging\mcpb\             Claude Desktop extension manifest
 docs\PLAN.md                road map
 build\  dist\               output (keep nothing of your own there)
 ```
@@ -294,6 +311,7 @@ regular expression per line, `!word` for allowed words. Without a list the relea
 | `SetupFlowTests.cs` | release versions and packages for updates, the team's wiki table (round trip, hand-edited pages), detecting the flow from releases and branches, the team map on the wiki with its version, local map over the team's |
 | `PrPipelineTests.cs` | PR lists and details (votes, checks, human threads only), PR actions (vote, comment on a line with a mention, create), failed build errors and log lines, running pipelines by name, saving environments, guessing the flow |
 | `TraceTests.cs` | line diff (Myers, unified hunks), X++ per method with form data sources, object names from AOT paths, `ado_trace` across TFVC and Git (deployed stages YES / NOT YET, environment labels, merged branches, deleted builds, criteria changed after coding), `ado_changes` lists and file diffs |
+| `TestCaseTests.cs` | test cases from markdown and their steps XML, creating and adding them to a suite, test status per item with outcomes, team templates on create, process rules in `ado_fields` |
 | `KnowledgeTests.cs` | search across work items, wiki and code (a missing part still answers), files found by name with X++ methods, file history with pull requests and work items, undo (values back, fields changed by others kept, comments deleted), backlog health, release notes, recipes (save, preview, run) |
 | `WikiTests.cs` | page tree, page with version, replace only with the current version (412 never overwrites), append, create over an existing page, search snippets |
 | `WorkItemTests.cs` | work item answers, required fields and allowed values before writing, transitions, preview and confirm of bulk updates, mentions, links, queries, HTML ⇄ markdown, PAT never sent to other hosts |

@@ -20,6 +20,8 @@ public sealed record WriteRequest
     public string? Tags { get; init; }
     public Dictionary<string, string>? Fields { get; init; }
     public int? Parent { get; init; }
+    /// <summary>On create: a work item template of the team whose values fill the fields not given.</summary>
+    public string? Template { get; init; }
 
     public bool IsEmpty => Title is null && Description is null && AcceptanceCriteria is null && State is null && Reason is null
                            && AssignedTo is null && Area is null && Iteration is null && Tags is null && Parent is null
