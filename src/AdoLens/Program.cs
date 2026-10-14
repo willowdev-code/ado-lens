@@ -88,6 +88,18 @@ try
             return await cli.WikiAsync();
         case "wiki-write":
             return await cli.WikiWriteAsync();
+        case "search":
+            return await cli.SearchAsync();
+        case "file":
+            return await cli.FileAsync();
+        case "health":
+            return await cli.HealthAsync();
+        case "release-notes":
+            return await cli.ReleaseNotesAsync();
+        case "undo":
+            return await cli.UndoAsync();
+        case "recipe":
+            return await cli.RecipeAsync();
         case "help" or "--help" or "-h" or "/?":
             Cli.PrintUsage();
             return 0;

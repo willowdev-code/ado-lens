@@ -51,6 +51,14 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           wiki [<page path>]  --search <text>  --depth 2  --detail full  --wiki <name>
           wiki-write <page path>  --file <page.md> (or standard input)  --mode create|append|prepend|replace
                             --version <v> (for replace, from 'wiki <path>')  --comment <text>
+          search <text>    work items, wiki and code in one search   --scope work;wiki;code  --top 10
+          file <path>      a file ($/… TFVC, Git path with --repo, or a file name)  --version <v>  --part <X++ method>
+                            --history (who changed it, when, for which work items)  --detail full
+          health           backlog hygiene of the team    --team <t>
+          release-notes [current|previous|<sprint>]   or --since 14d [--until yyyy-MM-dd]   markdown for the wiki
+          undo             revert the last change made by ADO Lens (preview, then --confirm <token>)   --list
+          recipe           list | show <name> | save <name> --file <r.json> | delete <name>
+                            run <name> [--param k=v]… [--confirm <token> | --yes (no preview: Task Scheduler)]
           api <path>      raw JSON of a GET request (development)
           stats           MCP calls of the last days: answer sizes, times, empty answers   --days 7 --top 10
                             --live: show every call as Claude makes it (tool, tokens, ms), until Ctrl+C
@@ -609,6 +617,67 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         var content = cl.Opt("file") is { } file ? await File.ReadAllTextAsync(file) : await Console.In.ReadToEndAsync();
         Print(await WikiQueries.WriteAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("wiki"), string.Join(' ', cl.Positional),
             content, cl.Opt("mode"), cl.Opt("version"), cl.Opt("comment")));
+        return 0;
+    }
+
+    public async Task<int> SearchAsync()
+    {
+        if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens search <text> [--scope work;wiki;code] [--top 10]"); return 2; }
+        Print(await Knowledge.SearchAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), string.Join(' ', cl.Positional), cl.Opt("scope"), Int(cl.Opt("top")) ?? 10));
+        return 0;
+    }
+
+    public async Task<int> FileAsync()
+    {
+        if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens file <path or file name> [--repo <r>] [--version <v>] [--part <method>] [--history]"); return 2; }
+        Print(await Knowledge.FileAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), string.Join(' ', cl.Positional), cl.Opt("repo"), cl.Opt("version"),
+            cl.Opt("part"), cl.Flag("history"), Int(cl.Opt("top")) ?? 15, cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> HealthAsync()
+    {
+        Print(await BoardQueries.HealthAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("team")));
+        return 0;
+    }
+
+    public async Task<int> ReleaseNotesAsync()
+    {
+        Print(await BoardQueries.ReleaseNotesAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("team"),
+            cl.Positional.FirstOrDefault(), cl.Opt("since"), cl.Opt("until")));
+        return 0;
+    }
+
+    public async Task<int> UndoAsync()
+    {
+        var lens = NewLens();
+        Print(cl.Flag("list") ? Audit.List(lens, cl.Opt("connection"), 20) : await Audit.UndoAsync(lens, cl.Opt("connection"), cl.Opt("confirm")));
+        return 0;
+    }
+
+    /// <summary>recipe list | show &lt;name&gt; | save &lt;name&gt; --file r.json | run &lt;name&gt; --param k=v [--confirm t | --yes] | delete &lt;name&gt;.</summary>
+    public async Task<int> RecipeAsync()
+    {
+        var lens = NewLens();
+        var action = cl.Positional.FirstOrDefault()?.ToLowerInvariant() ?? "list";
+        var name = cl.Positional.ElementAtOrDefault(1);
+        if (action != "list" && name is null) { Console.Error.WriteLine("usage: adolens recipe list | show <name> | save <name> --file <recipe.json> | run <name> [--param k=v]… [--confirm <token> | --yes] | delete <name>"); return 2; }
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        while (cl.Opt("param") is { } p)
+        {
+            var eq = p.IndexOf('=');
+            if (eq <= 0) throw new ArgumentException($"--param {p}: use name=value");
+            values[p[..eq].Trim()] = p[(eq + 1)..].Trim();
+        }
+        Print(action switch
+        {
+            "list" => Recipes.List(lens),
+            "show" => Recipes.Show(lens, name!),
+            "save" => Recipes.Save(lens, name!, cl.Opt("file") is { } f ? await File.ReadAllTextAsync(f) : await Console.In.ReadToEndAsync()),
+            "delete" => Recipes.Delete(lens, name!),
+            "run" => await Recipes.RunAsync(lens, cl.Opt("connection"), name!, values, cl.Opt("confirm"), cl.Flag("yes")),
+            _ => throw new ArgumentException("recipe action is list, show, save, run or delete"),
+        });
         return 0;
     }
 

@@ -157,12 +157,13 @@ Nigdy nie jest uprawnieniem.
 | Zestaw | Narzędzia | po | dev | full |
 |---|---|:-:|:-:|:-:|
 | `core` | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_fields` | ✓ | ✓ | ✓ |
-| `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
+| `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link`, `ado_search`, `ado_undo` | ✓ | ✓ | ✓ |
 | `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
 | `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
-| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day` | ✓ | – | ✓ |
+| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day`, `ado_health`, `ado_release_notes` | ✓ | – | ✓ |
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
-| `trace` | `ado_trace`, `ado_changes` | ✓ | ✓ | ✓ |
+| `trace` | `ado_trace`, `ado_changes`, `ado_file` | ✓ | ✓ | ✓ |
+| `recipes` | `ado_recipe` | ✓ | ✓ | ✓ |
 | `test`, `recipes` | w planie | ✓ | (recipes) | ✓ |
 | `code` | w planie | – | ✓ | ✓ |
 
@@ -194,6 +195,12 @@ Na co odpowiada każde narzędzie MCP, kiedy Claude powinien po nie sięgnąć i
 | `ado_wiki` | wiki projektu: drzewo stron (`depth`), strona jako markdown z wersją i podstronami albo wyszukiwanie we wszystkich wiki projektu z fragmentami; długie strony są ucinane, chyba że `detail=full` | „jak działa X”, szukanie dokumentacji | `adolens wiki`, `adolens wiki "Team/Setup"`, `adolens wiki --search "dual write"` |
 | `ado_wiki_write` | `create` — nowa strona, `append` / `prepend` — dopisanie, `replace` — zastąpienie z wersją z ostatniego pełnego odczytu (strony zmienionej w międzyczasie przez kogoś innego nigdy nie nadpisze); opcjonalny komentarz zmiany | notatki wydania, aktualna dokumentacja | `adolens wiki-write "Team/Release notes" --file notes.md --mode append` |
 | `ado_my_day` | od poprzedniego dnia roboczego (albo `since`): gdzie cię oznaczono (wszystkie projekty), twoje i obserwowane elementy zmienione przez innych, pull requesty czekające na twój przegląd | początek dnia | `adolens myday --since 3d` |
+| `ado_search` | jedno wyszukiwanie po work itemach (pełny tekst, z polem, w którym znaleziono), stronach wiki i kodzie (Git i TFVC, z nazwami obiektów X++), pogrupowane; niedostępna część (np. brak Code Search) jest zgłaszana, reszta odpowiada | „jak działa X”, „gdzie jest Y” | `adolens search "limit kredytowy" --scope work;wiki` |
+| `ado_file` | plik po ścieżce TFVC, ścieżce Git + repo albo samej nazwie (szukanej przez Code Search); obiekty X++ jako lista metod, `part` pokazuje jedną metodę; `history=true`: kto zmieniał, kiedy, w którym pull requeście i dla jakich work itemów | „co robi ten obiekt”, „dlaczego tak działa” | `adolens file CreditCheck.xml --part validate`, `adolens file CreditCheck.xml --history` |
+| `ado_health` | higiena otwartych elementów zespołu (od najnowszych): brak kryteriów akceptacji, opisu, szacunku albo rodzica, w toku bez zmian od 14+ dni, zostawione w zakończonym sprincie, podobne tytuły (serie typu „Sprint 202 / 203” pominięte); elementy zakończone w ostatnich 30 dniach bez powiązanego kodu | refinement, porządek w backlogu | `adolens health --team "Demo Team"` |
+| `ado_release_notes` | notatki wydania w markdownie: wymagania i błędy zakończone w sprincie albo między datami, wymagania pogrupowane pod feature'ami | przegląd sprintu, strona wydania na wiki | `adolens release-notes previous`, `adolens release-notes --since 14d` |
+| `ado_undo` | cofa ostatnią zmianę zrobioną przez ADO Lens: przywraca wartości pól (pola zmienione w międzyczasie przez innych zostają i są wymienione), usuwa komentarz, usuwa lub przywraca link, utworzony element przestawia w stan usunięty; zawsze najpierw podgląd; `list=true` pokazuje ostatnie zmiany | „cofnij to”, pomyłka przy zmianie wsadowej | `adolens undo --list`, `adolens undo` |
+| `ado_recipe` | zapisane powtarzalne zmiany: kroki z zapytaniem WIQL (albo id) i tym, co zrobić z każdym elementem - pola, stan, iteracja `next`, tagi, komentarz, element podrzędny z szablonu (`{title}`, `{id}`); `{parametry}`; każde uruchomienie najpierw podgląd, potem potwierdzenie | „zamknij sprint”, „nowy klient” | `adolens recipe run close-sprint --param sprint="Demo\Sprint 6"`, `--yes` dla Harmonogramu zadań |
 
 ### Wbudowane zasady pisania
 
@@ -242,7 +249,7 @@ build.ps1                   kompilacja; -Deploy podmienia binaria w instalacji, 
 pack.ps1                    paczka wydania (ZIP + SHA-256)
 release.ps1 release-notes.ps1   wydania (zob. niżej); .github\ workflowy CI i Release, formularze zgłoszeń
 install.ps1 uninstall.ps1   instalacja; get.ps1 to pobranie i instalacja jedną linijką
-skills\                     skille dla Claude'a (po-verify, po-story, po-sprint)
+skills\                     skille dla Claude'a (po-verify, po-story, po-sprint, po-explain)
 docs\PLAN.md                plan rozwoju
 build\  dist\               wyniki (nie trzymaj tu niczego własnego)
 ```
@@ -289,6 +296,7 @@ i publikuje go razem z `.sha256` i opisem z `CHANGELOG.md` (podgląd: `.\release
 | `SetupFlowTests.cs` | wersje i paczki wydań do aktualizacji, tabela zespołu na wiki (w obie strony, strony poprawiane ręcznie), wykrywanie przepływu z release'ów i gałęzi, mapa zespołu na wiki z wersją, mapa lokalna ponad zespołową |
 | `PrPipelineTests.cs` | listy i szczegóły PR-ów (głosy, kontrole, tylko wątki ludzi), akcje na PR (głos, komentarz na linii ze wzmianką, tworzenie), błędy nieudanego buildu i linie logu, uruchamianie pipeline'ów po nazwie, zapis środowisk, odgadywanie przepływu |
 | `TraceTests.cs` | diff linii (Myers, bloki unified), X++ per metoda ze źródłami danych formularza, nazwy obiektów ze ścieżek AOT, `ado_trace` w TFVC i Gicie (wdrożone etapy TAK / JESZCZE NIE, etykiety środowisk, scalone gałęzie, usunięte buildy, kryteria zmienione po rozpoczęciu prac), listy i diffy plików w `ado_changes` |
+| `KnowledgeTests.cs` | wyszukiwanie po work itemach, wiki i kodzie (brak jednej części nie psuje reszty), pliki po nazwie z metodami X++, historia pliku z pull requestami i work itemami, cofanie (wartości wracają, pola zmienione przez innych zostają, komentarze usuwane), higiena backlogu, notatki wydania, przepisy (zapis, podgląd, uruchomienie) |
 | `WikiTests.cs` | drzewo stron, strona z wersją, zastąpienie tylko z aktualną wersją (412 nigdy nie nadpisuje), dopisywanie, tworzenie na istniejącej stronie, fragmenty wyszukiwania |
 | `WorkItemTests.cs` | odpowiedzi o work itemach, pola wymagane i dozwolone wartości przed zapisem, przejścia stanów, podgląd i potwierdzanie zmian wsadowych, wzmianki, linki, zapytania, HTML ⇄ markdown, PAT nigdy do innych hostów |
 

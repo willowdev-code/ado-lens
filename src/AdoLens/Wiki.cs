@@ -35,6 +35,13 @@ public static partial class WikiQueries
         (w.Type == "codeWiki" && w.Branch is not null ? $"&versionDescriptor.version={Uri.EscapeDataString(w.Branch)}&versionDescriptor.versionType=branch" : "");
 
     /// <summary>"Team/Setup" → "/Team/Setup"; spaces and case kept.</summary>
+    /// <summary>A wiki file path as a page path: in file names "-" is a space and "%2D" a real hyphen.</summary>
+    internal static string PagePath(string file)
+    {
+        var p = file.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? file[..^3] : file;
+        return Uri.UnescapeDataString(p.Replace('-', ' '));
+    }
+
     internal static string NormalizePath(string path)
     {
         var p = path.Trim().Replace('\\', '/');
@@ -127,7 +134,7 @@ public static partial class WikiQueries
         var sb = new StringBuilder($"wiki pages matching '{text}': {(total > results.Count ? $"{results.Count} of {total}" : results.Count.ToString())}\n");
         foreach (var r in results)
         {
-            var path = (Json.Str(r, "path") ?? Json.Str(r, "fileName") ?? "").Replace(".md", "").Replace('-', ' ');
+            var path = PagePath(Json.Str(r, "path") ?? Json.Str(r, "fileName") ?? "");
             var snippet = Json.Arr(r, "hits").SelectMany(h => Json.Arr(h, "highlights")).Select(h => h.GetString() ?? "").FirstOrDefault();
             sb.Append($"- {path} (wiki {Json.Str(Json.Obj(r, "wiki"), "name")})");
             if (snippet is not null) sb.Append(": ").Append(Formatting.Collapse(Highlight().Replace(snippet, ""), 160));
