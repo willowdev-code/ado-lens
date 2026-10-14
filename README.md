@@ -13,7 +13,7 @@ not thousands. Changes between versions: [CHANGELOG.md](CHANGELOG.md). The road 
 Azure DevOps is a trademark of Microsoft.
 
 > Status: **0.x — in development.** Connections, Claude registration, the local work item structure, work items,
-> sprints, boards and backlogs work; wiki, pull requests and pipelines follow the plan.
+> sprints, boards, backlogs and the wiki work; tracing work to code, pull requests and pipelines follow the plan.
 
 ## What it does differently
 
@@ -106,7 +106,8 @@ never a permission.
 | `core` | `ado_status`, `ado_fields` | ✓ | ✓ | ✓ |
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
 | `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day` | ✓ | – | ✓ |
-| `wiki`, `trace`, `test`, `recipes` | planned | ✓ | (wiki, trace, recipes) | ✓ |
+| `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
+| `trace`, `test`, `recipes` | planned | ✓ | (trace, recipes) | ✓ |
 | `code`, `pr`, `pipelines` | planned | – | ✓ | ✓ |
 
 ## Tool map
@@ -126,6 +127,8 @@ What each MCP tool answers, when Claude should reach for it, and the CLI command
 | `ado_sprint` | a team's sprint (`current`, `next`, `previous` or by name): dates and working day, items by state, estimates, remaining work against the capacity left, items needing attention (no change for days, blocked, no estimate, no criteria, unassigned), task progress per item; says plainly when the sprint has ended | stand-up, sprint review, "will we make it" | `adolens sprint`, `adolens sprint next --team "Demo Team" --detail summary` |
 | `ado_board` | a team's board: columns with WIP limits (over-limit flagged) and their cards; `move` + `column` moves a card — the state follows the column's mapping for the item's type | "what is in progress", moving cards | `adolens board`, `adolens board --move 123 --column "In Progress"` |
 | `ado_backlog` | a team's backlog in priority order (requirement, portfolio, task, or by name); `move` + `above`/`below` reorders | refinement, priorities | `adolens backlog --top 20`, `adolens backlog --move 123 --above 456` |
+| `ado_wiki` | the project wiki: page tree (`depth`), one page as markdown with its version and subpages, or search across the project's wikis with snippets; long pages are cut unless `detail=full` | "how does X work", finding documentation | `adolens wiki`, `adolens wiki "Team/Setup"`, `adolens wiki --search "dual write"` |
+| `ado_wiki_write` | `create` a page, `append` / `prepend` to it, or `replace` it with the version from the last full read — a page changed by someone else in the meantime is never overwritten; optional change comment | release notes, keeping docs current | `adolens wiki-write "Team/Release notes" --file notes.md --mode append` |
 | `ado_my_day` | since the previous working day (or `since`): where you were mentioned (all projects), your items and followed items changed by others, pull requests waiting for your review | the start of the day | `adolens myday --since 3d` |
 
 ### Writing rules built in
@@ -155,7 +158,7 @@ Estimates are characters / 4; Claude's tokenizer differs a little (Polish text r
 ## CLI
 
 ```
-adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday …
+adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday|wiki|wiki-write …
 adolens login|logout|connections|config|status|register|unregister|refresh|stats|api|mcp|version
 ```
 
@@ -173,6 +176,7 @@ src\AdoLens\*.cs            code
 tests\AdoLens.Tests\        xUnit tests; Azure DevOps is simulated (FakeAdo), no network
 build.ps1                   compile; -Deploy replaces the installed binaries, -Test runs the tests first
 pack.ps1                    release package (ZIP + SHA-256)
+release.ps1 release-notes.ps1   releases (see below); .github\ CI and Release workflows, issue forms
 install.ps1 uninstall.ps1   installation
 docs\PLAN.md                road map
 build\  dist\               output (keep nothing of your own there)
@@ -189,6 +193,27 @@ dotnet test                          # tests (a few seconds)
 
 After `-Deploy`, restart Claude Desktop / start a new Claude Code session — MCP loads the binary at start.
 
+### Releasing a new version
+
+Work happens on the branch `dev`; `main` always holds the last regular release. Add a `## X.Y.Z — unreleased`
+section to `CHANGELOG.md`, then on `dev`:
+
+```powershell
+.\release.ps1 -Version X.Y.Z -Pre     # test release X.Y.Z-beta.N (pre-release)
+.\release.ps1 -Version X.Y.Z          # regular release: pull request dev -> main, merge, tag, publish
+.\release.ps1 -Version X.Y.Z -DryRun  # checks, scan, build and tests only
+```
+
+Both stop at the first failure. They set `<Version>`, scan every file for private names and broken characters, build
+and test, commit and push `dev` and wait for CI. A test release is tagged on `dev`; a regular one dates the CHANGELOG
+section, merges `dev` into `main` through a pull request and is tagged on `main`, after which `dev` moves to `main`.
+Both wait for the Release workflow and check the published package (SHA-256, layout, kind of release). Private names
+(customers, partners, people) come from a local list that never enters the repository: `-ScanList <file>`,
+`ADOLENS_SCAN_LIST`, `XPPLENS_SCAN_LIST` or `%USERPROFILE%\.claude\skills\xpp-lens-release\scan-names.txt` — one
+regular expression per line, `!word` for allowed words. Without a list the release stops. The Release workflow builds
+`ado-lens-X.Y.Z.zip` with `pack.ps1` and publishes it with its `.sha256` and the notes from `CHANGELOG.md`
+(preview: `.\release-notes.ps1 -Version X.Y.Z`).
+
 ### Tests
 
 | File | What it checks |
@@ -196,6 +221,7 @@ After `-Deploy`, restart Claude Desktop / start a new Claude Code session — MC
 | `SetupTests.cs` | settings, connections and PAT order (Credential Manager first), command line, Claude configuration edits, Credential Manager, HTTP retries and errors, tool definition budget per mode |
 | `MetadataTests.cs` | fetching the structure (levels, inherited process name, bugs on the requirement backlog), change history, compact `ado_fields` answers |
 | `BoardTests.cs` | sprint progress, capacity left with days off, attention list, picking sprints, ended sprints, board columns and WIP, moving cards with the state mapping, backlog order and reordering, my day |
+| `WikiTests.cs` | page tree, page with version, replace only with the current version (412 never overwrites), append, create over an existing page, search snippets |
 | `WorkItemTests.cs` | work item answers, required fields and allowed values before writing, transitions, preview and confirm of bulk updates, mentions, links, queries, HTML ⇄ markdown, PAT never sent to other hosts |
 
 Fixtures use neutral names only (`contoso`, `Demo`, `Anna Nowak`). Never put data from real organizations into tests,
@@ -208,6 +234,7 @@ issues or commits.
 | a new MCP tool | a `*Tools` class with `[Toolset]` in `McpTools.cs` (or its own file) + the query in `*Queries.cs` + a CLI command in `Cli.cs`/`Program.cs`/`CommandLine.cs` + a test + a line in the instructions |
 | work item reads, writes, checks | `WorkItems.cs`, `WorkQueries.cs`; output in `WorkItemFormat.cs` |
 | sprints, capacity, boards, backlogs, my day | `Boards.cs` (API in `Boards`, answers in `BoardQueries`) |
+| wiki | `Wiki.cs` |
 | work item structure (types, fields, states) | `MetadataService.cs` (fetch), `MetaStore.cs` (SQLite; raise `SchemaVersion` to refetch), `Metadata.cs` (change detection) |
 | rich text | `Html.cs` |
 | people | `Identities.cs` |

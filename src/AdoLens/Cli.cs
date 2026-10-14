@@ -44,6 +44,9 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           board [<board>]  --team <t>  --move <id> --column <name>  --detail summary|normal|full
           backlog          --level requirement|portfolio|task|<name>  --top 30  --move <id> --above <id> | --below <id>
           myday            --since 1d|3d|2w|yyyy-MM-dd (default: the previous working day)
+          wiki [<page path>]  --search <text>  --depth 2  --detail full  --wiki <name>
+          wiki-write <page path>  --file <page.md> (or standard input)  --mode create|append|prepend|replace
+                            --version <v> (for replace, from 'wiki <path>')  --comment <text>
           api <path>      raw JSON of a GET request (development)
           stats           MCP calls of the last days: answer sizes, times, empty answers   --days 7 --top 10
                             --live: show every call as Claude makes it (tool, tokens, ms), until Ctrl+C
@@ -441,6 +444,23 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public async Task<int> MyDayAsync()
     {
         Print(await BoardQueries.MyDayAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("since")));
+        return 0;
+    }
+
+    public async Task<int> WikiAsync()
+    {
+        Print(await WikiQueries.ReadAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("wiki"),
+            cl.Positional.Count > 0 ? string.Join(' ', cl.Positional) : null, cl.Opt("search"), Int(cl.Opt("depth")) ?? 2, cl.Opt("detail")));
+        return 0;
+    }
+
+    /// <summary>wiki-write &lt;path&gt; --file page.md (or the markdown from standard input).</summary>
+    public async Task<int> WikiWriteAsync()
+    {
+        if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens wiki-write <path> --file <page.md> [--mode create|append|prepend|replace] [--version <v>]"); return 2; }
+        var content = cl.Opt("file") is { } file ? await File.ReadAllTextAsync(file) : await Console.In.ReadToEndAsync();
+        Print(await WikiQueries.WriteAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("wiki"), string.Join(' ', cl.Positional),
+            content, cl.Opt("mode"), cl.Opt("version"), cl.Opt("comment")));
         return 0;
     }
 

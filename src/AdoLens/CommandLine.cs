@@ -25,6 +25,8 @@ public sealed partial class CommandLine
         ["board"] = ["connection=", "project=", "team=", "detail=", "move=", "column="],
         ["backlog"] = ["connection=", "project=", "team=", "level=", "top=", "move=", "above=", "below="],
         ["myday"] = ["connection=", "project=", "since="],
+        ["wiki"] = ["connection=", "project=", "wiki=", "search=", "depth=", "detail="],
+        ["wiki-write"] = ["connection=", "project=", "wiki=", "mode=", "version=", "comment=", "file="],
         ["link"] = ["connection=", "type=", "remove"],
         ["status"] = ["connection=", "offline", "quiet"],
         ["register"] = ["name=", "exe=", "desktop", "code", "check", "force"],

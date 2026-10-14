@@ -77,7 +77,12 @@ public sealed class AdoClient(HttpClient http, string organization)
     /// Sends one request: relative URLs go to the organization, absolute ones only to Azure DevOps hosts (vssps, vsrm),
     /// so a URL taken from data can never carry the PAT anywhere else.
     /// </summary>
-    public async Task<JsonElement> SendAsync(HttpMethod method, string url, object? body, string? contentType, CancellationToken ct = default)
+    public async Task<JsonElement> SendAsync(HttpMethod method, string url, object? body, string? contentType, CancellationToken ct = default) =>
+        (await SendWithHeadersAsync(method, url, body, contentType, null, ct)).Body;
+
+    /// <summary>Like <see cref="SendAsync"/>, with extra request headers (e.g. If-Match) and the answer's ETag.</summary>
+    public async Task<(JsonElement Body, string? ETag)> SendWithHeadersAsync(HttpMethod method, string url, object? body, string? contentType,
+        IReadOnlyDictionary<string, string>? headers, CancellationToken ct = default)
     {
         url = WithApiVersion(url);
         if (Uri.TryCreate(url, UriKind.Absolute, out var abs) && abs.Scheme is "https" or "http" && !IsAzureDevOpsHost(abs))
@@ -87,6 +92,8 @@ public sealed class AdoClient(HttpClient http, string organization)
         {
             using var req = new HttpRequestMessage(method, url);
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            if (headers is not null)
+                foreach (var (name, value) in headers) req.Headers.TryAddWithoutValidation(name, value);
             if (payload is not null)
             {
                 req.Content = new ByteArrayContent(payload);
@@ -99,10 +106,11 @@ public sealed class AdoClient(HttpClient http, string organization)
                 continue;
             }
             await EnsureSuccessAsync(res, ct);
+            var etag = res.Headers.ETag?.Tag ?? (res.Headers.TryGetValues("ETag", out var tags) ? tags.FirstOrDefault() : null);
             await using var stream = await res.Content.ReadAsStreamAsync(ct);
-            if (res.Content.Headers.ContentLength == 0) return default;
+            if (res.Content.Headers.ContentLength == 0) return (default, etag);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            return doc.RootElement.Clone();
+            return (doc.RootElement.Clone(), etag);
         }
     }
 

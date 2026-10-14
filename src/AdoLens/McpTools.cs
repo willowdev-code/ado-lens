@@ -35,6 +35,10 @@ public static class McpTools
               order; move with above/below reorders. ado_my_day: mentions, own and followed items changed by others, PRs
               waiting for review.
             """,
+        [Toolsets.Wiki] = """
+            - ado_wiki: page tree, a page (markdown, with its version), or search. ado_wiki_write: create, append, prepend,
+              or replace with the version from the last full read (a page changed meanwhile is never overwritten).
+            """,
     };
 
     public static string Instructions(Settings settings)
@@ -157,6 +161,39 @@ public static class BoardTools
         CancellationToken ct = default)
         => McpTools.Run("ado_my_day", new { since, project, connection },
             () => BoardQueries.MyDayAsync(lens, connection, project, since, null, ct));
+}
+
+[McpServerToolType, Toolset(Toolsets.Wiki)]
+public static class WikiTools
+{
+    [McpServerTool(Name = "ado_wiki", ReadOnly = true, Idempotent = true)]
+    [Description("Project wiki: page tree (no path), one page as markdown with its version and subpages (path), or search results with snippets (search).")]
+    public static Task<string> Wiki(Lens lens,
+        [Description("Page path, e.g. Team/Setup.")] string? path = null,
+        [Description("Text to search for in the project's wikis.")] string? search = null,
+        [Description("Tree depth (default 2).")] int depth = 2,
+        [Description("full: the whole page even when long.")] string? detail = null,
+        [Description("Wiki name; default: the project wiki.")] string? wiki = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_wiki", new { path, search, depth, detail, wiki, project, connection },
+            () => WikiQueries.ReadAsync(lens, connection, project, wiki, path, search, depth, detail, ct));
+
+    [McpServerTool(Name = "ado_wiki_write")]
+    [Description("Writes a wiki page in markdown: create (new page), append or prepend (to the current text), replace (needs the version from ado_wiki).")]
+    public static Task<string> WikiWrite(Lens lens,
+        [Description("Page path, e.g. Team/Release notes.")] string path,
+        [Description("Markdown.")] string content,
+        [Description("create (default) | append | prepend | replace.")] string? mode = null,
+        [Description("For replace: the version shown by ado_wiki.")] string? version = null,
+        [Description("Change comment for the page history.")] string? comment = null,
+        string? wiki = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_wiki_write", new { path, mode, version, comment, wiki, project, connection },
+            () => WikiQueries.WriteAsync(lens, connection, project, wiki, path, content, mode, version, comment, ct));
 }
 
 [McpServerToolType, Toolset(Toolsets.Work)]

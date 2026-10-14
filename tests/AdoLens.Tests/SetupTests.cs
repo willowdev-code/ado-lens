@@ -281,7 +281,7 @@ public class ToolBudgetTests
         var names = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetServices<McpServerTool>(sp)
             .Select(t => t.ProtocolTool.Name).Order().ToList();
         Assert.Equal(["ado_backlog", "ado_board", "ado_comment", "ado_create", "ado_fields", "ado_link", "ado_my_day", "ado_query",
-            "ado_sprint", "ado_status", "ado_update", "ado_work_item"], names);
+            "ado_sprint", "ado_status", "ado_update", "ado_wiki", "ado_wiki_write", "ado_work_item"], names);
     }
 
     [Fact]

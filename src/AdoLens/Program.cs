@@ -72,6 +72,10 @@ try
             return await cli.BacklogAsync();
         case "myday":
             return await cli.MyDayAsync();
+        case "wiki":
+            return await cli.WikiAsync();
+        case "wiki-write":
+            return await cli.WikiWriteAsync();
         case "help" or "--help" or "-h" or "/?":
             Cli.PrintUsage();
             return 0;

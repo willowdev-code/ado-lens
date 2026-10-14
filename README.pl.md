@@ -13,7 +13,7 @@ a nie tysiące. Zmiany między wersjami: [CHANGELOG.md](CHANGELOG.md). Plan rozw
 Azure DevOps jest znakiem towarowym Microsoftu.
 
 > Stan: **0.x — w budowie.** Działają połączenia, rejestracja w Claude, lokalna struktura work itemów, work itemy,
-> sprinty, tablice i backlogi; wiki, pull requesty i pipeline'y — według planu.
+> sprinty, tablice, backlogi i wiki; śledzenie pracy do kodu, pull requesty i pipeline'y — według planu.
 
 ## Czym się różni
 
@@ -106,7 +106,8 @@ Nigdy nie jest uprawnieniem.
 | `core` | `ado_status`, `ado_fields` | ✓ | ✓ | ✓ |
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
 | `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day` | ✓ | – | ✓ |
-| `wiki`, `trace`, `test`, `recipes` | w planie | ✓ | (wiki, trace, recipes) | ✓ |
+| `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
+| `trace`, `test`, `recipes` | w planie | ✓ | (trace, recipes) | ✓ |
 | `code`, `pr`, `pipelines` | w planie | – | ✓ | ✓ |
 
 ## Mapa narzędzi
@@ -126,6 +127,8 @@ Na co odpowiada każde narzędzie MCP, kiedy Claude powinien po nie sięgnąć i
 | `ado_sprint` | sprint zespołu (`current`, `next`, `previous` albo po nazwie): daty i dzień roboczy, elementy według stanu, szacunki, pozostała praca wobec pozostałej pojemności, elementy do uwagi (bez zmian od kilku dni, zablokowane, bez szacunku, bez kryteriów, bez osoby), postęp zadań per element; mówi wprost, gdy sprint się skończył | daily, przegląd sprintu, „czy zdążymy” | `adolens sprint`, `adolens sprint next --team "Demo Team" --detail summary` |
 | `ado_board` | tablica zespołu: kolumny z limitami WIP (przekroczenia oznaczone) i ich karty; `move` + `column` przesuwa kartę — stan wynika z mapowania kolumny dla typu elementu | „co jest w toku”, przesuwanie kart | `adolens board`, `adolens board --move 123 --column "In Progress"` |
 | `ado_backlog` | backlog zespołu w kolejności priorytetu (wymagania, portfolio, zadania albo po nazwie); `move` + `above`/`below` zmienia kolejność | refinement, priorytety | `adolens backlog --top 20`, `adolens backlog --move 123 --above 456` |
+| `ado_wiki` | wiki projektu: drzewo stron (`depth`), strona jako markdown z wersją i podstronami albo wyszukiwanie we wszystkich wiki projektu z fragmentami; długie strony są ucinane, chyba że `detail=full` | „jak działa X”, szukanie dokumentacji | `adolens wiki`, `adolens wiki "Team/Setup"`, `adolens wiki --search "dual write"` |
+| `ado_wiki_write` | `create` — nowa strona, `append` / `prepend` — dopisanie, `replace` — zastąpienie z wersją z ostatniego pełnego odczytu (strony zmienionej w międzyczasie przez kogoś innego nigdy nie nadpisze); opcjonalny komentarz zmiany | notatki wydania, aktualna dokumentacja | `adolens wiki-write "Team/Release notes" --file notes.md --mode append` |
 | `ado_my_day` | od poprzedniego dnia roboczego (albo `since`): gdzie cię oznaczono (wszystkie projekty), twoje i obserwowane elementy zmienione przez innych, pull requesty czekające na twój przegląd | początek dnia | `adolens myday --since 3d` |
 
 ### Wbudowane zasady pisania
@@ -155,7 +158,7 @@ Szacunek to znaki / 4; tokenizer Claude'a liczy trochę inaczej (polski tekst wy
 ## CLI
 
 ```
-adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday …
+adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday|wiki|wiki-write …
 adolens login|logout|connections|config|status|register|unregister|refresh|stats|api|mcp|version
 ```
 
@@ -173,6 +176,7 @@ src\AdoLens\*.cs            kod
 tests\AdoLens.Tests\        testy xUnit; Azure DevOps jest symulowane (FakeAdo), bez sieci
 build.ps1                   kompilacja; -Deploy podmienia binaria w instalacji, -Test najpierw uruchamia testy
 pack.ps1                    paczka wydania (ZIP + SHA-256)
+release.ps1 release-notes.ps1   wydania (zob. niżej); .github\ workflowy CI i Release, formularze zgłoszeń
 install.ps1 uninstall.ps1   instalacja
 docs\PLAN.md                plan rozwoju
 build\  dist\               wyniki (nie trzymaj tu niczego własnego)
@@ -189,6 +193,27 @@ dotnet test                          # testy (kilka sekund)
 
 Po `-Deploy` zrestartuj Claude Desktop / zacznij nową sesję Claude Code — MCP ładuje binarium przy starcie.
 
+### Wydanie nowej wersji
+
+Praca idzie na gałęzi `dev`; `main` zawsze zawiera ostatnie zwykłe wydanie. Dopisz w `CHANGELOG.md` sekcję
+`## X.Y.Z — unreleased`, potem na `dev`:
+
+```powershell
+.\release.ps1 -Version X.Y.Z -Pre     # wydanie testowe X.Y.Z-beta.N (pre-release)
+.\release.ps1 -Version X.Y.Z          # zwykłe wydanie: pull request dev -> main, scalenie, tag, publikacja
+.\release.ps1 -Version X.Y.Z -DryRun  # tylko kontrole, skan, build i testy
+```
+
+Oba warianty stają na pierwszym błędzie. Ustawiają `<Version>`, skanują wszystkie pliki pod nazwy prywatne i zepsute
+znaki, budują i testują, robią commit i push `dev` i czekają na CI. Wydanie testowe dostaje tag na `dev`; zwykłe wstawia
+datę w sekcji CHANGELOG, scala `dev` do `main` przez pull request i dostaje tag na `main`, po czym `dev` przesuwa się do
+`main`. Oba czekają na workflow Release i sprawdzają opublikowaną paczkę (SHA-256, układ, rodzaj wydania). Nazwy
+prywatne (klienci, partnerzy, ludzie) pochodzą z lokalnej listy, która nigdy nie trafia do repozytorium:
+`-ScanList <plik>`, `ADOLENS_SCAN_LIST`, `XPPLENS_SCAN_LIST` albo
+`%USERPROFILE%\.claude\skills\xpp-lens-release\scan-names.txt` — jedno wyrażenie regularne w linii, `!słowo` dla
+dozwolonych słów. Bez listy wydanie się zatrzymuje. Workflow Release buduje `ado-lens-X.Y.Z.zip` przez `pack.ps1`
+i publikuje go razem z `.sha256` i opisem z `CHANGELOG.md` (podgląd: `.\release-notes.ps1 -Version X.Y.Z`).
+
 ### Testy
 
 | Plik | Co sprawdza |
@@ -196,6 +221,7 @@ Po `-Deploy` zrestartuj Claude Desktop / zacznij nową sesję Claude Code — MC
 | `SetupTests.cs` | ustawienia, połączenia i kolejność PAT (najpierw Menedżer poświadczeń), linia poleceń, edycja konfiguracji Claude'a, Menedżer poświadczeń, ponawianie i błędy HTTP, budżet definicji narzędzi na tryb, faktyczna rejestracja narzędzi |
 | `MetadataTests.cs` | pobieranie struktury (poziomy, nazwa procesu dziedziczonego, bugi na backlogu wymagań), historia zmian, zwięzłe odpowiedzi `ado_fields` |
 | `BoardTests.cs` | postęp sprintu, pozostała pojemność z dniami wolnymi, lista do uwagi, wybór sprintu, zakończone sprinty, kolumny tablicy i WIP, przesuwanie kart z mapowaniem stanów, kolejność backlogu i jej zmiana, mój dzień |
+| `WikiTests.cs` | drzewo stron, strona z wersją, zastąpienie tylko z aktualną wersją (412 nigdy nie nadpisuje), dopisywanie, tworzenie na istniejącej stronie, fragmenty wyszukiwania |
 | `WorkItemTests.cs` | odpowiedzi o work itemach, pola wymagane i dozwolone wartości przed zapisem, przejścia stanów, podgląd i potwierdzanie zmian wsadowych, wzmianki, linki, zapytania, HTML ⇄ markdown, PAT nigdy do innych hostów |
 
 Dane testowe mają wyłącznie neutralne nazwy (`contoso`, `Demo`, `Anna Nowak`). Nigdy nie wkładaj danych z prawdziwych
@@ -208,6 +234,7 @@ organizacji do testów, zgłoszeń ani commitów.
 | nowe narzędzie MCP | klasa `*Tools` z `[Toolset]` w `McpTools.cs` (albo własnym pliku) + zapytanie w `*Queries.cs` + polecenie CLI w `Cli.cs`/`Program.cs`/`CommandLine.cs` + test + linijka w instrukcjach |
 | odczyt, zapis i kontrole work itemów | `WorkItems.cs`, `WorkQueries.cs`; wyjście w `WorkItemFormat.cs` |
 | sprinty, pojemność, tablice, backlogi, mój dzień | `Boards.cs` (API w `Boards`, odpowiedzi w `BoardQueries`) |
+| wiki | `Wiki.cs` |
 | struktura work itemów (typy, pola, stany) | `MetadataService.cs` (pobieranie), `MetaStore.cs` (SQLite; podnieś `SchemaVersion`, żeby pobrać od nowa), `Metadata.cs` (wykrywanie zmian) |
 | tekst sformatowany | `Html.cs` |
 | osoby | `Identities.cs` |
