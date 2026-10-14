@@ -96,10 +96,18 @@ adolens config --show-tokens true            # end every answer with [~N tokens]
 adolens config --connection contoso --env staging=UAT --env master=PROD   # what branches mean (for ado_trace)
 ```
 
-**Environments.** Azure DevOps does not know that the branch `staging` means UAT. Map branches to environment names per
-connection (`--env branch=label`, `--remove-env branch`; for TFVC use the last part of the branch path, e.g. `Main`).
-`ado_trace` then says "UAT: YES" instead of only naming the release stage, and for Git also checks whether the change is
-merged into each mapped branch even when no release pipeline deploys it.
+**Environments.** Azure DevOps does not know that the branch `staging` means UAT. Map your flow per connection, as many
+steps as it has, in its order — `--env key=label`, `--remove-env key`. A key is a branch (`dev`, `staging`; for TFVC the
+last part of the branch path, e.g. `Main`), a release definition, or one release stage as `"Definition/Stage"` — useful
+when one stage deploys to two environments at once:
+
+```powershell
+adolens config --connection contoso --env dev="DEV (sbx01)" --env staging="UAT (sbx03)" --env master=PROD
+adolens config --connection fabrikam --env "Main-Deploy/Stage 1=UAT + SCM"
+```
+
+`ado_trace` then lists the stages in that order with their labels ("UAT (sbx03): YES") and, for Git, also checks whether
+the work is merged into each mapped branch even when no release pipeline deploys it.
 
 Settings live in `%LOCALAPPDATA%\ado-lens\adolens.json` (no secrets) — they can be edited by hand too.
 

@@ -96,10 +96,18 @@ adolens config --show-tokens true            # każda odpowiedź kończy się [~
 adolens config --connection contoso --env staging=UAT --env master=PROD   # co znaczą gałęzie (dla ado_trace)
 ```
 
-**Środowiska.** Azure DevOps nie wie, że gałąź `staging` to UAT. Zmapuj gałęzie na nazwy środowisk dla połączenia
-(`--env gałąź=etykieta`, `--remove-env gałąź`; dla TFVC użyj ostatniej części ścieżki gałęzi, np. `Main`). Wtedy
-`ado_trace` mówi „UAT: TAK” zamiast samej nazwy etapu release'u, a dla Gita sprawdza też, czy zmiana jest scalona do
-każdej zmapowanej gałęzi, nawet gdy żaden pipeline jej nie wdraża.
+**Środowiska.** Azure DevOps nie wie, że gałąź `staging` to UAT. Zmapuj swój przepływ dla połączenia — tyle kroków, ile
+ma, w jego kolejności — `--env klucz=etykieta`, `--remove-env klucz`. Kluczem jest gałąź (`dev`, `staging`; dla TFVC
+ostatnia część ścieżki gałęzi, np. `Main`), definicja release'u albo jeden etap release'u jako `"Definicja/Etap"` —
+przydatne, gdy jeden etap wdraża na dwa środowiska naraz:
+
+```powershell
+adolens config --connection contoso --env dev="DEV (sbx01)" --env staging="UAT (sbx03)" --env master=PROD
+adolens config --connection fabrikam --env "Main-Deploy/Stage 1=UAT + SCM"
+```
+
+Wtedy `ado_trace` wypisuje etapy w tej kolejności z ich etykietami („UAT (sbx03): YES”), a dla Gita sprawdza też, czy
+praca jest scalona do każdej zmapowanej gałęzi, nawet gdy żaden pipeline jej nie wdraża.
 
 Ustawienia siedzą w `%LOCALAPPDATA%\ado-lens\adolens.json` (bez sekretów) — można je też edytować ręcznie.
 

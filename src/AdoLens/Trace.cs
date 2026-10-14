@@ -191,11 +191,17 @@ public static partial class TraceQueries
         var projects = changes.Select(x => x.Change.Project).Append(project).Where(p => p is not null).Select(p => p!)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var deployments = (await Task.WhenAll(projects.Select(p => code.DeploymentsAsync(p, ct)))).SelectMany(x => x).ToList();
-        string Label(string? branch, string def, string stage)
+        // The environment map names a release stage ("Definition/Stage", e.g. one stage deploying to UAT and SCM at once),
+        // a whole release definition, or a branch ("staging"; TFVC: the last part of the branch path, e.g. "Main").
+        var envOrder = env.Keys.Select((k, i) => (k, i)).ToDictionary(x => x.k, x => x.i, StringComparer.OrdinalIgnoreCase);
+        string? EnvKey(string? branch, string def, string stage)
         {
-            var key = branch is null ? "" : branch.StartsWith("$/", StringComparison.Ordinal) ? branch[(branch.LastIndexOf('/') + 1)..] : Code.Short(branch)!;
-            return env.TryGetValue(key, out var l) ? $"{l} ({def} / {stage})" : $"{def} / {stage}";
+            var branchKey = branch is null ? null : branch.StartsWith("$/", StringComparison.Ordinal) ? branch[(branch.LastIndexOf('/') + 1)..] : Code.Short(branch);
+            return new[] { $"{def}/{stage}", def, branchKey }.FirstOrDefault(k => k is not null && env.ContainsKey(k));
         }
+        string Label(string? branch, string def, string stage) =>
+            EnvKey(branch, def, stage) is { } k ? $"{env[k]} ({def} / {stage})" : $"{def} / {stage}";
+        int Order(string? branch, string def, string stage) => EnvKey(branch, def, stage) is { } k ? envOrder[k] : int.MaxValue;
         var where = new List<string>();
         var anyIn = false;
         // Git: a stage has the work when any of its changes (a PR merge, a commit) is in what was deployed. Changes that
@@ -207,20 +213,26 @@ public static partial class TraceQueries
                 containsCache[(commit, target, isBranch)] = r = await code.ContainsAsync(repo, commit, target, isBranch, ct);
             return r;
         }
-        async Task<(List<CodeChange> In, List<CodeChange> NotYet)> GitStatus(string repo, string target, bool isBranch)
+        async Task<(List<CodeChange> In, List<CodeChange> NotYet, bool Known)> GitStatus(string repo, string target, bool isBranch)
         {
             var git = changes.Select(x => x.Change).Where(x => x.Kind != "changeset" && string.Equals(x.RepoId, repo, StringComparison.OrdinalIgnoreCase)).ToList();
             var inside = new List<CodeChange>();
+            var known = false;
             foreach (var g in git)
-                if (g.LandedCommit is { } commit && await Contains(repo, commit, target, isBranch) == true) inside.Add(g);
+            {
+                if (g.LandedCommit is not { } commit) continue;
+                var r = await Contains(repo, commit, target, isBranch);
+                known |= r is not null;
+                if (r == true) inside.Add(g);
+            }
             var notYet = git.Where(g => !inside.Contains(g) && !IsPromotion(g)
                 && !inside.Any(i => i.Branch is not null && i.Branch == g.Branch && i.Date >= g.Date)).ToList();
-            return (inside, notYet);
+            return (inside, notYet, known);
         }
         static string Names(IEnumerable<CodeChange> list) =>
             string.Join(", ", list.Select(x => x.Kind == "pr" ? $"PR {x.Id} ({x.TargetBranch}, {x.Date?.ToLocalTime():MM-dd})" : $"commit {x.Id[..Math.Min(7, x.Id.Length)]}"));
 
-        foreach (var d in deployments.OrderBy(d => d.Definition).ThenBy(d => d.Stage))
+        foreach (var d in deployments.OrderBy(d => Order(d.Branch, d.Definition, d.Stage)).ThenBy(d => d.Definition).ThenBy(d => d.Stage))
         {
             var label = $"- {Label(d.Branch, d.Definition, d.Stage)}: ";
             var deployed = $"{Date(d.When)} (build {d.BuildNumber})";
@@ -241,7 +253,7 @@ public static partial class TraceQueries
             else if (d.SourceVersion is { } deployedCommit && d.Repository is { } repo
                      && changes.Any(x => x.Change.Kind != "changeset" && string.Equals(x.Change.RepoId, repo, StringComparison.OrdinalIgnoreCase)))
             {
-                var (inside, notYet) = await GitStatus(repo, deployedCommit, false);
+                var (inside, notYet, _) = await GitStatus(repo, deployedCommit, false);
                 anyIn |= inside.Count > 0;
                 where.Add(label + (inside.Count > 0
                     ? $"YES - deployed {deployed}: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
@@ -249,10 +261,12 @@ public static partial class TraceQueries
             }
         }
         // Git branches named in the environment map, even without release pipelines: is the work merged there?
+        // Keys that are no branch of the repository (a release definition, a TFVC branch) give no answer and are skipped.
         foreach (var (branch, envLabel) in env.Where(e => !e.Key.Contains('/')))
             foreach (var group in changes.Select(x => x.Change).Where(x => x.Kind != "changeset" && x.RepoId is not null).GroupBy(x => x.RepoId!))
             {
-                var (inside, notYet) = await GitStatus(group.Key, branch, true);
+                var (inside, notYet, known) = await GitStatus(group.Key, branch, true);
+                if (!known) continue;
                 anyIn |= inside.Count > 0;
                 where.Add($"- {envLabel} branch {branch} ({group.First().Repo}): " + (inside.Count > 0
                     ? $"merged: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")

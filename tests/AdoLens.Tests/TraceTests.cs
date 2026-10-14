@@ -144,7 +144,7 @@ public class TraceTests : IDisposable
         s.Connections["contoso"] = new Connection
         {
             Organization = "contoso", Project = "Demo",
-            Environments = new(StringComparer.OrdinalIgnoreCase) { ["staging"] = "UAT", ["master"] = "PROD" },
+            Environments = new(StringComparer.OrdinalIgnoreCase) { ["staging"] = "UAT", ["master"] = "PROD", ["Main release/Stage 1"] = "UAT + SCM" },
         };
         lens = new Lens(s, "0.0.0", dir, _ => null, _ => "pat", _ => ado.Client());
     }
@@ -165,7 +165,11 @@ public class TraceTests : IDisposable
         Assert.Contains("  2 file(s): Foo (class), Readme.txt", text);
         Assert.Contains("- PR 482 (portal) completed 2026-10-02: dev <- feature/1-login, \"Login form\", Ben Kowalski", text);
         Assert.Contains("- build 900: no longer kept (deleted by retention)", text);
-        Assert.Contains("- Main release / Stage 1: YES - deployed 2026-10-03 (build 26.10.3.1)", text);
+        // A release stage can be mapped by name (one stage deploying to two environments at once).
+        Assert.Contains("- UAT + SCM (Main release / Stage 1): YES - deployed 2026-10-03 (build 26.10.3.1)", text);
+        // Stages follow the order of the environment map, not the alphabet.
+        Assert.True(text.IndexOf("- UAT (Shop staging", StringComparison.Ordinal) < text.IndexOf("- PROD (Shop master", StringComparison.Ordinal)
+                    && text.IndexOf("- PROD (Shop master", StringComparison.Ordinal) < text.IndexOf("- UAT + SCM (Main release", StringComparison.Ordinal), text);
         Assert.Contains("- UAT (Shop staging / lcs): YES - deployed 2026-10-04 (build 2026.10.4.1): PR 482 (dev, 10-02)", text);
         Assert.Contains("- PROD (Shop master / lcs): NOT YET - last deployment 2026-09-20 (build 2026.9.20.1) has none of it", text);
         Assert.Contains("- UAT branch staging (portal): merged: PR 482 (dev, 10-02)", text);
