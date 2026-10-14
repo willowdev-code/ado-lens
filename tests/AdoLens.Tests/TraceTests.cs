@@ -166,13 +166,28 @@ public class TraceTests : IDisposable
         Assert.Contains("- PR 482 (portal) completed 2026-10-02: dev <- feature/1-login, \"Login form\", Ben Kowalski", text);
         Assert.Contains("- build 900: no longer kept (deleted by retention)", text);
         Assert.Contains("- Main release / Stage 1: YES - deployed 2026-10-03 (build 26.10.3.1)", text);
-        Assert.Contains("- UAT (Shop staging / lcs): YES - deployed 2026-10-04 (build 2026.10.4.1)", text);
-        Assert.Contains("- PROD (Shop master / lcs): NOT YET - last deployment 2026-09-20 (build 2026.9.20.1) does not contain it", text);
-        Assert.Contains("- UAT branch staging (portal): merged", text);
+        Assert.Contains("- UAT (Shop staging / lcs): YES - deployed 2026-10-04 (build 2026.10.4.1): PR 482 (dev, 10-02)", text);
+        Assert.Contains("- PROD (Shop master / lcs): NOT YET - last deployment 2026-09-20 (build 2026.9.20.1) has none of it", text);
+        Assert.Contains("- UAT branch staging (portal): merged: PR 482 (dev, 10-02)", text);
         Assert.Contains("- PROD branch master (portal): NOT merged yet", text);
         Assert.DoesNotContain("Other / x", text); // a stage of a branch this change is not on
         Assert.Contains("acceptance criteria changed after the first code change (2026-10-05 Anna Nowak)", text);
         Assert.Contains("TASKS\n- #2 Task [To Do] Build the form", text);
+    }
+
+    [Fact]
+    public void A_pull_request_and_its_merge_commit_are_one_change()
+    {
+        List<FileChange> files = [new("/src/M/AxClass/Foo.xml", "edit", null)];
+        var pr = new CodeChange("pr", "482", "portal", "r1", "Ben", null, "Login form", "feature/x", "completed", "dev", "abc123", []);
+        var mergeCommit = new CodeChange("commit", "abc123", "portal", "r1", "Ben", null, "Merged PR 482: Login form", null, null, null, null, files);
+        var byMessage = new CodeChange("commit", "fff999", "portal", "r1", "Ben", null, "Merged PR 482: Login form", null, null, null, null, files);
+        var own = new CodeChange("commit", "def456", "portal", "r1", "Ben", null, "Fix typo", null, null, null, null, files);
+
+        var result = TraceQueries.Combine([(pr, 1), (mergeCommit, 1), (byMessage, 2), (own, 1)]);
+
+        Assert.Equal(["PR 482 (portal)", "commit def456 (portal)"], result.Select(r => r.Change.Label));
+        Assert.Single(result[0].Change.Files);
     }
 
     [Fact]
