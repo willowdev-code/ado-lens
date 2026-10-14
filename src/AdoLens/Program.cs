@@ -92,6 +92,10 @@ try
             return await cli.SearchAsync();
         case "file":
             return await cli.FileAsync();
+        case "tests":
+            return await cli.TestsAsync();
+        case "test-create":
+            return await cli.TestCreateAsync();
         case "health":
             return await cli.HealthAsync();
         case "release-notes":
@@ -118,6 +122,12 @@ catch (Exception ex) when (ex is InvalidOperationException or ArgumentException 
 async Task<int> RunServerAsync()
 {
     var lens = Lens.Default(version);
+    // The Claude Desktop extension (.mcpb) chooses the mode in its settings.
+    if (Environment.GetEnvironmentVariable("ADOLENS_MODE") is { Length: > 0 } mode)
+    {
+        try { lens.Settings.Mode = Settings.NormalizeMode(mode); }
+        catch (ArgumentException) { }
+    }
     Usage.Enabled &= lens.Settings.UsageLog;
     Updater.RemoveLeftovers();
     Updater.CheckInBackground();

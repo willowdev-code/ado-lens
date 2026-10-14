@@ -260,4 +260,4 @@ if (-not $Pre) {
 }
 
 Write-Host "`nReleased ADO Lens ${fullVersion}: $($release.url)" -ForegroundColor Green
-Write-Host "Install: download the zip from the release, unzip, run install.ps1"
+Write-Host "Install: irm https://raw.githubusercontent.com/willowdev-code/ado-lens/main/get.ps1 | iex   (or the setup EXE / ZIP from the release)"

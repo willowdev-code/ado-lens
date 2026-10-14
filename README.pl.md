@@ -43,6 +43,18 @@ niepodpisanego) programu. Na komputerze nie trzeba niczego więcej, nawet .NET.
 
 Paczki instalacyjnej nie ma w repozytorium (`dist\` jest pomijany przez `.gitignore`). Inne drogi:
 
+**Z kreatorem (instalator EXE).** Pobierz `ado-lens-setup-X.Y.Z.exe` z zakładki **Releases** i uruchom — bez uprawnień
+administratora. Pyta o link do Azure DevOps i PAT (sprawdzane, zanim cokolwiek się zainstaluje), kto używa (Product
+Owner / programista / wszystko), instaluje skille i rejestruje ADO Lens w Claudzie; aktualizacja pomija pytania. Dopóki
+program nie jest podpisany, Windows SmartScreen może przy pliku pobranym przeglądarką pokazać „System Windows ochronił
+ten komputer”: *Więcej informacji → Uruchom mimo to* (albo użyj instalacji jedną linijką powyżej, która tego unika).
+Odinstalowanie: *Ustawienia → Aplikacje*.
+
+**Tylko Claude Desktop (rozszerzenie).** `ado-lens-X.Y.Z.mcpb` z **Releases**: otwórz go w Claude Desktop (albo
+przeciągnij do *Settings → Extensions*) i wpisz link do projektu oraz PAT, który Claude Desktop trzyma w bezpiecznym
+magazynie systemu. Nie konfiguruje Claude Code ani skilli; gdy ADO Lens jest już zalogowany na tym komputerze, zostaw
+pola puste.
+
 **A. Z gotowej paczki** — na maszynie docelowej nie trzeba niczego instalować, nawet .NET.
 
 1. Pobierz `ado-lens-X.Y.Z.zip` z zakładki **Releases** tego repozytorium.
@@ -164,6 +176,7 @@ Nigdy nie jest uprawnieniem.
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
 | `trace` | `ado_trace`, `ado_changes`, `ado_file` | ✓ | ✓ | ✓ |
 | `recipes` | `ado_recipe` | ✓ | ✓ | ✓ |
+| `test` | `ado_tests`, `ado_test_create` | ✓ | – | ✓ |
 | `test`, `recipes` | w planie | ✓ | (recipes) | ✓ |
 | `code` | w planie | – | ✓ | ✓ |
 
@@ -179,7 +192,7 @@ Na co odpowiada każde narzędzie MCP, kiedy Claude powinien po nie sięgnąć i
 | `ado_fields` | typy według poziomu backlogu; dla typu: stany, przejścia, pola, wymagalność, dozwolone wartości; dla pola: gdzie jest używane i jakie ma wartości; zmiany struktury w czasie | przed zapisem pól albo WIQL; „jakie pola ma Bug”, „co się zmieniło w procesie w tym miesiącu” | `adolens fields --type Bug`, `adolens fields --field Severity`, `adolens fields --changes 30d` |
 | `ado_work_item` | jeden lub kilka elementów: stan, osoby, ścieżki, wypełnione pola, opis i kryteria akceptacji jako markdown, rodzic / dzieci / powiązane, changesety, commity, PR-y i buildy; z `include`: komentarze, historia | „o co chodzi w #123”, „kto i kiedy zmienił kryteria” | `adolens item 123 456 --include comments,history --detail summary` |
 | `ado_query` | elementy z WIQL (z `@Me`, `@CurrentIteration`…) albo z zapisanego zapytania, po jednej linii | listy, filtry, „otwarte bugi sprintu” | `adolens query --wiql "SELECT …"`, `adolens query --query "Shared Queries/Open bugs"` |
-| `ado_create` | tworzy element z markdownu; najpierw sprawdza pola wymagane, dozwolone wartości i osoby; miękkie uwagi o długości | pisanie historii, bugów, zadań | `adolens create --type Bug --title "…" --description "…" --field "Severity=2 - High"` |
+| `ado_create` | tworzy element z markdownu; najpierw sprawdza pola wymagane, dozwolone wartości i osoby; `template` uzupełnia brakujące wartości z szablonu zespołu; miękkie uwagi o długości | pisanie historii, bugów, zadań | `adolens create --type Bug --title "…" --description "…" --field "Severity=2 - High"` |
 | `ado_update` | zmienia jeden lub wiele elementów (id albo WIQL): pola, stan zgodnie z przejściami, osoby, tagi `+a; -b`, iteracja `current`, komentarz; wiele elementów → podgląd + token `confirm` | zamykanie, przenoszenie do sprintu, zmiany masowe | `adolens update 123 --state Done --comment "…"`, `adolens update --wiql "…" --tags "+reviewed"` |
 | `ado_comment` | komentarz w markdownie; `@[imię]` oznacza osobę i wysyła jej powiadomienie | pytania, decyzje, raporty | `adolens comment 123 "@[Anna] potwierdź proszę"` |
 | `ado_link` | rodzic, dziecko, powiązany, poprzednik, następnik, duplikat, duplikat-czego, testowany-przez, testuje; `remove` usuwa | porządkowanie backlogu | `adolens link 123 456 --type child` |
@@ -194,6 +207,8 @@ Na co odpowiada każde narzędzie MCP, kiedy Claude powinien po nie sięgnąć i
 | `ado_pipeline_run` | uruchamia pipeline po nazwie albo id, opcjonalnie na gałęzi, ze zmiennymi | ponowne puszczenie buildu | — |
 | `ado_wiki` | wiki projektu: drzewo stron (`depth`), strona jako markdown z wersją i podstronami albo wyszukiwanie we wszystkich wiki projektu z fragmentami; długie strony są ucinane, chyba że `detail=full` | „jak działa X”, szukanie dokumentacji | `adolens wiki`, `adolens wiki "Team/Setup"`, `adolens wiki --search "dual write"` |
 | `ado_wiki_write` | `create` — nowa strona, `append` / `prepend` — dopisanie, `replace` — zastąpienie z wersją z ostatniego pełnego odczytu (strony zmienionej w międzyczasie przez kogoś innego nigdy nie nadpisze); opcjonalny komentarz zmiany | notatki wydania, aktualna dokumentacja | `adolens wiki-write "Team/Release notes" --file notes.md --mode append` |
+| `ado_tests` | testy work itemów (id) albo wymagań i błędów sprintu: ich Test Case'y z ostatnim wynikiem w każdym planie, zestawie i konfiguracji (kto, kiedy), elementy bez testów; `detail=full` dodaje kroki | „czy to przetestowane”, przegląd sprintu | `adolens tests 123`, `adolens tests` (bieżący sprint) |
+| `ado_test_create` | Test Case'y dla work itemu z markdownu (`## tytuł`, kroki `1. akcja => oczekiwany wynik`), podpięte jako tested-by, w obszarze i iteracji elementu; `plan` + `suite` (id albo nazwa) dodają je do zestawu | kryteria akceptacji zamienione w testy | `adolens test-create 123 --file przypadki.md --plan R1 --suite Logowanie` |
 | `ado_my_day` | od poprzedniego dnia roboczego (albo `since`): gdzie cię oznaczono (wszystkie projekty), twoje i obserwowane elementy zmienione przez innych, pull requesty czekające na twój przegląd | początek dnia | `adolens myday --since 3d` |
 | `ado_search` | jedno wyszukiwanie po work itemach (pełny tekst, z polem, w którym znaleziono), stronach wiki i kodzie (Git i TFVC, z nazwami obiektów X++), pogrupowane; niedostępna część (np. brak Code Search) jest zgłaszana, reszta odpowiada | „jak działa X”, „gdzie jest Y” | `adolens search "limit kredytowy" --scope work;wiki` |
 | `ado_file` | plik po ścieżce TFVC, ścieżce Git + repo albo samej nazwie (szukanej przez Code Search); obiekty X++ jako lista metod, `part` pokazuje jedną metodę; `history=true`: kto zmieniał, kiedy, w którym pull requeście i dla jakich work itemów | „co robi ten obiekt”, „dlaczego tak działa” | `adolens file CreditCheck.xml --part validate`, `adolens file CreditCheck.xml --history` |
@@ -250,6 +265,8 @@ pack.ps1                    paczka wydania (ZIP + SHA-256)
 release.ps1 release-notes.ps1   wydania (zob. niżej); .github\ workflowy CI i Release, formularze zgłoszeń
 install.ps1 uninstall.ps1   instalacja; get.ps1 to pobranie i instalacja jedną linijką
 skills\                     skille dla Claude'a (po-verify, po-story, po-sprint, po-explain)
+packaging\inno\             instalator z kreatorem (skrypt Inno Setup, budowany przez pack.ps1, gdy jest ISCC.exe)
+packaging\mcpb\             manifest rozszerzenia Claude Desktop
 docs\PLAN.md                plan rozwoju
 build\  dist\               wyniki (nie trzymaj tu niczego własnego)
 ```
@@ -296,6 +313,7 @@ i publikuje go razem z `.sha256` i opisem z `CHANGELOG.md` (podgląd: `.\release
 | `SetupFlowTests.cs` | wersje i paczki wydań do aktualizacji, tabela zespołu na wiki (w obie strony, strony poprawiane ręcznie), wykrywanie przepływu z release'ów i gałęzi, mapa zespołu na wiki z wersją, mapa lokalna ponad zespołową |
 | `PrPipelineTests.cs` | listy i szczegóły PR-ów (głosy, kontrole, tylko wątki ludzi), akcje na PR (głos, komentarz na linii ze wzmianką, tworzenie), błędy nieudanego buildu i linie logu, uruchamianie pipeline'ów po nazwie, zapis środowisk, odgadywanie przepływu |
 | `TraceTests.cs` | diff linii (Myers, bloki unified), X++ per metoda ze źródłami danych formularza, nazwy obiektów ze ścieżek AOT, `ado_trace` w TFVC i Gicie (wdrożone etapy TAK / JESZCZE NIE, etykiety środowisk, scalone gałęzie, usunięte buildy, kryteria zmienione po rozpoczęciu prac), listy i diffy plików w `ado_changes` |
+| `TestCaseTests.cs` | przypadki testowe z markdownu i XML kroków, tworzenie i dodawanie do zestawu, stan testów elementów z wynikami, szablony zespołu przy tworzeniu, reguły procesu w `ado_fields` |
 | `KnowledgeTests.cs` | wyszukiwanie po work itemach, wiki i kodzie (brak jednej części nie psuje reszty), pliki po nazwie z metodami X++, historia pliku z pull requestami i work itemami, cofanie (wartości wracają, pola zmienione przez innych zostają, komentarze usuwane), higiena backlogu, notatki wydania, przepisy (zapis, podgląd, uruchomienie) |
 | `WikiTests.cs` | drzewo stron, strona z wersją, zastąpienie tylko z aktualną wersją (412 nigdy nie nadpisuje), dopisywanie, tworzenie na istniejącej stronie, fragmenty wyszukiwania |
 | `WorkItemTests.cs` | odpowiedzi o work itemach, pola wymagane i dozwolone wartości przed zapisem, przejścia stanów, podgląd i potwierdzanie zmian wsadowych, wzmianki, linki, zapytania, HTML ⇄ markdown, PAT nigdy do innych hostów |

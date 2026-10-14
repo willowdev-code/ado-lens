@@ -9,6 +9,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public const int RegistrationNeeded = 3;
     public const int NotConfigured = 4;
     public const int ConnectionFailed = 5;
+    /// <summary>login without a project when the organization has several (unattended: the installer asks).</summary>
+    public const int ProjectNeeded = 4;
     public const int ClaudeRunning = 7;
 
     public static void PrintUsage() => Console.WriteLine("""
@@ -113,7 +115,12 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         var conn = settings.Connections.TryGetValue(name, out var stored) ? stored : new Connection();
         conn.Organization = org;
 
-        var pat = cl.Flag("pat-stdin") || Console.IsInputRedirected
+        // --pat-env NAME: the installer passes the PAT in an environment variable (never on a command line) and nobody
+        // can answer questions, so nothing is asked.
+        var patEnv = cl.Opt("pat-env");
+        var unattended = patEnv is not null;
+        var pat = patEnv is not null ? Environment.GetEnvironmentVariable(patEnv)
+            : cl.Flag("pat-stdin") || Console.IsInputRedirected
             ? Console.In.ReadLine()
             : ReadSecret($"PAT for {org} (create it at https://dev.azure.com/{org}/_usersSettings/tokens; input hidden): ");
         pat = pat?.Trim();
@@ -137,8 +144,15 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             return ConnectionFailed;
         }
 
-        var project = cl.Opt("project") ?? urlProject ?? conn.Project;
-        if (project is null && projects.Count > 0 && !Console.IsInputRedirected)
+        var project = NullIfEmpty(cl.Opt("project")) ?? urlProject ?? conn.Project;
+        if (project is null && projects.Count == 1) project = projects[0];
+        else if (project is null && projects.Count > 1 && unattended)
+        {
+            Console.Error.WriteLine($"which project? {string.Join(", ", projects.Take(30))}{(projects.Count > 30 ? ", …" : "")}");
+            Console.Error.WriteLine("nothing was saved");
+            return ProjectNeeded;
+        }
+        else if (project is null && projects.Count > 0 && !Console.IsInputRedirected)
             project = PickProject(projects);
         if (project is not null && projects.Count > 0 && !projects.Contains(project, StringComparer.OrdinalIgnoreCase))
             Console.WriteLine($"note: project '{project}' is not visible with this PAT");
@@ -406,7 +420,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         {
             Title = cl.Opt("title"), Description = cl.Opt("description"), AcceptanceCriteria = cl.Opt("criteria"), AssignedTo = cl.Opt("assign"),
             Parent = int.TryParse(cl.Opt("parent"), out var p) ? p : null, Iteration = cl.Opt("iteration"), Area = cl.Opt("area"),
-            Tags = cl.Opt("tags"), State = cl.Opt("state"), Fields = FieldOptions(),
+            Tags = cl.Opt("tags"), State = cl.Opt("state"), Fields = FieldOptions(), Template = cl.Opt("template"),
         };
         Print(await WorkQueries.CreateAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), type, r));
         return 0;
@@ -632,6 +646,22 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens file <path or file name> [--repo <r>] [--version <v>] [--part <method>] [--history]"); return 2; }
         Print(await Knowledge.FileAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), string.Join(' ', cl.Positional), cl.Opt("repo"), cl.Opt("version"),
             cl.Opt("part"), cl.Flag("history"), Int(cl.Opt("top")) ?? 15, cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> TestsAsync()
+    {
+        var ids = cl.Positional.Count > 0 && cl.Positional.All(p => WorkQueries.ParseIds(p).Count > 0) ? string.Join(';', cl.Positional) : null;
+        Print(await TestCases.StatusAsync(NewLens(), cl.Opt("connection"), ids, ids is null ? cl.Positional.FirstOrDefault() : null, cl.Opt("team"), cl.Opt("detail")));
+        return 0;
+    }
+
+    /// <summary>test-create &lt;id&gt; --file cases.md (or the markdown from standard input).</summary>
+    public async Task<int> TestCreateAsync()
+    {
+        if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens test-create <work item id> --file <cases.md> [--plan <p> --suite <s>]"); return 2; }
+        var cases = cl.Opt("file") is { } file ? await File.ReadAllTextAsync(file) : await Console.In.ReadToEndAsync();
+        Print(await TestCases.CreateAsync(NewLens(), cl.Opt("connection"), id, cases, cl.Opt("plan"), cl.Opt("suite")));
         return 0;
     }
 

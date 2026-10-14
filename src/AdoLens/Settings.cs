@@ -156,7 +156,8 @@ public sealed record Config(string Connection, string Organization, string Pat, 
                 $"no connection named '{name}' (known: {string.Join(", ", settings.Connections.Keys)}); add it with 'adolens login --connection {name}'");
         else if (NullIfEmpty(env(OrgVar)) is { } envOrg)
         {
-            conn = new Connection { Organization = Normalize(envOrg), Project = NullIfEmpty(env(ProjectVar)) };
+            // A pasted project link works too (the Claude Desktop extension asks for "organization or project link").
+            conn = new Connection { Organization = Normalize(envOrg), Project = NullIfEmpty(env(ProjectVar)) ?? Settings.ProjectFromUrl(envOrg) };
             name ??= conn.Organization.ToLowerInvariant();
         }
         else if (settings.Connections.Count > 1)

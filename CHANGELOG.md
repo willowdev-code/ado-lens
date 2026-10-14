@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0 — 2026-10-15
+
+Tests, templates, and two more ways to install.
+
+- `ado_tests` (tool set `test`): the Test Cases of work items or of a sprint's requirements and bugs, with the latest
+  outcome per plan, suite and configuration; items without tests; steps with `detail=full`.
+- `ado_test_create`: Test Cases from markdown (`## title`, `1. action => expected`), linked as tested-by, in the item's
+  area and iteration, optionally added to a suite; recorded for `ado_undo`.
+- `ado_create template=<name>`: a team's work item template fills the values not given; `ado_fields type=…` lists the
+  team's templates and the custom rules of the type in an inherited process.
+- Installer with a wizard (`ado-lens-setup-X.Y.Z.exe`, Inno Setup, per user, no administrator rights): Azure DevOps
+  link and PAT checked before installing (the PAT goes to Credential Manager over an environment variable, never on a
+  command line), mode, skills for Claude Code and ZIPs for Claude Desktop, registration (asks to quit Claude Desktop
+  when needed); updates skip the questions; uninstall from Settings → Apps.
+- Claude Desktop extension (`ado-lens-X.Y.Z.mcpb`): project link, PAT (kept by Claude Desktop in secure storage) and
+  mode in the extension settings.
+- `adolens login --pat-env <variable>` for unattended setups; without a project and with several in the organization it
+  lists them and stops (exit code 4) instead of asking.
+- Releases publish the installer and the extension next to the ZIP, each with its SHA-256; CI builds all three.
+- `ado_upgrade` of an installation made with the installer EXE updates with the new installer EXE (SHA-256 checked,
+  no questions), so the entry in Settings → Apps shows the new version.
+
 ## 0.4.0 — 2026-10-15
 
 How it works and why, and repeatable changes.

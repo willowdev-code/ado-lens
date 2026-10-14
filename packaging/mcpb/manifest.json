@@ -1,0 +1,66 @@
+{
+  "manifest_version": "0.2",
+  "name": "ado-lens",
+  "display_name": "ADO Lens for Azure DevOps",
+  "version": "{{VERSION}}",
+  "description": "Work items, sprints, boards, wiki, Git and TFVC of Azure DevOps for Claude - compact answers, few tokens.",
+  "long_description": "ADO Lens answers what a Product Owner or developer asks about Azure DevOps: work items with their acceptance criteria, sprints and boards, the wiki, whether a work item was done as asked and where it is deployed (DEV / UAT / PROD), how a feature works, pull requests and pipelines. Answers are compact text instead of raw JSON. This extension covers Claude Desktop only; the full installer also sets up Claude Code and the skills.",
+  "author": {
+    "name": "WillowDev",
+    "url": "https://github.com/willowdev-code"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/willowdev-code/ado-lens"
+  },
+  "homepage": "https://github.com/willowdev-code/ado-lens",
+  "documentation": "https://github.com/willowdev-code/ado-lens#readme",
+  "support": "https://github.com/willowdev-code/ado-lens/issues",
+  "license": "MIT",
+  "keywords": ["azure devops", "work items", "sprint", "wiki", "tfvc", "git", "pull requests"],
+  "server": {
+    "type": "binary",
+    "entry_point": "bin/adolens.exe",
+    "mcp_config": {
+      "command": "${__dirname}/bin/adolens.exe",
+      "args": ["mcp"],
+      "env": {
+        "AZURE_DEVOPS_ORG": "${user_config.organization}",
+        "AZURE_DEVOPS_PROJECT": "${user_config.project}",
+        "AZURE_DEVOPS_PAT": "${user_config.pat}",
+        "ADOLENS_MODE": "${user_config.mode}"
+      }
+    }
+  },
+  "compatibility": {
+    "platforms": ["win32"]
+  },
+  "user_config": {
+    "organization": {
+      "type": "string",
+      "title": "Organization or project link",
+      "description": "A link to your project from the browser (https://dev.azure.com/contoso/Sales) or the organization name. Leave empty when ADO Lens is already signed in on this computer (adolens login).",
+      "required": false
+    },
+    "project": {
+      "type": "string",
+      "title": "Project",
+      "description": "Default project; not needed when the link has it.",
+      "required": false
+    },
+    "pat": {
+      "type": "string",
+      "title": "Personal access token",
+      "description": "Azure DevOps: your picture > Personal access tokens > New Token (Work Items, Code, Wiki, Build, Release, Test Management, Project and Team, Identity). Claude Desktop keeps it in the system's secure storage.",
+      "sensitive": true,
+      "required": false
+    },
+    "mode": {
+      "type": "string",
+      "title": "Who uses it",
+      "description": "po (Product Owner, analyst), dev (developer) or full - only which tools Claude sees.",
+      "default": "po",
+      "required": false
+    }
+  }
+}

@@ -25,6 +25,9 @@ public static class McpTools
               steps, where. Task: one sentence. Comment: decision or question first.
             - "How does X work": ado_search, then read the sources; say what comes from code and what from documentation.
             """,
+        [Toolsets.Test] = """
+            - Test Cases from acceptance criteria: one case per criterion, short steps with an expected result each; show them before creating.
+            """,
         [Toolsets.Recipes] = """
             - A change the user repeats (close a sprint, new customer setup): offer to save it with ado_recipe.
             """,
@@ -400,14 +403,15 @@ public static class WorkTools
         [Description("Tags separated by ';'.")] string? tags = null,
         string? state = null,
         [Description("Other fields by name or reference name.")] Dictionary<string, string>? fields = null,
+        [Description("A team template (ado_fields type=… lists them) for the values not given.")] string? template = null,
         string? project = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_create", new { type, title, parent, iteration, area, tags, state, fields, project, connection },
+        => McpTools.Run("ado_create", new { type, title, parent, iteration, area, tags, state, fields, template, project, connection },
             () => WorkQueries.CreateAsync(lens, connection, project, type, new WriteRequest
             {
                 Title = title, Description = description, AcceptanceCriteria = acceptanceCriteria, AssignedTo = assignedTo,
-                Parent = parent, Iteration = iteration, Area = area, Tags = tags, State = state, Fields = fields,
+                Parent = parent, Iteration = iteration, Area = area, Tags = tags, State = state, Fields = fields, Template = template,
             }, ct));
 
     [McpServerTool(Name = "ado_update")]
@@ -467,6 +471,30 @@ public static class WorkTools
     public static Task<string> Undo(Lens lens, string? confirm = null, bool list = false, string? connection = null, CancellationToken ct = default)
         => McpTools.Run("ado_undo", new { confirm, list, connection },
             () => list ? Task.FromResult(Audit.List(lens, connection, 10)) : Audit.UndoAsync(lens, connection, confirm, ct));
+}
+
+[McpServerToolType, Toolset(Toolsets.Test)]
+public static class TestTools
+{
+    [McpServerTool(Name = "ado_tests", ReadOnly = true, Idempotent = true)]
+    [Description("Tests of work items (ids) or of a sprint's items: their Test Cases with the latest outcome per plan and suite; items without tests.")]
+    public static Task<string> Tests(Lens lens,
+        [Description("Ids: 123;456; without ids: the sprint.")] string? ids = null,
+        [Description("current (default), previous, next or a name.")] string? sprint = null,
+        string? team = null,
+        [Description("full: every case with its steps.")] string? detail = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_tests", new { ids, sprint, team, detail, connection }, () => TestCases.StatusAsync(lens, connection, ids, sprint, team, detail, ct));
+
+    [McpServerTool(Name = "ado_test_create")]
+    [Description("Creates Test Cases for a work item, linked as tested-by: markdown with '## <case title>' and steps '1. action => expected'; plan and suite (id or name) add them to a suite.")]
+    public static Task<string> TestCreate(Lens lens, int id, string cases,
+        string? plan = null,
+        string? suite = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_test_create", new { id, plan, suite, connection }, () => TestCases.CreateAsync(lens, connection, id, cases, plan, suite, ct));
 }
 
 [McpServerToolType, Toolset(Toolsets.Recipes)]

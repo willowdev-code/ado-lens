@@ -41,9 +41,13 @@ jobs:
         shell: powershell
         run: .\release-notes.ps1 -Version $env:VERSION -OutFile dist\notes.md
 
+      - name: Inno Setup
+        shell: pwsh
+        run: ./.github/install-inno.ps1
+
       - name: Package
         shell: powershell
-        run: .\pack.ps1 -OutDir dist
+        run: .\pack.ps1 -OutDir dist -Installer
 
       # vX.Y.Z-beta.N is a test release: marked as pre-release, never "Latest".
       - name: Publish the release
@@ -52,4 +56,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $kind = if ($env:TAG -match '-') { '--prerelease' } else { '--latest' }
-          gh release create $env:TAG "dist/ado-lens-$env:VERSION.zip" "dist/ado-lens-$env:VERSION.zip.sha256" --title "ADO Lens $env:VERSION" --notes-file dist/notes.md --verify-tag $kind
+          $assets = "zip", "zip.sha256", "mcpb", "mcpb.sha256" | ForEach-Object { "dist/ado-lens-$env:VERSION.$_" }
+          $assets += "dist/ado-lens-setup-$env:VERSION.exe", "dist/ado-lens-setup-$env:VERSION.exe.sha256"
+          gh release create $env:TAG @assets --title "ADO Lens $env:VERSION" --notes-file dist/notes.md --verify-tag $kind

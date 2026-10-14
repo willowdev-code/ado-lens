@@ -143,7 +143,7 @@ public static class Queries
             answer = Formatting.Field(snap, field, refreshing);
         else if (type is not null)
             answer = snap.FindType(type) is { } t
-                ? Formatting.Type(snap, t, all, refreshing)
+                ? (Formatting.Type(snap, t, all, refreshing) + "\n" + await Templates.SectionAsync(session, snap, t, ct)).TrimEnd()
                 : $"no work item type '{type}' in {snap.Project.Name}; types: " +
                   string.Join(", ", snap.Types.Where(x => !x.Disabled && x.Level != Levels.Hidden).Select(x => x.Name).Order(StringComparer.OrdinalIgnoreCase));
         else

@@ -52,7 +52,11 @@ public static class Updater
     static readonly TimeSpan CheckEvery = TimeSpan.FromHours(24);
 
     public sealed record ReleaseInfo(ReleaseVersion Version, string Tag, string PageUrl, string? AssetName, string? AssetUrl, string? Sha256,
-        string Notes, bool Prerelease = false);
+        string Notes, bool Prerelease = false)
+    {
+        /// <summary>The installer EXE of the release (Inno Setup), when it has one.</summary>
+        public (string Name, string Url, string? Sha256)? Setup { get; init; }
+    }
 
     /// <summary>The running version, test-release suffix included; "+commit" build metadata dropped.</summary>
     public static ReleaseVersion Current { get; } =
@@ -93,11 +97,18 @@ public static class Updater
             .FirstOrDefault(a => a["name"]?.GetValue<string>() is { } name
                                  && name.StartsWith("ado-lens-", StringComparison.OrdinalIgnoreCase)
                                  && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
-        var digest = asset?["digest"]?.GetValue<string>();
+        static string? Digest(JsonObject? a) =>
+            a?["digest"]?.GetValue<string>() is { } d && d.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ? d[7..].ToLowerInvariant() : null;
+        var setup = (n["assets"] as JsonArray)?.OfType<JsonObject>()
+            .FirstOrDefault(a => a["name"]?.GetValue<string>() is { } name
+                                 && name.StartsWith("ado-lens-setup-", StringComparison.OrdinalIgnoreCase)
+                                 && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
         return new ReleaseInfo(version, tag!, n["html_url"]?.GetValue<string>() ?? $"https://github.com/{Repository}/releases",
-            asset?["name"]?.GetValue<string>(), asset?["browser_download_url"]?.GetValue<string>(),
-            digest != null && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ? digest[7..].ToLowerInvariant() : null,
-            n["body"]?.GetValue<string>() ?? "", n["prerelease"]?.GetValue<bool>() ?? version.IsPrerelease);
+            asset?["name"]?.GetValue<string>(), asset?["browser_download_url"]?.GetValue<string>(), Digest(asset),
+            n["body"]?.GetValue<string>() ?? "", n["prerelease"]?.GetValue<bool>() ?? version.IsPrerelease)
+        {
+            Setup = setup?["name"]?.GetValue<string>() is { } sn && setup["browser_download_url"]?.GetValue<string>() is { } su ? (sn, su, Digest(setup)) : null,
+        };
     }
 
     static string StateFile => Path.Combine(Settings.DataDir, "update.json");
@@ -211,12 +222,29 @@ public static class Updater
             return ($"{head}{(notes.Count > 0 ? "\nchanges:\n" + string.Join('\n', notes.Select(l => "  " + l.Trim())) : "")}" +
                     $"\ninstall it with: adolens upgrade --install{(pre ? " --pre" : "")} (settings and PATs are kept)", false);
         }
-        if (latest.AssetUrl == null || latest.AssetName == null) return ($"release {latest.Tag} has no ado-lens-*.zip package - download it from {latest.PageUrl}", true);
-        if (latest.Sha256 == null) return ($"GitHub publishes no SHA-256 digest for {latest.AssetName} - not installing an unverified package", true);
-
         var work = Path.Combine(Path.GetTempPath(), $"ado-lens-update-{latest.Version}");
         if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
         Directory.CreateDirectory(work);
+        var target = InstallDir();
+
+        // Installed with the setup EXE (its uninstaller is in the folder): update with the new setup EXE, which keeps
+        // the entry in Settings -> Apps current. It skips its questions when a connection exists.
+        if (File.Exists(Path.Combine(target, "unins000.exe")) && latest.Setup is { Sha256: not null } setup)
+        {
+            var exe = Path.Combine(work, setup.Name);
+            await using (var src = await http.GetStreamAsync(setup.Url, ct))
+            await using (var dst = File.Create(exe))
+                await src.CopyToAsync(dst, ct);
+            var hash = Sha256Of(exe);
+            if (!hash.Equals(setup.Sha256, StringComparison.OrdinalIgnoreCase))
+                return ($"SHA-256 mismatch for {setup.Name}: expected {setup.Sha256}, got {hash} - not installing", true);
+            Process.Start(new ProcessStartInfo { FileName = exe, Arguments = "/SILENT /SUPPRESSMSGBOXES /NORESTART", UseShellExecute = true });
+            return ($"{head}\nSHA-256 verified ({hash[..12]}…). The installer runs in its own window; " +
+                    "Claude may stay open - new sessions use the new version, Claude Desktop needs a restart for running ones.", false);
+        }
+
+        if (latest.AssetUrl == null || latest.AssetName == null) return ($"release {latest.Tag} has no ado-lens-*.zip package - download it from {latest.PageUrl}", true);
+        if (latest.Sha256 == null) return ($"GitHub publishes no SHA-256 digest for {latest.AssetName} - not installing an unverified package", true);
         var zip = Path.Combine(work, latest.AssetName);
         await using (var src = await http.GetStreamAsync(latest.AssetUrl, ct))
         await using (var dst = File.Create(zip))
@@ -232,7 +260,6 @@ public static class Updater
         if (script == null) return ("the package has no install.ps1", true);
 
         // The installer replaces this program's own files, so it runs in its own window after this process ends.
-        var target = InstallDir();
         Process.Start(new ProcessStartInfo
         {
             FileName = "powershell.exe",
