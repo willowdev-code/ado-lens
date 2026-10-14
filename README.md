@@ -13,8 +13,8 @@ not thousands. Changes between versions: [CHANGELOG.md](CHANGELOG.md). The road 
 Azure DevOps is a trademark of Microsoft.
 
 > Status: **0.x — in development.** Connections, Claude registration, the local work item structure, work items,
-> sprints, boards, backlogs, the wiki, tracing work to code and deployments, pull requests and pipelines work; the
-> installer follows the plan.
+> sprints, boards, backlogs, the wiki, tracing work to code and deployments, pull requests, pipelines, the one-line
+> install with its setup and updates work.
 
 ## What it does differently
 
@@ -31,7 +31,17 @@ Azure DevOps is a trademark of Microsoft.
 
 ## Installing
 
-The install package is not part of the repository (`dist\` is excluded by `.gitignore`). There are two ways:
+**The easy way — one line.** In a regular PowerShell window (not as administrator) paste:
+
+```powershell
+irm https://raw.githubusercontent.com/willowdev-code/ado-lens/main/get.ps1 | iex
+```
+
+It downloads the latest release, checks its SHA-256 against the digest GitHub publishes and starts the installer. A file
+downloaded this way is not marked as coming from the internet, so Windows SmartScreen does not stop the (not yet
+signed) program. Nothing else is needed on the machine, not even .NET.
+
+The install package is not part of the repository (`dist\` is excluded by `.gitignore`). Other ways:
 
 **A. From a release package** — nothing needs to be installed on the target machine, not even .NET.
 
@@ -51,10 +61,20 @@ cd C:\Dev\ado-lens
 powershell -ExecutionPolicy Bypass -File .\dist\ado-lens\install.ps1
 ```
 
-The installer copies the program to `%LOCALAPPDATA%\Programs\ADO Lens` (no administrator rights), asks for the Azure
-DevOps address (paste any link from the browser — the organization and project are taken from it), the PAT (hidden
-input) and the default project (picked from a list), and registers the `ado-lens` server in Claude Desktop and Claude
-Code. When the registration has to change while Claude Desktop runs, it asks you to quit Claude, waits and starts it
+The installer, in six steps with a default for every question (Enter accepts it):
+
+1. checks whether the Claude registration has to change,
+2. copies the program to `%LOCALAPPDATA%\Programs\ADO Lens` (no administrator rights),
+3. asks for the Azure DevOps address (paste any link from the browser — organization and project are taken from it),
+   the PAT (hidden input) and the default project (picked from a list),
+4. asks who uses it (Product Owner / developer / everything) and where code goes: it finds the release stages and
+   branches, suggests names (dev → DEV, staging → UAT, master → PROD) and saves them for you or — when you agree — for
+   the whole team on the project's wiki page "ADO Lens" (`adolens setup` asks the same later),
+5. installs the skills: into `%USERPROFILE%\.claude\skills` for Claude Code, and as ZIPs in
+   `skills-for-claude-desktop` to upload in Claude Desktop (Settings → Capabilities → Skills),
+6. registers the `ado-lens` server in Claude Desktop and Claude Code.
+
+Questions are in Polish on a Polish Windows, in English otherwise. When the registration has to change while Claude Desktop runs, it asks you to quit Claude, waits and starts it
 again. Running `install.ps1` from a newer package updates the program and keeps settings, PATs and metadata; an
 `adolens.exe` used by an open session is renamed to `*.old`, so that session keeps working.
 
@@ -66,8 +86,13 @@ Useful parameters:
 .\install.ps1 -DesktopOnly | -CodeOnly | -NoRegister | -NoRestart
 ```
 
-Uninstall: `uninstall.ps1` in the installation folder (removes the Claude registrations of this installation, asks
-about the stored PATs and the local data).
+**Updating.** The server checks GitHub at most once a day, in the background. When a newer version exists, Claude
+mentions it once per session; say "update ADO Lens" and `ado_upgrade` downloads it, checks its SHA-256 and runs its
+installer in its own window. From a terminal: `adolens upgrade` shows what is new, `adolens upgrade --install` installs
+it (`--pre` includes test releases). Settings, PATs and metadata are kept; Claude may stay open.
+
+Uninstall: `uninstall.ps1` in the installation folder (removes the Claude registrations and skills of this installation,
+asks about the stored PATs and the local data).
 
 ### The PAT
 
@@ -109,9 +134,16 @@ adolens config --connection fabrikam --env "Main-Deploy/Stage 1=UAT + SCM"
 `ado_trace` then lists the stages in that order with their labels ("UAT (sbx03): YES") and, for Git, also checks whether
 the work is merged into each mapped branch even when no release pipeline deploys it.
 
-Nobody has to set this up in advance: when the map is missing, `ado_trace` ends with a short SETUP note listing the flow
-it found (branches and release stages, with a first guess such as dev → DEV, staging → UAT, master → PROD). Claude asks
-the user once how they call these environments and saves the answer with `ado_settings` — for good.
+**One map for the whole team.** The map can live in Azure DevOps itself: a page "ADO Lens" in the project wiki with a
+two-column table (branch or release stage | environment), in flow order. Everyone using ADO Lens on the project reads
+it, so Product Owners configure nothing; a local map (`--env`) overrides it for one person. The installer, `adolens
+setup` and `ado_settings scope=team` write it (with the page version, so a parallel edit is not lost), and people can
+edit the table by hand.
+
+Nobody has to set this up in advance: when no map exists, `ado_trace` ends with a short SETUP note listing the flow it
+found (release stages deployed in the last half year and long-lived branches, with a first guess such as dev → DEV,
+staging → UAT, master → PROD). Claude asks the user once how they call these environments and saves the answer with
+`ado_settings` — for good, for the user or (after they agree) for the team.
 
 Settings live in `%LOCALAPPDATA%\ado-lens\adolens.json` (no secrets) — they can be edited by hand too.
 
@@ -122,7 +154,7 @@ never a permission.
 
 | Tool set | Tools | po | dev | full |
 |---|---|:-:|:-:|:-:|
-| `core` | `ado_status`, `ado_settings`, `ado_fields` | ✓ | ✓ | ✓ |
+| `core` | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_fields` | ✓ | ✓ | ✓ |
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
 | `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
 | `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
@@ -139,7 +171,8 @@ What each MCP tool answers, when Claude should reach for it, and the CLI command
 | Tool | Answers | When | CLI |
 |---|---|---|---|
 | `ado_status` | version, connection, signed-in user, PAT source, metadata age | checking the setup | `adolens status` |
-| `ado_settings` | the connection's settings; with `environments` saves for good what branches and release stages mean, in flow order (`dev=DEV (sbx01); staging=UAT (sbx03); master=PROD`) | `ado_trace` asks for it once (SETUP), the user answers in words | `adolens config --connection c --env dev=DEV` |
+| `ado_settings` | the connection's settings and the environment flow in use (local, or the team's wiki page) or detected; with `environments` saves for good what branches and release stages mean, in flow order (`dev=DEV (sbx01); staging=UAT (sbx03); master=PROD`); `scope=team` writes the wiki page | `ado_trace` asks for it once (SETUP), the user answers in words | `adolens setup` |
+| `ado_upgrade` | is there a newer ADO Lens; `install=true` downloads it (SHA-256 checked) and starts its installer | when the user asks to update | `adolens upgrade --install` |
 | `ado_fields` | types by backlog level; for a type: states, transitions, fields, required flags, allowed values; for a field: where it is used and its values; structure changes over time | before writing fields or WIQL; "which fields does a Bug have", "what changed in our process this month" | `adolens fields --type Bug`, `adolens fields --field Severity`, `adolens fields --changes 30d` |
 | `ado_work_item` | one or more items: state, people, paths, filled fields, description and acceptance criteria as markdown, parent / children / related, linked changesets, commits, PRs and builds; with `include`: comments, history | "what is #123 about", "who changed the criteria and when" | `adolens item 123 456 --include comments,history --detail summary` |
 | `ado_query` | items found by WIQL (with `@Me`, `@CurrentIteration`…) or a saved query, one line each | lists, filters, "open bugs of the sprint" | `adolens query --wiql "SELECT …"`, `adolens query --query "Shared Queries/Open bugs"` |
@@ -188,7 +221,7 @@ Estimates are characters / 4; Claude's tokenizer differs a little (Polish text r
 
 ```
 adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday|wiki|wiki-write|trace|changes|pr|pipeline …
-adolens login|logout|connections|config|status|register|unregister|refresh|stats|api|mcp|version
+adolens setup|login|logout|connections|config|status|register|unregister|refresh|upgrade|stats|api|mcp|version
 ```
 
 `adolens help` lists all options. `adolens api <path>` prints the raw JSON of a GET (for development).
@@ -206,7 +239,8 @@ tests\AdoLens.Tests\        xUnit tests; Azure DevOps is simulated (FakeAdo), no
 build.ps1                   compile; -Deploy replaces the installed binaries, -Test runs the tests first
 pack.ps1                    release package (ZIP + SHA-256)
 release.ps1 release-notes.ps1   releases (see below); .github\ CI and Release workflows, issue forms
-install.ps1 uninstall.ps1   installation
+install.ps1 uninstall.ps1   installation; get.ps1 is the one-line download and install
+skills\                     skills for Claude (po-verify, po-story, po-sprint)
 docs\PLAN.md                road map
 build\  dist\               output (keep nothing of your own there)
 ```
@@ -250,6 +284,7 @@ regular expression per line, `!word` for allowed words. Without a list the relea
 | `SetupTests.cs` | settings, connections and PAT order (Credential Manager first), command line, Claude configuration edits, Credential Manager, HTTP retries and errors, tool definition budget per mode |
 | `MetadataTests.cs` | fetching the structure (levels, inherited process name, bugs on the requirement backlog), change history, compact `ado_fields` answers |
 | `BoardTests.cs` | sprint progress, capacity left with days off, attention list, picking sprints, ended sprints, board columns and WIP, moving cards with the state mapping, backlog order and reordering, my day |
+| `SetupFlowTests.cs` | release versions and packages for updates, the team's wiki table (round trip, hand-edited pages), detecting the flow from releases and branches, the team map on the wiki with its version, local map over the team's |
 | `PrPipelineTests.cs` | PR lists and details (votes, checks, human threads only), PR actions (vote, comment on a line with a mention, create), failed build errors and log lines, running pipelines by name, saving environments, guessing the flow |
 | `TraceTests.cs` | line diff (Myers, unified hunks), X++ per method with form data sources, object names from AOT paths, `ado_trace` across TFVC and Git (deployed stages YES / NOT YET, environment labels, merged branches, deleted builds, criteria changed after coding), `ado_changes` lists and file diffs |
 | `WikiTests.cs` | page tree, page with version, replace only with the current version (412 never overwrites), append, create over an existing page, search snippets |
@@ -269,7 +304,9 @@ issues or commits.
 | pull requests | `PullRequests.cs` |
 | builds and pipeline runs | `Pipelines.cs` |
 | changesets, commits, PRs, builds, deployments | `Code.cs`; tracing in `Trace.cs`; diffs and X++ per method in `Diff.cs` |
-| skills for Claude | `skills\<name>\SKILL.md` |
+| skills for Claude | `skills\<name>\SKILL.md` (installed by `install.ps1`) |
+| updates | `Updater.cs`; one-line install `get.ps1` |
+| team settings on the wiki, environment flow | `TeamSettings.cs`, `EnvironmentFlow.cs`; interactive setup in `Cli.cs` (`SetupAsync`), texts in `Ui.cs` |
 | work item structure (types, fields, states) | `MetadataService.cs` (fetch), `MetaStore.cs` (SQLite; raise `SchemaVersion` to refetch), `Metadata.cs` (change detection) |
 | rich text | `Html.cs` |
 | people | `Identities.cs` |

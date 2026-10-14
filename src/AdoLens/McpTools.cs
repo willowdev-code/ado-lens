@@ -50,6 +50,12 @@ public static class McpTools
     /// <summary>Set at server start from the settings: end every answer with "[~N tokens]".</summary>
     public static bool ShowTokens { get; set; }
 
+    /// <summary>An available update is mentioned once per session, after the first answer.</summary>
+    static int _updateNoticed;
+
+    static string WithNotice(string answer) =>
+        Updater.PendingNotice() is { } notice && Interlocked.Exchange(ref _updateNoticed, 1) == 0 ? answer + "\nnote: " + notice : answer;
+
     internal static async Task<string> Run(string tool, object args, Func<Task<string>> f)
     {
         var sw = Stopwatch.StartNew();
@@ -58,7 +64,8 @@ public static class McpTools
         try
         {
             result = await f();
-            return ShowTokens ? result + "\n" + Usage.Footer(result) : result;
+            var shown = WithNotice(result);
+            return ShowTokens ? shown + "\n" + Usage.Footer(shown) : shown;
         }
         catch (Exception ex) when (ex is AdoApiException or InvalidOperationException or ArgumentException)
         {
@@ -94,9 +101,23 @@ public static class CoreTools
         => McpTools.Run("ado_status", new { connection }, () => Queries.StatusAsync(lens, connection, offline: false, ct));
 
     [McpServerTool(Name = "ado_settings")]
-    [Description("Shows the connection's settings; with environments saves for good what branches and release stages mean, in flow order: \"dev=DEV (sbx01); staging=UAT (sbx03); master=PROD\" (a stage: \"Release/Stage=UAT + SCM\").")]
-    public static Task<string> Settings(Lens lens, string? environments = null, string? connection = null, CancellationToken ct = default)
-        => McpTools.Run("ado_settings", new { environments, connection }, () => Task.FromResult(Queries.SettingsAnswer(lens, connection, environments)));
+    [Description("Shows the connection's settings and the environment flow (detected when not set); with environments saves for good what branches and release stages mean, in flow order: \"dev=DEV (sbx01); staging=UAT (sbx03); master=PROD\" (a stage: \"Release/Stage=UAT + SCM\"). scope=team saves it on the project's wiki page for everyone.")]
+    public static Task<string> Settings(Lens lens,
+        string? environments = null,
+        [Description("local (default) | team.")] string? scope = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_settings", new { environments, scope, project, connection }, () => Queries.SettingsAsync(lens, connection, project, environments, scope, ct));
+
+    [McpServerTool(Name = "ado_upgrade")]
+    [Description("Checks for a newer ADO Lens; install=true downloads it (SHA-256 checked) and starts its installer in its own window. Only when the user asks.")]
+    public static Task<string> Upgrade(Lens lens, bool install = false, CancellationToken ct = default)
+        => McpTools.Run("ado_upgrade", new { install }, async () =>
+        {
+            var (text, failed) = await Updater.RunAsync(install, pre: false, ct);
+            return failed ? throw new InvalidOperationException(text) : text;
+        });
 
     [McpServerTool(Name = "ado_fields", ReadOnly = true, Idempotent = true)]
     [Description("Work item structure of the project: types by backlog level; with type: states, transitions, fields, required flags, allowed values; with field: one field across types; with changes: what changed in the structure.")]
