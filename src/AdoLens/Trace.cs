@@ -114,7 +114,7 @@ public static partial class TraceQueries
                 catch (AdoApiException ex) { lock (failed) failed.Add($"{l.Kind.Split('/')[^1]} {l.Value.Split('/')[^1]}: {Formatting.Collapse(ex.Message, 100)}"); }
             });
         changes = Combine(changes.OrderBy(c => c.Change.Date).ToList());
-        var env = session.Config.Environments;
+        var (env, envSource) = await EnvironmentFlow.EffectiveAsync(session, project, ct);
         // A PR from a long-lived branch (a release branch into master, staging into master…) carries many items at once:
         // it is shown in one line and counts as evidence of where the work is, not as work of its own.
         var prTargets = changes.Where(x => x.Change.Kind == "pr").Select(x => x.Change.TargetBranch).Where(t => t is not null).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -290,7 +290,8 @@ public static partial class TraceQueries
                 sb.AppendLine("\nSETUP").AppendLine(
                     $"environment names are not set for connection {session.Config.Connection}. Found: {string.Join(", ", proposal.Select(p => p.Guess is null ? p.Key : $"{p.Key} (looks like {p.Guess})"))}. " +
                     "Ask the user what each is called and in which order code moves through them (e.g. DEV sbx01 -> UAT sbx03 -> PROD), " +
-                    "save it once with ado_settings environments=\"" + string.Join("; ", proposal.Select(p => $"{p.Key}={p.Guess ?? "<name>"}")) + "\", then answer with those names.");
+                    "save it once with ado_settings environments=\"" + string.Join("; ", proposal.Select(p => $"{p.Key}={p.Guess ?? "<name>"}")) + "\" " +
+                    "(scope=team puts it on the wiki page for the whole team, after the user agrees), then answer with those names.");
         }
         if (changes.Count > 0 && where.Count > 0 && !anyIn)
             signals.Add("not deployed to any stage yet");

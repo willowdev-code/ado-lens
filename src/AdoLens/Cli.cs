@@ -54,6 +54,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           api <path>      raw JSON of a GET request (development)
           stats           MCP calls of the last days: answer sizes, times, empty answers   --days 7 --top 10
                             --live: show every call as Claude makes it (tool, tokens, ms), until Ctrl+C
+          setup           interactive: who uses it (mode) and where code goes (environments; for you or the team wiki)
+          upgrade         is there a newer ADO Lens   --install (download, check SHA-256, run its installer)  --pre
           version         print the version
 
         --tokens after any command prints the estimated size of the answer ("[~230 tokens]");
@@ -457,6 +459,107 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public async Task<int> MyDayAsync()
     {
         Print(await BoardQueries.MyDayAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("since")));
+        return 0;
+    }
+
+    public async Task<int> UpdateCommandAsync()
+    {
+        var (text, failed) = await Updater.RunAsync(cl.Flag("install"), cl.Flag("pre"));
+        (failed ? Console.Error : Console.Out).WriteLine(text);
+        return failed ? 1 : 0;
+    }
+
+    /// <summary>
+    /// The interactive setup after the connection: who uses it (mode) and where code goes (environments), saved for this
+    /// user or for the whole team on the wiki. Every question has a default, Enter accepts it.
+    /// </summary>
+    public async Task<int> SetupAsync()
+    {
+        var path = SettingsPath;
+        var settings = Settings.Load(path);
+        if (settings.Connections.Count == 0)
+        {
+            Console.WriteLine(Ui.T("No Azure DevOps connection yet - let's add one.", "Nie ma jeszcze połączenia z Azure DevOps - dodajmy je."));
+            var login = await LoginAsync();
+            if (login != 0) return login;
+            settings = Settings.Load(path);
+        }
+        var interactive = !Console.IsInputRedirected;
+
+        // 1. Who uses it.
+        if (cl.Opt("mode") is { } m) settings.Mode = Settings.NormalizeMode(m);
+        else if (interactive)
+        {
+            Console.WriteLine();
+            Console.WriteLine(Ui.T("Who will use ADO Lens here?", "Kto będzie tu używał ADO Lens?"));
+            Console.WriteLine(Ui.T("  1. Product Owner - work items, sprints, board, wiki, checking delivered work",
+                                   "  1. Product Owner - work itemy, sprinty, tablica, wiki, sprawdzanie wykonanej pracy"));
+            Console.WriteLine(Ui.T("  2. Developer - work items, wiki, code, pull requests, pipelines",
+                                   "  2. Programista - work itemy, wiki, kod, pull requesty, pipeline'y"));
+            Console.WriteLine(Ui.T("  3. Everything", "  3. Wszystko"));
+            var current = settings.Mode switch { "dev" => "2", "full" => "3", _ => "1" };
+            var answer = Prompt(Ui.T($"Choice [{current}]: ", $"Wybór [{current}]: "));
+            settings.Mode = (string.IsNullOrWhiteSpace(answer) ? current : answer.Trim()) switch { "2" => "dev", "3" => "full", _ => "po" };
+        }
+        settings.Save(path);
+
+        // 2. Where code goes, per connection.
+        var lens = NewLens();
+        foreach (var name in settings.Connections.Keys.ToList())
+        {
+            Session session;
+            try { session = lens.For(name); }
+            catch (InvalidOperationException ex) { Console.WriteLine($"{name}: {ex.Message}"); continue; }
+            if (session.Config.Project is not { } project) continue;
+            Console.WriteLine();
+            var (effective, source) = await EnvironmentFlow.EffectiveAsync(session, project, default);
+            if (effective.Count > 0)
+            {
+                Console.WriteLine(Ui.T($"{name} / {project}: code goes {string.Join(" -> ", effective.Values)} ({source}).",
+                                       $"{name} / {project}: kod trafia kolejno na {string.Join(" -> ", effective.Values)} ({source})."));
+                continue;
+            }
+            var detected = await EnvironmentFlow.DetectAsync(session, project, default);
+            if (detected.Count == 0 || !interactive)
+            {
+                Console.WriteLine(Ui.T($"{name} / {project}: environments not set - Claude will ask about them when needed.",
+                                       $"{name} / {project}: środowiska nieustawione - Claude zapyta o nie, gdy będą potrzebne."));
+                continue;
+            }
+            Console.WriteLine(Ui.T($"{name} / {project}: where does code go before it reaches production?",
+                                   $"{name} / {project}: przez jakie środowiska przechodzi kod, zanim trafi na produkcję?"));
+            Console.WriteLine(Ui.T("Give each a name people use (e.g. UAT (sbx03)); Enter keeps the suggestion, '-' skips it.",
+                                   "Nadaj każdemu nazwę, której używacie (np. UAT (sbx03)); Enter zostawia propozycję, '-' pomija."));
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, guess) in detected)
+            {
+                var label = Prompt($"  {key}{(guess is null ? "" : $" [{guess}]")}: ");
+                if (label == "-") continue;
+                var value = string.IsNullOrWhiteSpace(label) ? guess : label.Trim();
+                if (value is not null) map[key] = value;
+            }
+            if (map.Count == 0) continue;
+            var forTeam = (Prompt(Ui.T("Save for the whole team on the project's wiki page \"ADO Lens\"? [y/N]: ",
+                                       "Zapisać dla całego zespołu na stronie wiki projektu \"ADO Lens\"? [t/N]: ")) ?? "")
+                .Trim().ToLowerInvariant() is "y" or "yes" or "t" or "tak";
+            if (forTeam)
+            {
+                try
+                {
+                    var url = await session.Team.SaveAsync(project, map, default);
+                    Console.WriteLine(Ui.T($"saved on the wiki: {url}", $"zapisane na wiki: {url}"));
+                    continue;
+                }
+                catch (AdoApiException ex)
+                {
+                    Console.WriteLine(Ui.T($"could not write the wiki page ({ex.Message}) - saving for you only",
+                                           $"nie udało się zapisać strony wiki ({ex.Message}) - zapisuję tylko dla ciebie"));
+                }
+            }
+            settings.Connections[name].Environments = map;
+            settings.Save(path);
+            Console.WriteLine(Ui.T("saved in your settings", "zapisane w twoich ustawieniach"));
+        }
         return 0;
     }
 

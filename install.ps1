@@ -53,7 +53,7 @@ $scope = @()
 if ($DesktopOnly) { $scope += '--desktop' }
 if ($CodeOnly) { $scope += '--code' }
 
-Head '1/4 Claude registration'
+Head '1/6 Claude registration'
 $needsRegister = $false
 if ($NoRegister) {
     Say 'skipped (-NoRegister)'
@@ -72,7 +72,7 @@ if ($needsRegister -and (Get-ClaudeDesktop)) {
     Say 'Claude is closed'
 }
 
-Head "2/4 Copying files to $InstallDir"
+Head "2/6 Copying files to $InstallDir"
 $binDst = Join-Path $InstallDir 'bin'
 New-Item -ItemType Directory -Force -Path $binDst | Out-Null
 $target = [IO.Path]::GetFullPath($InstallDir).TrimEnd('\')
@@ -98,10 +98,11 @@ else {
     foreach ($f in 'install.ps1', 'uninstall.ps1', 'README.md', 'README.pl.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE') {
         if (Test-Path (Join-Path $src $f)) { Copy-Item (Join-Path $src $f) $InstallDir -Force }
     }
+    if (Test-Path (Join-Path $src 'skills')) { Copy-Item (Join-Path $src 'skills') $InstallDir -Recurse -Force }
 }
 Say "version: $(& $exe version)"
 
-Head '3/4 Azure DevOps connection'
+Head '3/6 Azure DevOps connection'
 & $exe status --quiet --offline
 $state = $LASTEXITCODE
 if ($state -eq 4 -or $Organization) {
@@ -113,9 +114,45 @@ if ($state -eq 4 -or $Organization) {
 else {
     Say 'already configured'
 }
-if ($Mode) { & $exe config --mode $Mode | Out-Null; Say "mode: $Mode" }
 
-Head '4/4 Registering in Claude'
+Head '4/6 Who uses it and where code goes'
+# Interactive questions with defaults (Enter accepts); skipped in a non-interactive run.
+$canAsk = [Environment]::UserInteractive -and $Host.Name -ne 'Default Host' -and
+    -not ([Environment]::GetCommandLineArgs() | Where-Object { $_ -like '-NonI*' })
+if ($canAsk) {
+    $setupArgs = @('setup')
+    if ($Mode) { $setupArgs += @('--mode', $Mode) }
+    & $exe @setupArgs
+}
+elseif ($Mode) { & $exe config --mode $Mode | Out-Null; Say "mode: $Mode" }
+else { Say 'skipped (not interactive) - later: "adolens setup", or Claude asks when needed' }
+
+Head '5/6 Skills for Claude'
+# Claude Code reads skills from %USERPROFILE%\.claude\skills; Claude Desktop takes each skill as a ZIP uploaded in
+# Settings -> Capabilities -> Skills, so the ZIPs are prepared next to the program.
+$skillSrc = Join-Path $InstallDir 'skills'
+if (Test-Path $skillSrc) {
+    $codeSkills = Join-Path $env:USERPROFILE '.claude\skills'
+    $desktopZips = Join-Path $InstallDir 'skills-for-claude-desktop'
+    New-Item -ItemType Directory -Force -Path $desktopZips | Out-Null
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    foreach ($skill in Get-ChildItem $skillSrc -Directory) {
+        if (Test-Path (Join-Path $env:USERPROFILE '.claude')) {
+            $dst = Join-Path $codeSkills $skill.Name
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+            Copy-Item (Join-Path $skill.FullName '*') $dst -Recurse -Force
+        }
+        $zip = Join-Path $desktopZips "$($skill.Name).zip"
+        if (Test-Path $zip) { Remove-Item $zip -Force }
+        [IO.Compression.ZipFile]::CreateFromDirectory($skill.FullName, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
+    }
+    $names = (Get-ChildItem $skillSrc -Directory | ForEach-Object Name) -join ', '
+    if (Test-Path (Join-Path $env:USERPROFILE '.claude')) { Say "Claude Code: $names installed in $codeSkills" }
+    Say "Claude Desktop: upload the ZIPs from $desktopZips in Settings -> Capabilities -> Skills"
+}
+else { Say 'no skills in this package' }
+
+Head '6/6 Registering in Claude'
 if ($needsRegister) {
     & $exe register @scope --force
     if ($LASTEXITCODE -ne 0) { throw 'Registration failed.' }

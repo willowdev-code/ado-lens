@@ -288,7 +288,7 @@ public class ToolBudgetTests
     {
         var names = RegisteredTools(new Settings { Mode = "po" }).Select(t => t.ProtocolTool.Name).Order().ToList();
         Assert.Equal(["ado_backlog", "ado_board", "ado_changes", "ado_comment", "ado_create", "ado_fields", "ado_link", "ado_my_day", "ado_query", "ado_settings",
-            "ado_sprint", "ado_status", "ado_trace", "ado_update", "ado_wiki", "ado_wiki_write", "ado_work_item"], names);
+            "ado_sprint", "ado_status", "ado_trace", "ado_update", "ado_upgrade", "ado_wiki", "ado_wiki_write", "ado_work_item"], names);
     }
 
     [Fact]

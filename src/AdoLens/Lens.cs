@@ -12,6 +12,8 @@ public sealed record Session(Config Config, AdoClient Client, MetadataService Me
 
     public Code Code { get; } = new(Client);
 
+    public TeamSettings Team { get; } = new(Client);
+
     /// <summary>The project given, else the connection's default project.</summary>
     public string Project(string? project) =>
         !string.IsNullOrWhiteSpace(project) ? project.Trim()

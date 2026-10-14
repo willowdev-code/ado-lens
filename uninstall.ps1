@@ -45,6 +45,15 @@ Get-CimInstance Win32_Process -Filter "Name='adolens.exe'" |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 500
 
+# Skills this installation put into Claude Code.
+$skillSrc = Join-Path $InstallDir 'skills'
+if (Test-Path $skillSrc) {
+    foreach ($skill in Get-ChildItem $skillSrc -Directory) {
+        $installed = Join-Path $env:USERPROFILE ".claude\skills\$($skill.Name)"
+        if (Test-Path (Join-Path $installed 'SKILL.md')) { Remove-Item $installed -Recurse -Force; Write-Host "  removed skill $($skill.Name) from Claude Code" }
+    }
+}
+
 if ($RemoveData -and (Test-Path $data)) { Remove-Item $data -Recurse -Force; Write-Host "  removed $data" }
 # This script lives in the folder it removes: delete everything else now, the folder itself after it exits.
 Get-ChildItem $InstallDir -Force | Where-Object { $_.FullName -ne $PSCommandPath } | Remove-Item -Recurse -Force

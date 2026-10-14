@@ -12,6 +12,8 @@ public sealed partial class CommandLine
     static readonly Dictionary<string, string[]> Known = new(StringComparer.OrdinalIgnoreCase)
     {
         ["mcp"] = [],
+        ["upgrade"] = ["install", "pre"],
+        ["setup"] = ["mode="],
         ["login"] = ["connection=", "org=", "project=", "team=", "pat-stdin", "default"],
         ["logout"] = ["connection="],
         ["connections"] = [],

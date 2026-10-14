@@ -13,8 +13,8 @@ a nie tysiące. Zmiany między wersjami: [CHANGELOG.md](CHANGELOG.md). Plan rozw
 Azure DevOps jest znakiem towarowym Microsoftu.
 
 > Stan: **0.x — w budowie.** Działają połączenia, rejestracja w Claude, lokalna struktura work itemów, work itemy,
-> sprinty, tablice, backlogi, wiki, śledzenie pracy do kodu i wdrożeń, pull requesty i pipeline'y; instalator —
-> według planu.
+> sprinty, tablice, backlogi, wiki, śledzenie pracy do kodu i wdrożeń, pull requesty, pipeline'y oraz instalacja
+> jedną linijką z kreatorem i aktualizacjami.
 
 ## Czym się różni
 
@@ -31,7 +31,17 @@ Azure DevOps jest znakiem towarowym Microsoftu.
 
 ## Instalacja
 
-Paczki instalacyjnej nie ma w repozytorium (`dist\` jest pomijany przez `.gitignore`). Są dwie drogi:
+**Najprościej — jedna linijka.** W zwykłym oknie PowerShella (nie jako administrator) wklej:
+
+```powershell
+irm https://raw.githubusercontent.com/willowdev-code/ado-lens/main/get.ps1 | iex
+```
+
+Polecenie pobiera najnowsze wydanie, porównuje jego SHA-256 z sumą publikowaną przez GitHuba i uruchamia instalator.
+Plik pobrany w ten sposób nie jest oznaczany jako „z internetu”, więc Windows SmartScreen nie zatrzymuje (jeszcze
+niepodpisanego) programu. Na komputerze nie trzeba niczego więcej, nawet .NET.
+
+Paczki instalacyjnej nie ma w repozytorium (`dist\` jest pomijany przez `.gitignore`). Inne drogi:
 
 **A. Z gotowej paczki** — na maszynie docelowej nie trzeba niczego instalować, nawet .NET.
 
@@ -51,9 +61,21 @@ cd C:\Dev\ado-lens
 powershell -ExecutionPolicy Bypass -File .\dist\ado-lens\install.ps1
 ```
 
-Instalator kopiuje program do `%LOCALAPPDATA%\Programs\ADO Lens` (bez uprawnień administratora), pyta o adres Azure
-DevOps (wklej dowolny link z przeglądarki — organizacja i projekt zostaną z niego wyciągnięte), PAT (wpisywany
-niewidocznie) i domyślny projekt (wybierany z listy), a potem rejestruje serwer `ado-lens` w Claude Desktop i Claude Code.
+Instalator działa w sześciu krokach, każde pytanie ma odpowiedź domyślną (Enter ją przyjmuje):
+
+1. sprawdza, czy rejestracja w Claude musi się zmienić,
+2. kopiuje program do `%LOCALAPPDATA%\Programs\ADO Lens` (bez uprawnień administratora),
+3. pyta o adres Azure DevOps (wklej dowolny link z przeglądarki — organizacja i projekt zostaną z niego wyciągnięte),
+   PAT (wpisywany niewidocznie) i domyślny projekt (wybierany z listy),
+4. pyta, kto będzie używał narzędzia (Product Owner / programista / wszystko) i przez jakie środowiska przechodzi kod:
+   znajduje etapy release'ów i gałęzie, proponuje nazwy (dev → DEV, staging → UAT, master → PROD) i zapisuje je dla
+   ciebie albo — gdy się zgodzisz — dla całego zespołu na stronie wiki projektu „ADO Lens” (później to samo robi
+   `adolens setup`),
+5. instaluje skille: do `%USERPROFILE%\.claude\skills` dla Claude Code oraz jako paczki ZIP w folderze
+   `skills-for-claude-desktop` do wgrania w Claude Desktop (Ustawienia → Capabilities → Skills),
+6. rejestruje serwer `ado-lens` w Claude Desktop i Claude Code.
+
+Na polskim Windowsie pytania są po polsku, w innym przypadku po angielsku.
 Jeśli rejestracja musi się zmienić, a Claude Desktop działa, instalator prosi o zamknięcie Claude'a, czeka i uruchamia go
 ponownie. Uruchomienie `install.ps1` z nowszej paczki aktualizuje program i zostawia ustawienia, PAT-y i metadane;
 `adolens.exe` używany przez otwartą sesję dostaje nazwę `*.old`, więc ta sesja działa dalej.
@@ -66,8 +88,13 @@ Przydatne parametry:
 .\install.ps1 -DesktopOnly | -CodeOnly | -NoRegister | -NoRestart
 ```
 
-Deinstalacja: `uninstall.ps1` w folderze instalacji (usuwa rejestracje tej instalacji w Claude, pyta o zapisane PAT-y
-i dane lokalne).
+**Aktualizacja.** Serwer sprawdza GitHuba najwyżej raz dziennie, w tle. Gdy jest nowsza wersja, Claude wspomni o niej raz
+w sesji; wystarczy powiedzieć „zaktualizuj ADO Lens”, a `ado_upgrade` pobierze ją, sprawdzi SHA-256 i uruchomi jej
+instalator w osobnym oknie. Z terminala: `adolens upgrade` pokazuje, co nowego, `adolens upgrade --install` instaluje
+(`--pre` uwzględnia wydania testowe). Ustawienia, PAT-y i metadane zostają; Claude może być otwarty.
+
+Deinstalacja: `uninstall.ps1` w folderze instalacji (usuwa rejestracje i skille tej instalacji w Claude, pyta o zapisane
+PAT-y i dane lokalne).
 
 ### PAT
 
@@ -109,9 +136,16 @@ adolens config --connection fabrikam --env "Main-Deploy/Stage 1=UAT + SCM"
 Wtedy `ado_trace` wypisuje etapy w tej kolejności z ich etykietami („UAT (sbx03): YES”), a dla Gita sprawdza też, czy
 praca jest scalona do każdej zmapowanej gałęzi, nawet gdy żaden pipeline jej nie wdraża.
 
-Nikt nie musi tego ustawiać zawczasu: gdy mapy brak, `ado_trace` kończy się krótką notą SETUP z wykrytym przepływem
-(gałęzie i etapy release'ów, z pierwszym przypuszczeniem typu dev → DEV, staging → UAT, master → PROD). Claude raz pyta
-użytkownika, jak nazywa te środowiska, i zapisuje odpowiedź przez `ado_settings` — na stałe.
+**Jedna mapa dla całego zespołu.** Mapa może mieszkać w samym Azure DevOps: strona „ADO Lens” w wiki projektu z tabelą
+w dwóch kolumnach (gałąź albo etap release'u | środowisko), w kolejności przepływu. Każdy, kto używa ADO Lens w projekcie,
+ją czyta, więc Product Ownerzy niczego nie konfigurują; lokalna mapa (`--env`) nadpisuje ją dla jednej osoby. Zapisują
+ją instalator, `adolens setup` i `ado_settings scope=team` (z wersją strony, żeby nie zgubić równoległej zmiany),
+a tabelę można też poprawić ręcznie.
+
+Nikt nie musi tego ustawiać zawczasu: gdy mapy nie ma, `ado_trace` kończy się krótką notą SETUP z wykrytym przepływem
+(etapy release'ów wdrażane w ostatnim półroczu i stałe gałęzie, z pierwszym przypuszczeniem typu dev → DEV,
+staging → UAT, master → PROD). Claude raz pyta użytkownika, jak nazywa te środowiska, i zapisuje odpowiedź przez
+`ado_settings` — na stałe, dla niego albo (po zgodzie) dla zespołu.
 
 Ustawienia siedzą w `%LOCALAPPDATA%\ado-lens\adolens.json` (bez sekretów) — można je też edytować ręcznie.
 
@@ -122,7 +156,7 @@ Nigdy nie jest uprawnieniem.
 
 | Zestaw | Narzędzia | po | dev | full |
 |---|---|:-:|:-:|:-:|
-| `core` | `ado_status`, `ado_settings`, `ado_fields` | ✓ | ✓ | ✓ |
+| `core` | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_fields` | ✓ | ✓ | ✓ |
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
 | `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
 | `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
@@ -139,7 +173,8 @@ Na co odpowiada każde narzędzie MCP, kiedy Claude powinien po nie sięgnąć i
 | Narzędzie | Odpowiada na | Kiedy | CLI |
 |---|---|---|---|
 | `ado_status` | wersja, połączenie, zalogowany użytkownik, źródło PAT, wiek metadanych | sprawdzenie konfiguracji | `adolens status` |
-| `ado_settings` | ustawienia połączenia; z `environments` zapisuje na stałe, co znaczą gałęzie i etapy release'ów, w kolejności przepływu (`dev=DEV (sbx01); staging=UAT (sbx03); master=PROD`) | `ado_trace` pyta o to raz (SETUP), użytkownik odpowiada słowami | `adolens config --connection c --env dev=DEV` |
+| `ado_settings` | ustawienia połączenia i używany przepływ środowisk (lokalny albo ze strony wiki zespołu) lub wykryty; z `environments` zapisuje na stałe, co znaczą gałęzie i etapy release'ów, w kolejności przepływu (`dev=DEV (sbx01); staging=UAT (sbx03); master=PROD`); `scope=team` zapisuje stronę wiki | `ado_trace` pyta o to raz (SETUP), użytkownik odpowiada słowami | `adolens setup` |
+| `ado_upgrade` | czy jest nowsza wersja ADO Lens; `install=true` pobiera ją (z kontrolą SHA-256) i uruchamia jej instalator | gdy użytkownik prosi o aktualizację | `adolens upgrade --install` |
 | `ado_fields` | typy według poziomu backlogu; dla typu: stany, przejścia, pola, wymagalność, dozwolone wartości; dla pola: gdzie jest używane i jakie ma wartości; zmiany struktury w czasie | przed zapisem pól albo WIQL; „jakie pola ma Bug”, „co się zmieniło w procesie w tym miesiącu” | `adolens fields --type Bug`, `adolens fields --field Severity`, `adolens fields --changes 30d` |
 | `ado_work_item` | jeden lub kilka elementów: stan, osoby, ścieżki, wypełnione pola, opis i kryteria akceptacji jako markdown, rodzic / dzieci / powiązane, changesety, commity, PR-y i buildy; z `include`: komentarze, historia | „o co chodzi w #123”, „kto i kiedy zmienił kryteria” | `adolens item 123 456 --include comments,history --detail summary` |
 | `ado_query` | elementy z WIQL (z `@Me`, `@CurrentIteration`…) albo z zapisanego zapytania, po jednej linii | listy, filtry, „otwarte bugi sprintu” | `adolens query --wiql "SELECT …"`, `adolens query --query "Shared Queries/Open bugs"` |
@@ -188,7 +223,7 @@ Szacunek to znaki / 4; tokenizer Claude'a liczy trochę inaczej (polski tekst wy
 
 ```
 adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday|wiki|wiki-write|trace|changes|pr|pipeline …
-adolens login|logout|connections|config|status|register|unregister|refresh|stats|api|mcp|version
+adolens setup|login|logout|connections|config|status|register|unregister|refresh|upgrade|stats|api|mcp|version
 ```
 
 `adolens help` wypisuje wszystkie opcje. `adolens api <ścieżka>` drukuje surowy JSON z GET (do rozwoju).
@@ -206,7 +241,8 @@ tests\AdoLens.Tests\        testy xUnit; Azure DevOps jest symulowane (FakeAdo),
 build.ps1                   kompilacja; -Deploy podmienia binaria w instalacji, -Test najpierw uruchamia testy
 pack.ps1                    paczka wydania (ZIP + SHA-256)
 release.ps1 release-notes.ps1   wydania (zob. niżej); .github\ workflowy CI i Release, formularze zgłoszeń
-install.ps1 uninstall.ps1   instalacja
+install.ps1 uninstall.ps1   instalacja; get.ps1 to pobranie i instalacja jedną linijką
+skills\                     skille dla Claude'a (po-verify, po-story, po-sprint)
 docs\PLAN.md                plan rozwoju
 build\  dist\               wyniki (nie trzymaj tu niczego własnego)
 ```
@@ -250,6 +286,7 @@ i publikuje go razem z `.sha256` i opisem z `CHANGELOG.md` (podgląd: `.\release
 | `SetupTests.cs` | ustawienia, połączenia i kolejność PAT (najpierw Menedżer poświadczeń), linia poleceń, edycja konfiguracji Claude'a, Menedżer poświadczeń, ponawianie i błędy HTTP, budżet definicji narzędzi na tryb, faktyczna rejestracja narzędzi |
 | `MetadataTests.cs` | pobieranie struktury (poziomy, nazwa procesu dziedziczonego, bugi na backlogu wymagań), historia zmian, zwięzłe odpowiedzi `ado_fields` |
 | `BoardTests.cs` | postęp sprintu, pozostała pojemność z dniami wolnymi, lista do uwagi, wybór sprintu, zakończone sprinty, kolumny tablicy i WIP, przesuwanie kart z mapowaniem stanów, kolejność backlogu i jej zmiana, mój dzień |
+| `SetupFlowTests.cs` | wersje i paczki wydań do aktualizacji, tabela zespołu na wiki (w obie strony, strony poprawiane ręcznie), wykrywanie przepływu z release'ów i gałęzi, mapa zespołu na wiki z wersją, mapa lokalna ponad zespołową |
 | `PrPipelineTests.cs` | listy i szczegóły PR-ów (głosy, kontrole, tylko wątki ludzi), akcje na PR (głos, komentarz na linii ze wzmianką, tworzenie), błędy nieudanego buildu i linie logu, uruchamianie pipeline'ów po nazwie, zapis środowisk, odgadywanie przepływu |
 | `TraceTests.cs` | diff linii (Myers, bloki unified), X++ per metoda ze źródłami danych formularza, nazwy obiektów ze ścieżek AOT, `ado_trace` w TFVC i Gicie (wdrożone etapy TAK / JESZCZE NIE, etykiety środowisk, scalone gałęzie, usunięte buildy, kryteria zmienione po rozpoczęciu prac), listy i diffy plików w `ado_changes` |
 | `WikiTests.cs` | drzewo stron, strona z wersją, zastąpienie tylko z aktualną wersją (412 nigdy nie nadpisuje), dopisywanie, tworzenie na istniejącej stronie, fragmenty wyszukiwania |
@@ -269,7 +306,9 @@ organizacji do testów, zgłoszeń ani commitów.
 | pull requesty | `PullRequests.cs` |
 | buildy i uruchamianie pipeline'ów | `Pipelines.cs` |
 | changesety, commity, PR-y, buildy, wdrożenia | `Code.cs`; śledzenie w `Trace.cs`; diffy i X++ per metoda w `Diff.cs` |
-| skille dla Claude'a | `skills\<nazwa>\SKILL.md` |
+| skille dla Claude'a | `skills\<nazwa>\SKILL.md` (instaluje je `install.ps1`) |
+| aktualizacje | `Updater.cs`; instalacja jedną linijką `get.ps1` |
+| ustawienia zespołu na wiki, przepływ środowisk | `TeamSettings.cs`, `EnvironmentFlow.cs`; kreator w `Cli.cs` (`SetupAsync`), teksty w `Ui.cs` |
 | struktura work itemów (typy, pola, stany) | `MetadataService.cs` (pobieranie), `MetaStore.cs` (SQLite; podnieś `SchemaVersion`, żeby pobrać od nowa), `Metadata.cs` (wykrywanie zmian) |
 | tekst sformatowany | `Html.cs` |
 | osoby | `Identities.cs` |

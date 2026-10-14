@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — 2026-10-15
+
+Easy to install and to keep current, for people who are not developers.
+
+- One-line install: `irm …/get.ps1 | iex` downloads the latest release, checks its SHA-256 and runs the installer
+  (no browser download, so no SmartScreen stop for the not yet signed program).
+- Installer in six steps with defaults: connection, then who uses it (mode) and where code goes (environments found
+  from release stages and branches, names suggested, saved for the user or the team), skills, Claude registration.
+  Questions in Polish on a Polish Windows. `adolens setup` asks the same later.
+- Team settings on the project wiki: a page "ADO Lens" with the environment table, read by everyone on the project;
+  `ado_settings scope=team` writes it with the page version. A local map overrides it.
+- `ado_settings` without arguments shows the flow in use or the one detected, so Claude can ask once.
+- Updates: the server checks GitHub once a day in the background and mentions a newer version once per session;
+  `ado_upgrade` / `adolens upgrade --install` downloads it, checks SHA-256 and runs its installer; `*.old` leftovers of
+  updates are removed at start.
+- Skills `po-story` (writing requirements, bugs and tasks) and `po-sprint` (sprint status, review, release notes) next
+  to `po-verify`; installed into Claude Code and packed as ZIPs for Claude Desktop; removed on uninstall.
+
 ## 0.2.0 — 2026-10-14
 
 Checking work against what was asked, and where it is.

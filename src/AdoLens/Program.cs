@@ -72,6 +72,10 @@ try
             return await cli.BacklogAsync();
         case "myday":
             return await cli.MyDayAsync();
+        case "upgrade":
+            return await cli.UpdateCommandAsync();
+        case "setup":
+            return await cli.SetupAsync();
         case "trace":
             return await cli.TraceAsync();
         case "changes":
@@ -103,6 +107,8 @@ async Task<int> RunServerAsync()
 {
     var lens = Lens.Default(version);
     Usage.Enabled &= lens.Settings.UsageLog;
+    Updater.RemoveLeftovers();
+    Updater.CheckInBackground();
     McpTools.ShowTokens = lens.Settings.ShowTokens;
 
     var builder = Host.CreateApplicationBuilder([]);
