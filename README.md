@@ -12,8 +12,8 @@ not thousands. Changes between versions: [CHANGELOG.md](CHANGELOG.md). The road 
 © 2026 WillowDev. Released under the [MIT License](LICENSE). Not affiliated with or endorsed by Microsoft;
 Azure DevOps is a trademark of Microsoft.
 
-> Status: **0.x — in development.** Connections, Claude registration, the local work item structure and the work item
-> tools work; boards, wiki, pull requests and pipelines follow the plan.
+> Status: **0.x — in development.** Connections, Claude registration, the local work item structure, work items,
+> sprints, boards and backlogs work; wiki, pull requests and pipelines follow the plan.
 
 ## What it does differently
 
@@ -105,7 +105,8 @@ never a permission.
 |---|---|:-:|:-:|:-:|
 | `core` | `ado_status`, `ado_fields` | ✓ | ✓ | ✓ |
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
-| `boards`, `wiki`, `trace`, `test`, `recipes` | planned | ✓ | (wiki, trace, recipes) | ✓ |
+| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day` | ✓ | – | ✓ |
+| `wiki`, `trace`, `test`, `recipes` | planned | ✓ | (wiki, trace, recipes) | ✓ |
 | `code`, `pr`, `pipelines` | planned | – | ✓ | ✓ |
 
 ## Tool map
@@ -122,6 +123,10 @@ What each MCP tool answers, when Claude should reach for it, and the CLI command
 | `ado_update` | changes one or many items (ids or WIQL): fields, state along the transitions, people, tags `+a; -b`, iteration `current`, a comment; many items → preview + `confirm` token | closing, moving to a sprint, mass changes | `adolens update 123 --state Done --comment "…"`, `adolens update --wiql "…" --tags "+reviewed"` |
 | `ado_comment` | markdown comment; `@[name]` mentions notify the person | asking, deciding, reporting | `adolens comment 123 "@[Anna] please confirm"` |
 | `ado_link` | parent, child, related, predecessor, successor, duplicate, duplicate-of, tested-by, tests; `remove` unlinks | structuring the backlog | `adolens link 123 456 --type child` |
+| `ado_sprint` | a team's sprint (`current`, `next`, `previous` or by name): dates and working day, items by state, estimates, remaining work against the capacity left, items needing attention (no change for days, blocked, no estimate, no criteria, unassigned), task progress per item; says plainly when the sprint has ended | stand-up, sprint review, "will we make it" | `adolens sprint`, `adolens sprint next --team "Demo Team" --detail summary` |
+| `ado_board` | a team's board: columns with WIP limits (over-limit flagged) and their cards; `move` + `column` moves a card — the state follows the column's mapping for the item's type | "what is in progress", moving cards | `adolens board`, `adolens board --move 123 --column "In Progress"` |
+| `ado_backlog` | a team's backlog in priority order (requirement, portfolio, task, or by name); `move` + `above`/`below` reorders | refinement, priorities | `adolens backlog --top 20`, `adolens backlog --move 123 --above 456` |
+| `ado_my_day` | since the previous working day (or `since`): where you were mentioned (all projects), your items and followed items changed by others, pull requests waiting for your review | the start of the day | `adolens myday --since 3d` |
 
 ### Writing rules built in
 
@@ -150,7 +155,7 @@ Estimates are characters / 4; Claude's tokenizer differs a little (Polish text r
 ## CLI
 
 ```
-adolens item|query|create|update|comment|link|fields …
+adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday …
 adolens login|logout|connections|config|status|register|unregister|refresh|stats|api|mcp|version
 ```
 
@@ -190,6 +195,7 @@ After `-Deploy`, restart Claude Desktop / start a new Claude Code session — MC
 |---|---|
 | `SetupTests.cs` | settings, connections and PAT order (Credential Manager first), command line, Claude configuration edits, Credential Manager, HTTP retries and errors, tool definition budget per mode |
 | `MetadataTests.cs` | fetching the structure (levels, inherited process name, bugs on the requirement backlog), change history, compact `ado_fields` answers |
+| `BoardTests.cs` | sprint progress, capacity left with days off, attention list, picking sprints, ended sprints, board columns and WIP, moving cards with the state mapping, backlog order and reordering, my day |
 | `WorkItemTests.cs` | work item answers, required fields and allowed values before writing, transitions, preview and confirm of bulk updates, mentions, links, queries, HTML ⇄ markdown, PAT never sent to other hosts |
 
 Fixtures use neutral names only (`contoso`, `Demo`, `Anna Nowak`). Never put data from real organizations into tests,
@@ -201,6 +207,7 @@ issues or commits.
 |---|---|
 | a new MCP tool | a `*Tools` class with `[Toolset]` in `McpTools.cs` (or its own file) + the query in `*Queries.cs` + a CLI command in `Cli.cs`/`Program.cs`/`CommandLine.cs` + a test + a line in the instructions |
 | work item reads, writes, checks | `WorkItems.cs`, `WorkQueries.cs`; output in `WorkItemFormat.cs` |
+| sprints, capacity, boards, backlogs, my day | `Boards.cs` (API in `Boards`, answers in `BoardQueries`) |
 | work item structure (types, fields, states) | `MetadataService.cs` (fetch), `MetaStore.cs` (SQLite; raise `SchemaVersion` to refetch), `Metadata.cs` (change detection) |
 | rich text | `Html.cs` |
 | people | `Identities.cs` |

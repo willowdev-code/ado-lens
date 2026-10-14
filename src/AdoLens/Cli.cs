@@ -40,6 +40,10 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           update <ids>    or --wiql "<WIQL>"; same options as create, plus --reason, --comment <md>, --confirm <token>
           comment <id> <markdown with @[name] mentions>
           link <id> <targets>  --type parent|child|related|predecessor|successor|duplicate|duplicate-of|tested-by|tests [--remove]
+          sprint [current|next|previous|<name>]   --team <t> --detail summary|normal|full
+          board [<board>]  --team <t>  --move <id> --column <name>  --detail summary|normal|full
+          backlog          --level requirement|portfolio|task|<name>  --top 30  --move <id> --above <id> | --below <id>
+          myday            --since 1d|3d|2w|yyyy-MM-dd (default: the previous working day)
           api <path>      raw JSON of a GET request (development)
           stats           MCP calls of the last days: answer sizes, times, empty answers   --days 7 --top 10
                             --live: show every call as Claude makes it (tool, tokens, ms), until Ctrl+C
@@ -408,6 +412,35 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (cl.Positional.Count < 2 || !int.TryParse(cl.Positional[0], out var id)) { Console.Error.WriteLine("usage: adolens link <id> <targets> --type parent|child|related|…"); return 2; }
         Print(await WorkQueries.LinkAsync(NewLens(), cl.Opt("connection"), id, string.Join(';', cl.Positional.Skip(1)),
             cl.Opt("type") ?? "related", cl.Flag("remove")));
+        return 0;
+    }
+
+    static int? Int(string? s) => int.TryParse(s, out var v) ? v : null;
+
+    public async Task<int> SprintAsync()
+    {
+        Print(await BoardQueries.SprintAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("team"),
+            cl.Positional.Count > 0 ? string.Join(' ', cl.Positional) : null, cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> BoardAsync()
+    {
+        Print(await BoardQueries.BoardAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("team"),
+            cl.Positional.Count > 0 ? string.Join(' ', cl.Positional) : null, Int(cl.Opt("move")), cl.Opt("column"), cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> BacklogAsync()
+    {
+        Print(await BoardQueries.BacklogAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("team"), cl.Opt("level"),
+            Int(cl.Opt("top")) ?? 30, Int(cl.Opt("move")), Int(cl.Opt("above")), Int(cl.Opt("below"))));
+        return 0;
+    }
+
+    public async Task<int> MyDayAsync()
+    {
+        Print(await BoardQueries.MyDayAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("since")));
         return 0;
     }
 

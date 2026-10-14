@@ -28,6 +28,13 @@ public static class McpTools
               scope as bullets, testable acceptance criteria in their own field. Bug: what happens, what should, numbered
               steps, where. Task: one sentence. Comment: decision or question first.
             """,
+        [Toolsets.Boards] = """
+            - ado_sprint: sprint dates, progress, remaining work vs capacity, and what needs attention (stale, blocked,
+              no estimate, no criteria, unassigned) - say plainly when the sprint has ended. ado_board: columns with WIP
+              limits and cards; move=<id> column=<name> moves a card (state follows the column). ado_backlog: priority
+              order; move with above/below reorders. ado_my_day: mentions, own and followed items changed by others, PRs
+              waiting for review.
+            """,
     };
 
     public static string Instructions(Settings settings)
@@ -95,6 +102,61 @@ public static class CoreTools
         CancellationToken ct = default)
         => McpTools.Run("ado_fields", new { type, field, changes, all, refresh, project, connection },
             () => Queries.FieldsAsync(lens, connection, project, type, field, changes, all, refresh, ct));
+}
+
+[McpServerToolType, Toolset(Toolsets.Boards)]
+public static class BoardTools
+{
+    [McpServerTool(Name = "ado_sprint", ReadOnly = true, Idempotent = true)]
+    [Description("A team's sprint: dates, progress by state, estimates, remaining work vs capacity, items needing attention, items with task progress.")]
+    public static Task<string> Sprint(Lens lens,
+        [Description("current (default), next, previous, or a sprint name.")] string? sprint = null,
+        [Description("Team name; default: the configured or default team.")] string? team = null,
+        [Description("summary | normal | full.")] string? detail = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_sprint", new { sprint, team, detail, project, connection },
+            () => BoardQueries.SprintAsync(lens, connection, project, team, sprint, detail, null, ct));
+
+    [McpServerTool(Name = "ado_board")]
+    [Description("A team's board: columns with WIP limits and the cards in them; with move and column: moves a card.")]
+    public static Task<string> Board(Lens lens,
+        [Description("Board name; default: the requirement board.")] string? board = null,
+        [Description("Work item id to move.")] int? move = null,
+        [Description("Target column for move.")] string? column = null,
+        string? team = null,
+        [Description("summary | normal | full.")] string? detail = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_board", new { board, move, column, team, detail, project, connection },
+            () => BoardQueries.BoardAsync(lens, connection, project, team, board, move, column, detail, ct));
+
+    [McpServerTool(Name = "ado_backlog")]
+    [Description("A team's backlog in priority order; with move and above or below: reorders an item.")]
+    public static Task<string> Backlog(Lens lens,
+        [Description("requirement (default), portfolio, task, or a backlog name.")] string? level = null,
+        int top = 30,
+        [Description("Work item id to reorder.")] int? move = null,
+        int? above = null,
+        int? below = null,
+        string? team = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_backlog", new { level, top, move, above, below, team, project, connection },
+            () => BoardQueries.BacklogAsync(lens, connection, project, team, level, top, move, above, below, ct));
+
+    [McpServerTool(Name = "ado_my_day", ReadOnly = true, Idempotent = true)]
+    [Description("What is new for me: mentions, my items and followed items changed by others, pull requests waiting for my review.")]
+    public static Task<string> MyDay(Lens lens,
+        [Description("Since: 1d, 3d, 2w or yyyy-MM-dd; default: the previous working day.")] string? since = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_my_day", new { since, project, connection },
+            () => BoardQueries.MyDayAsync(lens, connection, project, since, null, ct));
 }
 
 [McpServerToolType, Toolset(Toolsets.Work)]

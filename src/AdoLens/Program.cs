@@ -64,6 +64,14 @@ try
             return await cli.CommentAsync();
         case "link":
             return await cli.LinkAsync();
+        case "sprint":
+            return await cli.SprintAsync();
+        case "board":
+            return await cli.BoardAsync();
+        case "backlog":
+            return await cli.BacklogAsync();
+        case "myday":
+            return await cli.MyDayAsync();
         case "help" or "--help" or "-h" or "/?":
             Cli.PrintUsage();
             return 0;

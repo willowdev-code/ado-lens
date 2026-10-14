@@ -12,8 +12,8 @@ a nie tysiące. Zmiany między wersjami: [CHANGELOG.md](CHANGELOG.md). Plan rozw
 © 2026 WillowDev. Udostępnione na [licencji MIT](LICENSE). Projekt niezależny, niezwiązany z Microsoftem;
 Azure DevOps jest znakiem towarowym Microsoftu.
 
-> Stan: **0.x — w budowie.** Działają połączenia, rejestracja w Claude, lokalna struktura work itemów i narzędzia work
-> itemów; tablice, wiki, pull requesty i pipeline'y — według planu.
+> Stan: **0.x — w budowie.** Działają połączenia, rejestracja w Claude, lokalna struktura work itemów, work itemy,
+> sprinty, tablice i backlogi; wiki, pull requesty i pipeline'y — według planu.
 
 ## Czym się różni
 
@@ -105,7 +105,8 @@ Nigdy nie jest uprawnieniem.
 |---|---|:-:|:-:|:-:|
 | `core` | `ado_status`, `ado_fields` | ✓ | ✓ | ✓ |
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
-| `boards`, `wiki`, `trace`, `test`, `recipes` | w planie | ✓ | (wiki, trace, recipes) | ✓ |
+| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day` | ✓ | – | ✓ |
+| `wiki`, `trace`, `test`, `recipes` | w planie | ✓ | (wiki, trace, recipes) | ✓ |
 | `code`, `pr`, `pipelines` | w planie | – | ✓ | ✓ |
 
 ## Mapa narzędzi
@@ -122,6 +123,10 @@ Na co odpowiada każde narzędzie MCP, kiedy Claude powinien po nie sięgnąć i
 | `ado_update` | zmienia jeden lub wiele elementów (id albo WIQL): pola, stan zgodnie z przejściami, osoby, tagi `+a; -b`, iteracja `current`, komentarz; wiele elementów → podgląd + token `confirm` | zamykanie, przenoszenie do sprintu, zmiany masowe | `adolens update 123 --state Done --comment "…"`, `adolens update --wiql "…" --tags "+reviewed"` |
 | `ado_comment` | komentarz w markdownie; `@[imię]` oznacza osobę i wysyła jej powiadomienie | pytania, decyzje, raporty | `adolens comment 123 "@[Anna] potwierdź proszę"` |
 | `ado_link` | rodzic, dziecko, powiązany, poprzednik, następnik, duplikat, duplikat-czego, testowany-przez, testuje; `remove` usuwa | porządkowanie backlogu | `adolens link 123 456 --type child` |
+| `ado_sprint` | sprint zespołu (`current`, `next`, `previous` albo po nazwie): daty i dzień roboczy, elementy według stanu, szacunki, pozostała praca wobec pozostałej pojemności, elementy do uwagi (bez zmian od kilku dni, zablokowane, bez szacunku, bez kryteriów, bez osoby), postęp zadań per element; mówi wprost, gdy sprint się skończył | daily, przegląd sprintu, „czy zdążymy” | `adolens sprint`, `adolens sprint next --team "Demo Team" --detail summary` |
+| `ado_board` | tablica zespołu: kolumny z limitami WIP (przekroczenia oznaczone) i ich karty; `move` + `column` przesuwa kartę — stan wynika z mapowania kolumny dla typu elementu | „co jest w toku”, przesuwanie kart | `adolens board`, `adolens board --move 123 --column "In Progress"` |
+| `ado_backlog` | backlog zespołu w kolejności priorytetu (wymagania, portfolio, zadania albo po nazwie); `move` + `above`/`below` zmienia kolejność | refinement, priorytety | `adolens backlog --top 20`, `adolens backlog --move 123 --above 456` |
+| `ado_my_day` | od poprzedniego dnia roboczego (albo `since`): gdzie cię oznaczono (wszystkie projekty), twoje i obserwowane elementy zmienione przez innych, pull requesty czekające na twój przegląd | początek dnia | `adolens myday --since 3d` |
 
 ### Wbudowane zasady pisania
 
@@ -150,7 +155,7 @@ Szacunek to znaki / 4; tokenizer Claude'a liczy trochę inaczej (polski tekst wy
 ## CLI
 
 ```
-adolens item|query|create|update|comment|link|fields …
+adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday …
 adolens login|logout|connections|config|status|register|unregister|refresh|stats|api|mcp|version
 ```
 
@@ -190,6 +195,7 @@ Po `-Deploy` zrestartuj Claude Desktop / zacznij nową sesję Claude Code — MC
 |---|---|
 | `SetupTests.cs` | ustawienia, połączenia i kolejność PAT (najpierw Menedżer poświadczeń), linia poleceń, edycja konfiguracji Claude'a, Menedżer poświadczeń, ponawianie i błędy HTTP, budżet definicji narzędzi na tryb, faktyczna rejestracja narzędzi |
 | `MetadataTests.cs` | pobieranie struktury (poziomy, nazwa procesu dziedziczonego, bugi na backlogu wymagań), historia zmian, zwięzłe odpowiedzi `ado_fields` |
+| `BoardTests.cs` | postęp sprintu, pozostała pojemność z dniami wolnymi, lista do uwagi, wybór sprintu, zakończone sprinty, kolumny tablicy i WIP, przesuwanie kart z mapowaniem stanów, kolejność backlogu i jej zmiana, mój dzień |
 | `WorkItemTests.cs` | odpowiedzi o work itemach, pola wymagane i dozwolone wartości przed zapisem, przejścia stanów, podgląd i potwierdzanie zmian wsadowych, wzmianki, linki, zapytania, HTML ⇄ markdown, PAT nigdy do innych hostów |
 
 Dane testowe mają wyłącznie neutralne nazwy (`contoso`, `Demo`, `Anna Nowak`). Nigdy nie wkładaj danych z prawdziwych
@@ -201,6 +207,7 @@ organizacji do testów, zgłoszeń ani commitów.
 |---|---|
 | nowe narzędzie MCP | klasa `*Tools` z `[Toolset]` w `McpTools.cs` (albo własnym pliku) + zapytanie w `*Queries.cs` + polecenie CLI w `Cli.cs`/`Program.cs`/`CommandLine.cs` + test + linijka w instrukcjach |
 | odczyt, zapis i kontrole work itemów | `WorkItems.cs`, `WorkQueries.cs`; wyjście w `WorkItemFormat.cs` |
+| sprinty, pojemność, tablice, backlogi, mój dzień | `Boards.cs` (API w `Boards`, odpowiedzi w `BoardQueries`) |
 | struktura work itemów (typy, pola, stany) | `MetadataService.cs` (pobieranie), `MetaStore.cs` (SQLite; podnieś `SchemaVersion`, żeby pobrać od nowa), `Metadata.cs` (wykrywanie zmian) |
 | tekst sformatowany | `Html.cs` |
 | osoby | `Identities.cs` |

@@ -17,6 +17,11 @@ First skeleton.
   people by name, state only along the transitions, markdown → HTML, soft length notes; updates of more than
   `confirmBulkAbove` items are previewed and written with the preview's token), `ado_comment` (`@[name]` mentions),
   `ado_link`. Same commands in the CLI (`item`, `query`, `create`, `update`, `comment`, `link`).
+- Boards (tool set `boards`): `ado_sprint` (dates and working day, progress by state, estimates, remaining work vs
+  capacity left with days off, attention list, task progress; ended sprints said plainly), `ado_board` (columns, WIP
+  limits, cards; moving a card sets the column and the state mapped for its type), `ado_backlog` (priority order,
+  reordering), `ado_my_day` (mentions, own and followed items changed by others, PRs waiting for review). CLI: `sprint`,
+  `board`, `backlog`, `myday`.
 - Modes `po` / `dev` / `full` choose the tool sets Claude sees; `config --add-toolset`, `--confirm-above`.
 - Inherited process names, bugs shown on the requirement backlog, disabled types listed by name.
 - The PAT is only ever sent to Azure DevOps hosts. `adolens api <path>` for development.

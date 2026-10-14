@@ -293,10 +293,10 @@ public class TextTests
             AdoClient.Explain("TF401320: Rule Error for field Reason. Error code: Required, InvalidEmpty."));
 
     [Fact]
-    public void Pat_is_never_sent_outside_azure_devops()
+    public async Task Pat_is_never_sent_outside_azure_devops()
     {
         var client = new FakeAdo().Client();
-        var ex = Assert.ThrowsAsync<AdoApiException>(() => client.GetAsync("https://example.com/_apis/x")).Result;
+        var ex = await Assert.ThrowsAsync<AdoApiException>(() => client.GetAsync("https://example.com/_apis/x"));
         Assert.Contains("refusing to send the PAT to example.com", ex.Message);
     }
 }

@@ -58,7 +58,9 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         return list.OrderBy(w => order.GetValueOrDefault(Id(w), int.MaxValue)).ToList();
     }
 
-    public static int Id(JsonElement wi) => wi.TryGetProperty("id", out var id) && id.TryGetInt32(out var v) ? v : 0;
+    /// <summary>The id of a work item or reference; 0 for null (e.g. "source": null in query relations).</summary>
+    public static int Id(JsonElement wi) =>
+        wi.ValueKind == JsonValueKind.Object && wi.TryGetProperty("id", out var id) && id.TryGetInt32(out var v) ? v : 0;
 
     public static string? Field(JsonElement wi, string reference)
     {

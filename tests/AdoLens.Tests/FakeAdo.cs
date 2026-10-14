@@ -71,7 +71,9 @@ sealed class DemoProject
               {"referenceName":"Microsoft.VSTS.Common.AcceptanceCriteria","name":"Acceptance Criteria","type":"html"},
               {"referenceName":"Microsoft.VSTS.Common.Severity","name":"Severity","type":"string","isPicklist":true},
               {"referenceName":"Custom.Customer","name":"Customer","type":"string","isPicklist":true},
-              {"referenceName":"WEF_ABC_Kanban.Column","name":"Board Column","type":"string"}
+              {"referenceName":"WEF_ABC_Kanban.Column","name":"Board Column","type":"string"},
+              {"referenceName":"Microsoft.VSTS.Scheduling.Effort","name":"Effort","type":"double"},
+              {"referenceName":"Microsoft.VSTS.Scheduling.RemainingWork","name":"Remaining Work","type":"double"}
             ]}
             """)
         .On("/contoso/Demo/_apis/wit/workitemtypes", () => $$$"""
