@@ -32,6 +32,7 @@ public sealed class Lens(Settings settings, string version, string dataDir,
 
     public Settings Settings => settings;
     public string Version => version;
+    public string DataDir => dataDir;
 
     /// <summary>Where settings changed through tools (ado_settings) are saved.</summary>
     public string SettingsPath => settingsPath ?? Path.Combine(dataDir, "adolens.json");

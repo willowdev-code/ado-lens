@@ -175,7 +175,7 @@ public sealed class Boards(Session session)
 }
 
 /// <summary>The answers behind the boards tools.</summary>
-public static class BoardQueries
+public static partial class BoardQueries
 {
     /// <summary>Changed less recently than this (in working days) while in progress: worth a look.</summary>
     const int StaleDays = 3;
@@ -385,6 +385,7 @@ public static class BoardQueries
             if (!state.Equals(WorkItems.Field(wi, "System.State"), StringComparison.OrdinalIgnoreCase))
                 ops.Add(new { op = "add", path = "/fields/System.State", value = state });
             var updated = await session.Work.PatchAsync(id, ops, ct);
+            Audit.Write(lens, session.Config.Connection, Audit.FromOps(Audit.NewBatch(), "ado_board", wi, updated, ops));
             var note = "";
             if (col.Limit > 0)
             {

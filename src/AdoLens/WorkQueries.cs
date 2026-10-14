@@ -87,6 +87,8 @@ public static partial class WorkQueries
         var notes = new List<string>();
         var ops = await session.Work.BuildOpsAsync(s, t, r, null, notes, ct);
         var created = await session.Work.CreateAsync(s.Project.Name, t.Name, ops, ct);
+        Audit.Write(lens, session.Config.Connection, [new AuditEntry { Batch = Audit.NewBatch(), Tool = "ado_create", Kind = "create",
+            Id = WorkItems.Id(created), Project = s.Project.Name, Title = WorkItems.Field(created, "System.Title") }]);
         return Written("created", created, s, session.Work, notes);
     }
 
@@ -141,14 +143,21 @@ public static partial class WorkQueries
 
         var results = new List<string>();
         var failed = 0;
+        var batch = Audit.NewBatch();
+        var log = new List<AuditEntry>();
         await Parallel.ForEachAsync(plans, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct }, async (p, token2) =>
         {
             var id = WorkItems.Id(p.Item);
             try
             {
                 var updated = p.Ops.Count > 0 ? await work.PatchAsync(id, p.Ops, token2) : p.Item;
+                if (p.Ops.Count > 0) lock (log) log.AddRange(Audit.FromOps(batch, "ado_update", p.Item, updated, p.Ops));
                 if (!string.IsNullOrWhiteSpace(comment))
-                    await work.AddCommentAsync(WorkItems.Field(p.Item, "System.TeamProject")!, id, await CommentHtmlAsync(session.People, comment, token2), token2);
+                {
+                    var project = WorkItems.Field(p.Item, "System.TeamProject")!;
+                    var c = await work.AddCommentAsync(project, id, await CommentHtmlAsync(session.People, comment, token2), token2);
+                    lock (log) log.Add(CommentEntry(batch, "ado_update", p.Item, project, c));
+                }
                 lock (results) results.Add(items.Count == 1 ? Written("updated", updated, p.S, work, p.Notes) : "ok " + WorkItemFormat.Header(updated));
             }
             catch (Exception ex) when (ex is AdoApiException or InvalidOperationException)
@@ -156,6 +165,7 @@ public static partial class WorkQueries
                 lock (results) { results.Add($"FAILED #{id}: {ex.Message}"); failed++; }
             }
         });
+        Audit.Write(lens, session.Config.Connection, log);
         if (items.Count == 1) return results[0];
         var order = ordered.Select((id, i) => (id, i)).ToDictionary(x => x.id, x => x.i);
         return $"updated {items.Count - failed} of {items.Count}{(failed > 0 ? $", {failed} failed" : "")}:\n" +
@@ -205,6 +215,12 @@ public static partial class WorkQueries
         return Html.FromMarkdown(text, raw);
     }
 
+    static AuditEntry CommentEntry(string batch, string tool, JsonElement wi, string project, JsonElement comment) => new()
+    {
+        Batch = batch, Tool = tool, Kind = "comment", Id = WorkItems.Id(wi), Project = project, Title = WorkItems.Field(wi, "System.Title"),
+        CommentId = comment.ValueKind == JsonValueKind.Object && comment.TryGetProperty("id", out var cid) && cid.TryGetInt32(out var n) ? n : null,
+    };
+
     public static async Task<string> CommentAsync(Lens lens, string? connection, int id, string text, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("text is required");
@@ -213,7 +229,8 @@ public static partial class WorkQueries
         if (items.Count == 0) return $"no work item #{id} visible with this PAT";
         var project = WorkItems.Field(items[0], "System.TeamProject")!;
         var html = await CommentHtmlAsync(session.People, text, ct);
-        await session.Work.AddCommentAsync(project, id, html, ct);
+        var added = await session.Work.AddCommentAsync(project, id, html, ct);
+        Audit.Write(lens, session.Config.Connection, [CommentEntry(Audit.NewBatch(), "ado_comment", items[0], project, added)]);
         var mentions = Mention().Matches(text).Count;
         var note = Html.Words(text) > 60 ? $"\nnote: {Html.Words(text)} words; comments read best at ≤ 60 (decision or question first)" : "";
         return $"commented on {WorkItemFormat.Header(items[0])}{(mentions > 0 ? $" ({mentions} mention(s) notified)" : "")}{note}";
@@ -268,7 +285,14 @@ public static partial class WorkQueries
                 if (IndexOf(t) >= 0) skipped.Add($"#{t} (already linked)");
                 else ops.Add(new { op = "add", path = "/relations/-", value = new { rel, url = $"{work.WebBase}_apis/wit/workItems/{t}" } });
         }
-        if (ops.Count > 0) await work.PatchAsync(id, ops, ct);
+        if (ops.Count > 0)
+        {
+            await work.PatchAsync(id, ops, ct);
+            var batch = Audit.NewBatch();
+            Audit.Write(lens, session.Config.Connection, ids.Where(t => !skipped.Any(x => x.StartsWith($"#{t} ", StringComparison.Ordinal)))
+                .Select(t => new AuditEntry { Batch = batch, Tool = "ado_link", Kind = remove ? "link-remove" : "link-add", Id = id,
+                    Title = WorkItems.Field(wi, "System.Title"), Rel = rel, Target = t }));
+        }
         var headers = await HeadersAsync(work, ids, ct);
         var done = ids.Where(t => !skipped.Any(x => x.StartsWith($"#{t} ", StringComparison.Ordinal))).Select(t => headers.GetValueOrDefault(t, $"#{t}")).ToList();
         var sb = new StringBuilder($"{WorkItemFormat.Header(wi)}: ");

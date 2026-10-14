@@ -41,6 +41,12 @@ public sealed partial class CommandLine
         ["fields"] = ["connection=", "project=", "type=", "field=", "changes=", "all", "refresh"],
         ["stats"] = ["days=", "top=", "live"],
         ["api"] = ["connection="],
+        ["search"] = ["connection=", "project=", "scope=", "top="],
+        ["file"] = ["connection=", "project=", "repo=", "version=", "part=", "history", "top=", "detail="],
+        ["health"] = ["connection=", "project=", "team="],
+        ["release-notes"] = ["connection=", "project=", "team=", "since=", "until="],
+        ["undo"] = ["connection=", "confirm=", "list"],
+        ["recipe"] = ["connection=", "file=", "param=", "confirm=", "yes"],
     };
 
     [GeneratedRegex(@"^--?(?<name>[A-Za-z][A-Za-z0-9-]*)(=(?<value>.*))?$", RegexOptions.Singleline)]

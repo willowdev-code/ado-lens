@@ -23,6 +23,10 @@ public static class McpTools
             - Writing: short and complete - what to do or what was done, no filler. Requirement: goal in 1-2 sentences,
               scope as bullets, testable acceptance criteria in their own field. Bug: what happens, what should, numbered
               steps, where. Task: one sentence. Comment: decision or question first.
+            - "How does X work": ado_search, then read the sources; say what comes from code and what from documentation.
+            """,
+        [Toolsets.Recipes] = """
+            - A change the user repeats (close a sprint, new customer setup): offer to save it with ado_recipe.
             """,
         [Toolsets.Boards] = """
             - Say plainly when a sprint has ended or a column is over its WIP limit.
@@ -178,6 +182,24 @@ public static class BoardTools
         => McpTools.Run("ado_backlog", new { level, top, move, above, below, team, project, connection },
             () => BoardQueries.BacklogAsync(lens, connection, project, team, level, top, move, above, below, ct));
 
+    [McpServerTool(Name = "ado_health", ReadOnly = true, Idempotent = true)]
+    [Description("Backlog hygiene of a team: open items without acceptance criteria, estimate, description or parent, stale, left in finished sprints, look-alike titles; recently done items without code.")]
+    public static Task<string> Health(Lens lens, string? team = null, string? project = null, string? connection = null, CancellationToken ct = default)
+        => McpTools.Run("ado_health", new { team, project, connection }, () => BoardQueries.HealthAsync(lens, connection, project, team, null, ct));
+
+    [McpServerTool(Name = "ado_release_notes", ReadOnly = true, Idempotent = true)]
+    [Description("Release notes in markdown: requirements and bugs finished in a sprint (default current) or between dates, grouped by feature.")]
+    public static Task<string> ReleaseNotes(Lens lens,
+        [Description("current, previous, or a sprint name.")] string? sprint = null,
+        [Description("Instead of a sprint: 14d, 2w or yyyy-MM-dd.")] string? since = null,
+        string? until = null,
+        string? team = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_release_notes", new { sprint, since, until, team, project, connection },
+            () => BoardQueries.ReleaseNotesAsync(lens, connection, project, team, sprint, since, until, null, ct));
+
     [McpServerTool(Name = "ado_my_day", ReadOnly = true, Idempotent = true)]
     [Description("What is new for me: mentions, my items and followed items changed by others, pull requests waiting for my review.")]
     public static Task<string> MyDay(Lens lens,
@@ -211,6 +233,21 @@ public static class TraceTools
         CancellationToken ct = default)
         => McpTools.Run("ado_changes", new { change, repo, file, detail, connection },
             () => TraceQueries.ChangesAsync(lens, connection, change, repo, file, detail, ct));
+
+    [McpServerTool(Name = "ado_file", ReadOnly = true, Idempotent = true)]
+    [Description("A file from the repository (TFVC $/… path, Git path with repo, or just a file name), X++ objects as their methods (part=method shows one); history=true: who changed it, when, for which work items.")]
+    public static Task<string> ReadFile(Lens lens, string path,
+        string? repo = null,
+        [Description("Changeset, commit or branch; default latest.")] string? version = null,
+        [Description("X++ method name.")] string? part = null,
+        bool history = false,
+        int top = 15,
+        [Description("full: whole file.")] string? detail = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_file", new { path, repo, version, part, history, top, detail, project, connection },
+            () => Knowledge.FileAsync(lens, connection, project, path, repo, version, part, history, top, detail, ct));
 }
 
 [McpServerToolType, Toolset(Toolsets.Pr)]
@@ -384,7 +421,7 @@ public static class WorkTools
         string? description = null,
         string? acceptanceCriteria = null,
         [Description("Name or e-mail; empty clears it.")] string? assignedTo = null,
-        [Description("Iteration path or 'current'.")] string? iteration = null,
+        [Description("Iteration path, 'current' or 'next'.")] string? iteration = null,
         string? area = null,
         [Description("'a; b' replaces, '+a; -b' adds and removes.")] string? tags = null,
         [Description("Other fields by name or reference name; empty value clears.")] Dictionary<string, string>? fields = null,
@@ -414,4 +451,47 @@ public static class WorkTools
         CancellationToken ct = default)
         => McpTools.Run("ado_link", new { id, targets, type, remove, connection },
             () => WorkQueries.LinkAsync(lens, connection, id, targets, type, remove, ct));
+
+    [McpServerTool(Name = "ado_search", ReadOnly = true, Idempotent = true)]
+    [Description("One search over work items, wiki pages and code of the project, grouped - the start for \"how does X work\".")]
+    public static Task<string> Search(Lens lens, string text,
+        [Description("work;wiki;code (default all).")] string? scope = null,
+        int top = 10,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_search", new { text, scope, top, project, connection }, () => Knowledge.SearchAsync(lens, connection, project, text, scope, top, ct));
+
+    [McpServerTool(Name = "ado_undo")]
+    [Description("Reverts the last change ADO Lens made (fields, comment, link, created item): preview, then confirm=<token>; list=true shows recent changes.")]
+    public static Task<string> Undo(Lens lens, string? confirm = null, bool list = false, string? connection = null, CancellationToken ct = default)
+        => McpTools.Run("ado_undo", new { confirm, list, connection },
+            () => list ? Task.FromResult(Audit.List(lens, connection, 10)) : Audit.UndoAsync(lens, connection, confirm, ct));
+}
+
+[McpServerToolType, Toolset(Toolsets.Recipes)]
+public static class RecipeTools
+{
+    [McpServerTool(Name = "ado_recipe")]
+    [Description("Saved repeatable changes. action: list | show | save (recipe = JSON: {description, parameters:[..], steps:[{query (WIQL with {param}) or ids, state, iteration ('next'), assignedTo, tags, fields, comment, child:{type, title ({title} {id}), fields}}]}) | run (params; preview, then confirm) | delete.")]
+    public static Task<string> Recipe(Lens lens, string action,
+        string? name = null,
+        [Description("For save: the recipe JSON.")] string? recipe = null,
+        [Description("For run: parameter values.")] Dictionary<string, string>? @params = null,
+        string? confirm = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_recipe", new { action, name, @params, confirm, connection }, async () =>
+        {
+            string Need(string? x, string what) => string.IsNullOrWhiteSpace(x) ? throw new ArgumentException($"{what} is required for {action}") : x;
+            return action.Trim().ToLowerInvariant() switch
+            {
+                "list" => Recipes.List(lens),
+                "show" => Recipes.Show(lens, Need(name, "name")),
+                "save" => Recipes.Save(lens, Need(name, "name"), Need(recipe, "recipe")),
+                "delete" => Recipes.Delete(lens, Need(name, "name")),
+                "run" => await Recipes.RunAsync(lens, connection, Need(name, "name"), @params, confirm, yes: false, ct),
+                _ => throw new ArgumentException("action is list, show, save, run or delete"),
+            };
+        });
 }

@@ -138,6 +138,13 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         return list.Select(i => Json.Str(i, "path")).FirstOrDefault();
     }
 
+    public async Task<string?> NextIterationAsync(string project, CancellationToken ct = default)
+    {
+        var team = await TeamAsync(project, ct);
+        var list = await client.GetListAsync($"{AdoClient.Scope(project)}{Uri.EscapeDataString(team)}/_apis/work/teamsettings/iterations?$timeframe=future", ct);
+        return list.OrderBy(i => Json.Str(Json.Obj(i, "attributes"), "startDate") ?? "~").Select(i => Json.Str(i, "path")).FirstOrDefault();
+    }
+
     public Task<JsonElement> CreateAsync(string project, string type, List<object> ops, CancellationToken ct = default) =>
         client.SendAsync(HttpMethod.Post, $"{AdoClient.Scope(project)}_apis/wit/workitems/${Uri.EscapeDataString(type)}", ops, "application/json-patch+json", ct);
 
@@ -182,9 +189,12 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
             set["System.AssignedTo"] = r.AssignedTo.Trim().Length == 0 ? "" : (await people.ResolveAsync(r.AssignedTo, ct)).FieldValue;
         if (r.Area is not null) set["System.AreaPath"] = TreePath(project, r.Area);
         if (r.Iteration is not null)
-            set["System.IterationPath"] = r.Iteration.Trim().Equals("current", StringComparison.OrdinalIgnoreCase)
-                ? await CurrentIterationAsync(project, ct) ?? throw new InvalidOperationException("the team has no current iteration")
-                : TreePath(project, r.Iteration);
+            set["System.IterationPath"] = r.Iteration.Trim().ToLowerInvariant() switch
+            {
+                "current" => await CurrentIterationAsync(project, ct) ?? throw new InvalidOperationException("the team has no current iteration"),
+                "next" => await NextIterationAsync(project, ct) ?? throw new InvalidOperationException("the team has no future iteration"),
+                _ => TreePath(project, r.Iteration),
+            };
         if (r.Tags is not null) set["System.Tags"] = MergeTags(current is { } cur ? Field(cur, "System.Tags") : null, r.Tags);
 
         if (r.Fields is not null)

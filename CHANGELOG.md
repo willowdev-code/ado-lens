@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 — 2026-10-15
+
+How it works and why, and repeatable changes.
+
+- `ado_search`: one search over work items (full text, with the field that matched), wiki pages and code (Git and
+  TFVC), grouped; without the search service work items fall back to titles, a missing part does not stop the rest.
+- `ado_file`: a file by TFVC path, Git path or only its name; X++ objects as their methods, `part` shows one method;
+  `history=true`: who changed it, when, through which pull request (also for squash and rebase flows) and for which work
+  items.
+- `ado_undo` and a local log of every change ADO Lens makes (`%LOCALAPPDATA%\ado-lens\audit`): field values back,
+  fields changed by someone else since are kept and named, comments deleted, links removed or added back, created items
+  set to their removed state; always previewed first.
+- `ado_health`: backlog hygiene of a team (no criteria, description, estimate or parent; stale; left in a finished
+  sprint; look-alike titles; done without code).
+- `ado_release_notes`: requirements and bugs finished in a sprint or between dates as markdown, grouped by feature.
+- Recipes (tool set `recipes`, `ado_recipe`, `adolens recipe`): saved steps with a WIQL query and changes, comments or
+  child items from a template, with parameters; every run previewed; `--yes` for Windows Task Scheduler.
+- `ado_update` and recipes take iteration `next`.
+- Skill `po-explain`: "how does X work" in business language with sources, code told apart from documentation.
+- Wiki search shows page paths with real hyphens.
+
 ## 0.3.0 — 2026-10-15
 
 Easy to install and to keep current, for people who are not developers.

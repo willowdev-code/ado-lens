@@ -155,12 +155,13 @@ never a permission.
 | Tool set | Tools | po | dev | full |
 |---|---|:-:|:-:|:-:|
 | `core` | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_fields` | ✓ | ✓ | ✓ |
-| `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
+| `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link`, `ado_search`, `ado_undo` | ✓ | ✓ | ✓ |
 | `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
 | `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
-| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day` | ✓ | – | ✓ |
+| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day`, `ado_health`, `ado_release_notes` | ✓ | – | ✓ |
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
-| `trace` | `ado_trace`, `ado_changes` | ✓ | ✓ | ✓ |
+| `trace` | `ado_trace`, `ado_changes`, `ado_file` | ✓ | ✓ | ✓ |
+| `recipes` | `ado_recipe` | ✓ | ✓ | ✓ |
 | `test`, `recipes` | planned | ✓ | (recipes) | ✓ |
 | `code` | planned | – | ✓ | ✓ |
 
@@ -192,6 +193,12 @@ What each MCP tool answers, when Claude should reach for it, and the CLI command
 | `ado_wiki` | the project wiki: page tree (`depth`), one page as markdown with its version and subpages, or search across the project's wikis with snippets; long pages are cut unless `detail=full` | "how does X work", finding documentation | `adolens wiki`, `adolens wiki "Team/Setup"`, `adolens wiki --search "dual write"` |
 | `ado_wiki_write` | `create` a page, `append` / `prepend` to it, or `replace` it with the version from the last full read — a page changed by someone else in the meantime is never overwritten; optional change comment | release notes, keeping docs current | `adolens wiki-write "Team/Release notes" --file notes.md --mode append` |
 | `ado_my_day` | since the previous working day (or `since`): where you were mentioned (all projects), your items and followed items changed by others, pull requests waiting for your review | the start of the day | `adolens myday --since 3d` |
+| `ado_search` | one search over work items (full text, with the field that matched), wiki pages and code (Git and TFVC, X++ objects named), grouped; a part that is not available (e.g. Code Search not installed) is reported and the rest still answers | "how does X work", "where is Y" | `adolens search "credit limit" --scope work;wiki` |
+| `ado_file` | a file by TFVC path, Git path + repo, or just its name (found through Code Search); X++ objects as their list of methods, `part` shows one method; `history=true`: who changed it, when, through which pull request and for which work items | "what does this object do", "why is it like this" | `adolens file CreditCheck.xml --part validate`, `adolens file CreditCheck.xml --history` |
+| `ado_health` | backlog hygiene of a team's open items (newest first): no acceptance criteria, description, estimate or parent, no change for 14+ days while in progress, left in a finished sprint, look-alike titles (series like "Sprint 202 / 203" excluded); items done in the last 30 days without any linked code | refinement, keeping the backlog clean | `adolens health --team "Demo Team"` |
+| `ado_release_notes` | markdown release notes: requirements and bugs finished in a sprint or between dates, requirements grouped under their feature | sprint review, a release page on the wiki | `adolens release-notes previous`, `adolens release-notes --since 14d` |
+| `ado_undo` | reverts the last change ADO Lens made: field values back (fields someone changed since are left and named), comment deleted, link removed or added back, a created item set to its removed state; always a preview first; `list=true` shows recent changes | "undo that", a mistaken mass change | `adolens undo --list`, `adolens undo` |
+| `ado_recipe` | saved repeatable changes: steps with a WIQL query (or ids) and what to do with each item - fields, state, iteration `next`, tags, a comment, a child item from a template (`{title}`, `{id}`); `{parameters}`; every run previewed, then confirmed | "close the sprint", "set up a new customer" | `adolens recipe run close-sprint --param sprint="Demo\Sprint 6"`, `--yes` for Task Scheduler |
 
 ### Writing rules built in
 
@@ -240,7 +247,7 @@ build.ps1                   compile; -Deploy replaces the installed binaries, -T
 pack.ps1                    release package (ZIP + SHA-256)
 release.ps1 release-notes.ps1   releases (see below); .github\ CI and Release workflows, issue forms
 install.ps1 uninstall.ps1   installation; get.ps1 is the one-line download and install
-skills\                     skills for Claude (po-verify, po-story, po-sprint)
+skills\                     skills for Claude (po-verify, po-story, po-sprint, po-explain)
 docs\PLAN.md                road map
 build\  dist\               output (keep nothing of your own there)
 ```
@@ -287,6 +294,7 @@ regular expression per line, `!word` for allowed words. Without a list the relea
 | `SetupFlowTests.cs` | release versions and packages for updates, the team's wiki table (round trip, hand-edited pages), detecting the flow from releases and branches, the team map on the wiki with its version, local map over the team's |
 | `PrPipelineTests.cs` | PR lists and details (votes, checks, human threads only), PR actions (vote, comment on a line with a mention, create), failed build errors and log lines, running pipelines by name, saving environments, guessing the flow |
 | `TraceTests.cs` | line diff (Myers, unified hunks), X++ per method with form data sources, object names from AOT paths, `ado_trace` across TFVC and Git (deployed stages YES / NOT YET, environment labels, merged branches, deleted builds, criteria changed after coding), `ado_changes` lists and file diffs |
+| `KnowledgeTests.cs` | search across work items, wiki and code (a missing part still answers), files found by name with X++ methods, file history with pull requests and work items, undo (values back, fields changed by others kept, comments deleted), backlog health, release notes, recipes (save, preview, run) |
 | `WikiTests.cs` | page tree, page with version, replace only with the current version (412 never overwrites), append, create over an existing page, search snippets |
 | `WorkItemTests.cs` | work item answers, required fields and allowed values before writing, transitions, preview and confirm of bulk updates, mentions, links, queries, HTML ⇄ markdown, PAT never sent to other hosts |
 
