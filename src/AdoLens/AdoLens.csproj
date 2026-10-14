@@ -21,7 +21,7 @@
     <AssemblyTitle>ADO Lens for Azure DevOps</AssemblyTitle>
     <Description>Azure DevOps (work items, boards, wiki, Git and TFVC, pipelines) served to AI assistants over MCP</Description>
     <Copyright>Copyright © 2026 WillowDev</Copyright>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

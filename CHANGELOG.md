@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — unreleased
+## 0.3.0 — 2026-10-15
 
 Easy to install and to keep current, for people who are not developers.
 
