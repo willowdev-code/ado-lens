@@ -91,6 +91,7 @@ adolens config --mode dev                    # po | dev | full
 adolens config --add-toolset pipelines       # one more tool set on top of the mode
 adolens config --confirm-above 3             # updates of more items are previewed first (0: always)
 adolens config --usage-log false
+adolens config --show-tokens true            # end every answer with [~N tokens]
 ```
 
 Settings live in `%LOCALAPPDATA%\ado-lens\adolens.json` (no secrets) — they can be edited by hand too.
@@ -135,6 +136,16 @@ Every MCP call is appended to `%LOCALAPPDATA%\ado-lens\usage\usage-YYYYMM.jsonl`
 whether the answer was empty) — never the PAT, never sent anywhere. `adolens stats --days 7 --top 10` shows calls,
 average / p95 / maximum answer size in tokens (characters / 4), times and empty answers per tool, plus the largest and
 slowest calls. Turn it off with `adolens config --usage-log false`.
+
+To watch the cost while you work:
+
+- `adolens stats --live` in a second terminal prints every call Claude makes as it happens — time, tool, estimated
+  tokens, milliseconds, arguments and a running total. It adds nothing to the conversation.
+- `--tokens` after any CLI command prints the size of its answer (`[~230 tokens]`).
+- `adolens config --show-tokens true` ends every answer with that line, for Claude too (so it can tell you); it costs
+  a few tokens per answer, hence off by default.
+
+Estimates are characters / 4; Claude's tokenizer differs a little (Polish text runs somewhat higher).
 
 ## CLI
 

@@ -131,6 +131,19 @@ public class WorkItemTests : IDisposable
     }
 
     [Fact]
+    public async Task Token_footer_ends_the_answer_when_switched_on()
+    {
+        try
+        {
+            McpTools.ShowTokens = true;
+            var text = await WorkTools.WorkItem(lens, "1", detail: "summary");
+            var body = text[..text.LastIndexOf('\n')];
+            Assert.EndsWith($"\n[~{Usage.Estimate(body.Length)} tokens]", text);
+        }
+        finally { McpTools.ShowTokens = false; }
+    }
+
+    [Fact]
     public async Task Comments_come_oldest_first_as_markdown()
     {
         var text = await WorkQueries.ItemAsync(lens, null, "1", "comments", "summary");

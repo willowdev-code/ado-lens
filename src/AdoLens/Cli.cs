@@ -3,7 +3,7 @@ using System.Text;
 namespace AdoLens;
 
 /// <summary>Setup and diagnostic commands; query commands print the same text as the MCP tools.</summary>
-sealed class Cli(CommandLine cl, string version)
+sealed class Cli(CommandLine cl, string version, bool showTokens = false)
 {
     // Exit codes used by install.ps1.
     public const int RegistrationNeeded = 3;
@@ -25,6 +25,7 @@ sealed class Cli(CommandLine cl, string version)
           config          show or change settings
                             --connection <name> --project <name> --team <name>   (defaults of a connection)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
+                            --show-tokens true|false  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
           status          configuration, connection check, metadata and Claude registrations
                             --connection <name>  --offline  --quiet
           register        add / update the 'ado-lens' MCP server in Claude Desktop and Claude Code
@@ -41,7 +42,11 @@ sealed class Cli(CommandLine cl, string version)
           link <id> <targets>  --type parent|child|related|predecessor|successor|duplicate|duplicate-of|tested-by|tests [--remove]
           api <path>      raw JSON of a GET request (development)
           stats           MCP calls of the last days: answer sizes, times, empty answers   --days 7 --top 10
+                            --live: show every call as Claude makes it (tool, tokens, ms), until Ctrl+C
           version         print the version
+
+        --tokens after any command prints the estimated size of the answer ("[~230 tokens]");
+        'config --show-tokens true' adds it to every answer, in the CLI and for Claude.
 
         PATs are kept in Windows Credential Manager ("ado-lens:<connection>"), never in files or in the Claude
         configuration. Without a stored PAT, ADOLENS_PAT_<CONNECTION> and then AZURE_DEVOPS_PAT are used.
@@ -52,6 +57,13 @@ sealed class Cli(CommandLine cl, string version)
     string ExePath => cl.Opt("exe") ?? Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "adolens.exe");
 
     Lens NewLens() => Lens.Default(version);
+
+    /// <summary>Prints an answer; with --tokens (or 'config --show-tokens true') followed by its estimated size.</summary>
+    void Print(string answer)
+    {
+        Console.WriteLine(answer);
+        if (showTokens || Settings.Load(SettingsPath).ShowTokens) Console.WriteLine(Usage.Footer(answer));
+    }
 
     public async Task<int> LoginAsync()
     {
@@ -196,6 +208,11 @@ sealed class Cli(CommandLine cl, string version)
                 settings.ExtraToolsets.Remove(Toolsets.Normalize(rem));
                 changed = true;
             }
+            if (cl.Opt("show-tokens") is { } st)
+            {
+                settings.ShowTokens = bool.TryParse(st, out var b) ? b : throw new ArgumentException("--show-tokens takes true or false");
+                changed = true;
+            }
             if (cl.Opt("confirm-above") is { } ca)
             {
                 settings.ConfirmBulkAbove = int.TryParse(ca, out var n) && n >= 0 ? n : throw new ArgumentException("--confirm-above takes a number (0 previews every update)");
@@ -210,7 +227,7 @@ sealed class Cli(CommandLine cl, string version)
         if (changed) settings.Save(SettingsPath);
         Console.WriteLine($"settings: {SettingsPath}{(changed ? " (saved)" : "")}");
         Console.WriteLine($"mode: {settings.Mode} (tool sets: {string.Join(", ", Toolsets.Active(settings).OrderBy(t => Array.IndexOf(Toolsets.All, t)))})");
-        Console.WriteLine($"usage log: {(settings.UsageLog ? "on" : "off")}   preview updates of more than {settings.ConfirmBulkAbove} items   default connection: {settings.DefaultConnection ?? "-"}");
+        Console.WriteLine($"usage log: {(settings.UsageLog ? "on" : "off")}   token footer: {(settings.ShowTokens ? "on" : "off")}   preview updates of more than {settings.ConfirmBulkAbove} items   default connection: {settings.DefaultConnection ?? "-"}");
         return Connections();
     }
 
@@ -321,21 +338,21 @@ sealed class Cli(CommandLine cl, string version)
 
     public async Task<int> FieldsAsync()
     {
-        Console.WriteLine(await Queries.FieldsAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("type") ?? cl.Positional.FirstOrDefault(),
+        Print(await Queries.FieldsAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("type") ?? cl.Positional.FirstOrDefault(),
             cl.Opt("field"), cl.Opt("changes"), cl.Flag("all"), cl.Flag("refresh")));
         return 0;
     }
 
     public async Task<int> ItemAsync()
     {
-        Console.WriteLine(await WorkQueries.ItemAsync(NewLens(), cl.Opt("connection"), string.Join(';', cl.Positional), cl.Opt("include"), cl.Opt("detail")));
+        Print(await WorkQueries.ItemAsync(NewLens(), cl.Opt("connection"), string.Join(';', cl.Positional), cl.Opt("include"), cl.Opt("detail")));
         return 0;
     }
 
     public async Task<int> QueryAsync()
     {
         var top = int.TryParse(cl.Opt("top"), out var t) ? t : 50;
-        Console.WriteLine(await WorkQueries.QueryAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("wiql"), cl.Opt("query"), top));
+        Print(await WorkQueries.QueryAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("wiql"), cl.Opt("query"), top));
         return 0;
     }
 
@@ -361,7 +378,7 @@ sealed class Cli(CommandLine cl, string version)
             Parent = int.TryParse(cl.Opt("parent"), out var p) ? p : null, Iteration = cl.Opt("iteration"), Area = cl.Opt("area"),
             Tags = cl.Opt("tags"), State = cl.Opt("state"), Fields = FieldOptions(),
         };
-        Console.WriteLine(await WorkQueries.CreateAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), type, r));
+        Print(await WorkQueries.CreateAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), type, r));
         return 0;
     }
 
@@ -375,21 +392,21 @@ sealed class Cli(CommandLine cl, string version)
             Tags = cl.Opt("tags"), Fields = FieldOptions(),
         };
         var ids = cl.Opt("ids") ?? (cl.Positional.Count > 0 ? string.Join(';', cl.Positional) : null);
-        Console.WriteLine(await WorkQueries.UpdateAsync(lens, cl.Opt("connection"), ids, cl.Opt("wiql"), r, cl.Opt("comment"), cl.Opt("confirm"), lens.Settings.ConfirmBulkAbove));
+        Print(await WorkQueries.UpdateAsync(lens, cl.Opt("connection"), ids, cl.Opt("wiql"), r, cl.Opt("comment"), cl.Opt("confirm"), lens.Settings.ConfirmBulkAbove));
         return 0;
     }
 
     public async Task<int> CommentAsync()
     {
         if (cl.Positional.Count < 2 || !int.TryParse(cl.Positional[0], out var id)) { Console.Error.WriteLine("usage: adolens comment <id> <text>"); return 2; }
-        Console.WriteLine(await WorkQueries.CommentAsync(NewLens(), cl.Opt("connection"), id, string.Join(' ', cl.Positional.Skip(1))));
+        Print(await WorkQueries.CommentAsync(NewLens(), cl.Opt("connection"), id, string.Join(' ', cl.Positional.Skip(1))));
         return 0;
     }
 
     public async Task<int> LinkAsync()
     {
         if (cl.Positional.Count < 2 || !int.TryParse(cl.Positional[0], out var id)) { Console.Error.WriteLine("usage: adolens link <id> <targets> --type parent|child|related|…"); return 2; }
-        Console.WriteLine(await WorkQueries.LinkAsync(NewLens(), cl.Opt("connection"), id, string.Join(';', cl.Positional.Skip(1)),
+        Print(await WorkQueries.LinkAsync(NewLens(), cl.Opt("connection"), id, string.Join(';', cl.Positional.Skip(1)),
             cl.Opt("type") ?? "related", cl.Flag("remove")));
         return 0;
     }
@@ -403,8 +420,15 @@ sealed class Cli(CommandLine cl, string version)
         return 0;
     }
 
-    public int Stats()
+    public async Task<int> StatsAsync()
     {
+        if (cl.Flag("live"))
+        {
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+            await Usage.LiveAsync(Console.Out, cts.Token);
+            return 0;
+        }
         int Num(string name, int dflt) => int.TryParse(cl.Opt(name), out var n) && n > 0 ? n : dflt;
         Console.WriteLine(Usage.Report(Num("days", 7), Num("top", 10)));
         return 0;

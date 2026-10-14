@@ -4,6 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+// "--tokens" works with every command: the answer is followed by its estimated size.
+var showTokens = args.Skip(1).Contains("--tokens", StringComparer.OrdinalIgnoreCase);
+args = [.. args.Take(1), .. args.Skip(1).Where(a => !a.Equals("--tokens", StringComparison.OrdinalIgnoreCase))];
+
 CommandLine cl;
 try
 {
@@ -16,7 +20,7 @@ catch (ArgumentException ex)
 }
 
 var version = AppVersion();
-var cli = new Cli(cl, version);
+var cli = new Cli(cl, version, showTokens);
 try
 {
     switch (cl.Command)
@@ -45,7 +49,7 @@ try
         case "fields":
             return await cli.FieldsAsync();
         case "stats":
-            return cli.Stats();
+            return await cli.StatsAsync();
         case "api":
             return await cli.ApiAsync();
         case "item":
@@ -79,6 +83,7 @@ async Task<int> RunServerAsync()
 {
     var lens = Lens.Default(version);
     Usage.Enabled &= lens.Settings.UsageLog;
+    McpTools.ShowTokens = lens.Settings.ShowTokens;
 
     var builder = Host.CreateApplicationBuilder([]);
     builder.Logging.ClearProviders();

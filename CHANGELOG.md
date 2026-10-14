@@ -20,4 +20,5 @@ First skeleton.
 - Modes `po` / `dev` / `full` choose the tool sets Claude sees; `config --add-toolset`, `--confirm-above`.
 - Inherited process names, bugs shown on the requirement backlog, disabled types listed by name.
 - The PAT is only ever sent to Azure DevOps hosts. `adolens api <path>` for development.
-- Usage log and `adolens stats` (answer sizes in tokens, times, empty answers).
+- Usage log and `adolens stats` (answer sizes in tokens, times, empty answers); `stats --live` follows the calls as
+  Claude makes them; `--tokens` on any command and `config --show-tokens true` show the size of each answer.

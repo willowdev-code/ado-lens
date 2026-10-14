@@ -36,6 +36,9 @@ public static class McpTools
         return Intro + string.Concat(Lines.Where(l => active.Contains(l.Key)).Select(l => l.Value));
     }
 
+    /// <summary>Set at server start from the settings: end every answer with "[~N tokens]".</summary>
+    public static bool ShowTokens { get; set; }
+
     internal static async Task<string> Run(string tool, object args, Func<Task<string>> f)
     {
         var sw = Stopwatch.StartNew();
@@ -43,7 +46,8 @@ public static class McpTools
         var error = false;
         try
         {
-            return result = await f();
+            result = await f();
+            return ShowTokens ? result + "\n" + Usage.Footer(result) : result;
         }
         catch (Exception ex) when (ex is AdoApiException or InvalidOperationException or ArgumentException)
         {

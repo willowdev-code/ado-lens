@@ -31,6 +31,9 @@ public sealed partial class Settings
 
     public bool UsageLog { get; set; } = true;
 
+    /// <summary>Ends every answer with its estimated size, e.g. "[~230 tokens]" (a few tokens each, so off by default).</summary>
+    public bool ShowTokens { get; set; }
+
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,

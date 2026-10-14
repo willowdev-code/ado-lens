@@ -15,7 +15,7 @@ public sealed partial class CommandLine
         ["login"] = ["connection=", "org=", "project=", "team=", "pat-stdin", "default"],
         ["logout"] = ["connection="],
         ["connections"] = [],
-        ["config"] = ["connection=", "default-connection=", "project=", "team=", "mode=", "usage-log=", "add-toolset=", "remove-toolset=", "confirm-above="],
+        ["config"] = ["connection=", "default-connection=", "project=", "team=", "mode=", "usage-log=", "add-toolset=", "remove-toolset=", "confirm-above=", "show-tokens="],
         ["item"] = ["connection=", "include=", "detail="],
         ["query"] = ["connection=", "project=", "wiql=", "query=", "top="],
         ["create"] = ["connection=", "project=", "type=", "title=", "description=", "criteria=", "assign=", "parent=", "iteration=", "area=", "tags=", "state=", "field="],
@@ -27,7 +27,7 @@ public sealed partial class CommandLine
         ["unregister"] = ["name=", "exe=", "desktop", "code", "check", "force", "any"],
         ["refresh"] = ["connection=", "project="],
         ["fields"] = ["connection=", "project=", "type=", "field=", "changes=", "all", "refresh"],
-        ["stats"] = ["days=", "top="],
+        ["stats"] = ["days=", "top=", "live"],
         ["api"] = ["connection="],
     };
 

@@ -91,6 +91,7 @@ adolens config --mode dev                    # po | dev | full
 adolens config --add-toolset pipelines       # dodatkowy zestaw narzędzi ponad tryb
 adolens config --confirm-above 3             # zmiany większej liczby elementów najpierw jako podgląd (0: zawsze)
 adolens config --usage-log false
+adolens config --show-tokens true            # każda odpowiedź kończy się [~N tokens]
 ```
 
 Ustawienia siedzą w `%LOCALAPPDATA%\ado-lens\adolens.json` (bez sekretów) — można je też edytować ręcznie.
@@ -135,6 +136,16 @@ Każde wywołanie MCP jest dopisywane do `%LOCALAPPDATA%\ado-lens\usage\usage-RR
 odpowiedzi, czas, czy wynik był pusty) — nigdy PAT, nigdy nie opuszcza maszyny. `adolens stats --days 7 --top 10`
 pokazuje dla każdego narzędzia liczbę wywołań, średni / p95 / maksymalny rozmiar odpowiedzi w tokenach (znaki / 4),
 czasy i puste odpowiedzi, a do tego największe i najwolniejsze wywołania. Wyłączenie: `adolens config --usage-log false`.
+
+Podgląd kosztu w trakcie pracy:
+
+- `adolens stats --live` w drugim terminalu wypisuje każde wywołanie Claude'a na bieżąco — czas, narzędzie, szacowane
+  tokeny, milisekundy, argumenty i sumę narastająco. Niczego nie dokłada do rozmowy.
+- `--tokens` po dowolnym poleceniu CLI wypisuje rozmiar jego odpowiedzi (`[~230 tokens]`).
+- `adolens config --show-tokens true` dopisuje tę linię do każdej odpowiedzi, także dla Claude'a (może ci ją podać);
+  kosztuje kilka tokenów na odpowiedź, dlatego domyślnie jest wyłączone.
+
+Szacunek to znaki / 4; tokenizer Claude'a liczy trochę inaczej (polski tekst wychodzi nieco drożej).
 
 ## CLI
 
