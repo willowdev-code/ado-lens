@@ -22,7 +22,10 @@ public static partial class Html
     [GeneratedRegex(@"\b(href|src|alt)\s*=\s*(?:""([^""]*)""|'([^']*)'|([^\s>]+))", RegexOptions.IgnoreCase)]
     private static partial Regex Attribute();
 
-    [GeneratedRegex(@"[ \t ]+")]
+    [GeneratedRegex(@"\*\*\s*\n\s*\*\*")]
+    private static partial Regex EmptyBold();
+
+    [GeneratedRegex(@"[ \t\u00A0]+")]
     private static partial Regex Spaces();
 
     [GeneratedRegex(@"\n{3,}")]
@@ -122,7 +125,9 @@ public static partial class Html
             output.Add(l.Trim().Length == 0 ? "" : code || IsListItem(l.TrimStart()) ? l : l.TrimStart());
         }
         var text = string.Join('\n', output);
-        text = text.Replace("****", "").Replace("** **", " ");
+        // Bold around nothing (empty template headings, bold line breaks) leaves stray markers.
+        text = EmptyBold().Replace(text.Replace("****", "").Replace("** **", " "), "");
+        text = string.Join('\n', text.Split('\n').Where(l => l.Trim() is not ("**" or "*")));
         return BlankLines().Replace(text, "\n\n").Trim();
     }
 

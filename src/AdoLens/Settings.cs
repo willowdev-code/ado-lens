@@ -10,6 +10,12 @@ public sealed class Connection
     public string Organization { get; set; } = "";
     public string? Project { get; set; }
     public string? Team { get; set; }
+
+    /// <summary>
+    /// What a branch means for people: "staging" → "UAT", "master" → "PROD" (TFVC: the last part of the branch path,
+    /// e.g. "Main"). Azure DevOps does not know it; ado_trace uses it to say where a change has arrived.
+    /// </summary>
+    public Dictionary<string, string> Environments { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>Non-secret settings (adolens.json in the data folder). PATs live in Windows Credential Manager.</summary>
@@ -53,8 +59,10 @@ public sealed partial class Settings
     {
         if (!File.Exists(path)) return new();
         var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path), Json) ?? new();
-        // The deserializer replaces the dictionary, so the case-insensitive comparer has to be restored.
+        // The deserializer replaces the dictionaries, so the case-insensitive comparers have to be restored.
         s.Connections = new Dictionary<string, Connection>(s.Connections, StringComparer.OrdinalIgnoreCase);
+        foreach (var c in s.Connections.Values)
+            c.Environments = new Dictionary<string, string>(c.Environments ?? [], StringComparer.OrdinalIgnoreCase);
         return s;
     }
 
@@ -116,6 +124,9 @@ public sealed partial class Settings
 /// <summary>Effective settings of one connection, with the PAT and where it came from.</summary>
 public sealed record Config(string Connection, string Organization, string Pat, string? Project, string? Team, string PatSource)
 {
+    /// <summary>Branch → environment label of the connection (see <see cref="AdoLens.Connection.Environments"/>).</summary>
+    public IReadOnlyDictionary<string, string> Environments { get; init; } = new Dictionary<string, string>();
+
     public const string ConnectionVar = "ADOLENS_CONNECTION";
     public const string OrgVar = "AZURE_DEVOPS_ORG";
     public const string PatVar = "AZURE_DEVOPS_PAT";
@@ -166,9 +177,10 @@ public sealed record Config(string Connection, string Organization, string Pat, 
                 Warning = envPat.Value is { } v && v != storedPat
                     ? $"{envPat.Var} is set too but differs from the PAT in Credential Manager (which is used)"
                     : null,
+                Environments = conn.Environments,
             };
         if (envPat.Value is { } pat)
-            return new Config(name, org, pat, project, NullIfEmpty(conn.Team), $"environment variable {envPat.Var}");
+            return new Config(name, org, pat, project, NullIfEmpty(conn.Team), $"environment variable {envPat.Var}") { Environments = conn.Environments };
 
         throw new InvalidOperationException(
             $"no PAT for connection '{name}': run 'adolens login --connection {name}' (stores it in Windows Credential Manager) or set {envVar}");

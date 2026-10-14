@@ -33,7 +33,7 @@ sealed class FakeAdo : HttpMessageHandler
         var path = url.Split('?')[0];
         // Longest prefix first, so "/x/_apis/wit/workitemtypes/Bug/fields" beats "/x/_apis/wit/workitemtypes".
         foreach (var (prefix, respond) in routes.OrderByDescending(r => r.Prefix.Length))
-            if (path.StartsWith(prefix, StringComparison.Ordinal))
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
                 var res = respond(request);
                 res.RequestMessage = request;

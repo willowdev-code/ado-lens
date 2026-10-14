@@ -66,6 +66,26 @@ public sealed class AdoClient(HttpClient http, string organization)
 
     public Task<JsonElement> GetAsync(string url, CancellationToken ct = default) => SendAsync(HttpMethod.Get, url, null, null, ct);
 
+    /// <summary>A plain text answer (build logs).</summary>
+    public async Task<string> GetTextAsync(string url, CancellationToken ct = default)
+    {
+        url = WithApiVersion(url);
+        for (var attempt = 1; ; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/plain"));
+            using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (attempt < MaxAttempts && RetryDelay(res) is { } delay)
+            {
+                await Delay(delay, ct);
+                continue;
+            }
+            // A log is text/plain; the HTML check of EnsureSuccessAsync only applies to sign-in pages.
+            await EnsureSuccessAsync(res, ct);
+            return await res.Content.ReadAsStringAsync(ct);
+        }
+    }
+
     public Task<JsonElement> PostAsync(string url, object body, CancellationToken ct = default) =>
         SendAsync(HttpMethod.Post, url, body, "application/json", ct);
 

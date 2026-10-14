@@ -16,28 +16,28 @@ public static class McpTools
     static readonly Dictionary<string, string> Lines = new()
     {
         [Toolsets.Core] = """
-            - ado_status: version, connection, user. ado_fields: work item types by backlog level (portfolio / requirement /
-              task / bug), states, transitions, fields, allowed values, structure changes. Field names and values differ per
-              process and company: check them with ado_fields before writing fields or WIQL.
+            - Field names, values and states differ per process and company: check them with ado_fields before writing.
             """,
         [Toolsets.Work] = """
-            - ado_work_item reads items (include=comments,history); ado_query runs WIQL or a saved query; ado_create,
-              ado_update (one or many; many are previewed first: show the preview, then repeat the call with confirm),
-              ado_comment (@[name] mentions notify people), ado_link.
+            - ado_update on many items returns a preview: show it, then repeat the call with confirm.
             - Writing: short and complete - what to do or what was done, no filler. Requirement: goal in 1-2 sentences,
               scope as bullets, testable acceptance criteria in their own field. Bug: what happens, what should, numbered
               steps, where. Task: one sentence. Comment: decision or question first.
             """,
         [Toolsets.Boards] = """
-            - ado_sprint: sprint dates, progress, remaining work vs capacity, and what needs attention (stale, blocked,
-              no estimate, no criteria, unassigned) - say plainly when the sprint has ended. ado_board: columns with WIP
-              limits and cards; move=<id> column=<name> moves a card (state follows the column). ado_backlog: priority
-              order; move with above/below reorders. ado_my_day: mentions, own and followed items changed by others, PRs
-              waiting for review.
+            - Say plainly when a sprint has ended or a column is over its WIP limit.
+            """,
+        [Toolsets.Trace] = """
+            - Checking work against what was asked: ado_trace, then read the diffs with ado_changes - never assume.
+            """,
+        [Toolsets.Pr] = """
+            - PR description: what and why with the work item, changes as bullets by area, how to check, risks only if any.
+            """,
+        [Toolsets.Pipelines] = """
+            - A failed build: give the error lines from the log, not the whole log.
             """,
         [Toolsets.Wiki] = """
-            - ado_wiki: page tree, a page (markdown, with its version), or search. ado_wiki_write: create, append, prepend,
-              or replace with the version from the last full read (a page changed meanwhile is never overwritten).
+            - Replace a wiki page only after reading it whole (detail=full), with its version.
             """,
     };
 
@@ -92,6 +92,11 @@ public static class CoreTools
         [Description("Connection name; default: the configured one.")] string? connection = null,
         CancellationToken ct = default)
         => McpTools.Run("ado_status", new { connection }, () => Queries.StatusAsync(lens, connection, offline: false, ct));
+
+    [McpServerTool(Name = "ado_settings")]
+    [Description("Shows the connection's settings; with environments saves for good what branches and release stages mean, in flow order: \"dev=DEV (sbx01); staging=UAT (sbx03); master=PROD\" (a stage: \"Release/Stage=UAT + SCM\").")]
+    public static Task<string> Settings(Lens lens, string? environments = null, string? connection = null, CancellationToken ct = default)
+        => McpTools.Run("ado_settings", new { environments, connection }, () => Task.FromResult(Queries.SettingsAnswer(lens, connection, environments)));
 
     [McpServerTool(Name = "ado_fields", ReadOnly = true, Idempotent = true)]
     [Description("Work item structure of the project: types by backlog level; with type: states, transitions, fields, required flags, allowed values; with field: one field across types; with changes: what changed in the structure.")]
@@ -161,6 +166,107 @@ public static class BoardTools
         CancellationToken ct = default)
         => McpTools.Run("ado_my_day", new { since, project, connection },
             () => BoardQueries.MyDayAsync(lens, connection, project, since, null, ct));
+}
+
+[McpServerToolType, Toolset(Toolsets.Trace)]
+public static class TraceTools
+{
+    [McpServerTool(Name = "ado_trace", ReadOnly = true, Idempotent = true)]
+    [Description("Was a work item done as asked and where is it: acceptance criteria and their changes, linked code (item and tasks), builds, each release stage YES / NOT YET, tests, signals.")]
+    public static Task<string> Trace(Lens lens, int id,
+        [Description("summary | normal | full.")] string? detail = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_trace", new { id, detail, connection }, () => TraceQueries.TraceAsync(lens, connection, id, detail, ct));
+
+    [McpServerTool(Name = "ado_changes", ReadOnly = true, Idempotent = true)]
+    [Description("Files of a changeset (523), pull request (PR 482) or commit (sha + repo), X++ objects with added/changed/removed methods; with file: the diff of one file, X++ per method.")]
+    public static Task<string> Changes(Lens lens,
+        [Description("523, C523, PR 482, or a commit sha.")] string change,
+        [Description("Repository name, for commits.")] string? repo = null,
+        [Description("File name or end of its path.")] string? file = null,
+        [Description("summary | normal | full.")] string? detail = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_changes", new { change, repo, file, detail, connection },
+            () => TraceQueries.ChangesAsync(lens, connection, change, repo, file, detail, ct));
+}
+
+[McpServerToolType, Toolset(Toolsets.Pr)]
+public static class PrTools
+{
+    [McpServerTool(Name = "ado_pr", ReadOnly = true, Idempotent = true)]
+    [Description("Pull requests: without id the ones waiting for my review and mine (list=active: all active); with id: status, reviewers and votes, checks, work items, open comment threads.")]
+    public static Task<string> Pr(Lens lens,
+        int? id = null,
+        [Description("Repository name (optional with id).")] string? repo = null,
+        [Description("review (default) | active.")] string? list = null,
+        [Description("full: all threads, whole description.")] string? detail = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_pr", new { id, repo, list, detail, project, connection },
+            () => id is { } n ? PullRequestQueries.ShowAsync(lens, connection, n, repo, detail, ct) : PullRequestQueries.ListAsync(lens, connection, project, list, ct));
+
+    [McpServerTool(Name = "ado_pr_update")]
+    [Description("Acts on pull requests: create (repo, source, target, title, text, workItems, reviewers, draft), comment (text, optional file and line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), publish, complete, abandon. @[name] in text notifies.")]
+    public static Task<string> PrUpdate(Lens lens,
+        string action,
+        int? id = null,
+        string? repo = null,
+        [Description("Markdown: PR description or comment.")] string? text = null,
+        int? thread = null,
+        [Description("File path for a comment on code.")] string? file = null,
+        int? line = null,
+        string? vote = null,
+        [Description("fixed | closed | wontFix | byDesign | active.")] string? status = null,
+        string? source = null,
+        string? target = null,
+        string? title = null,
+        [Description("Work item ids: 123;456.")] string? workItems = null,
+        [Description("Names or e-mails separated by ';'.")] string? reviewers = null,
+        bool draft = false,
+        bool deleteSourceBranch = false,
+        [Description("noFastForward | squash | rebase | rebaseMerge.")] string? mergeStrategy = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_pr_update", new { action, id, repo, thread, file, line, vote, status, source, target, title, workItems, reviewers, draft, deleteSourceBranch, mergeStrategy, connection },
+            () => PullRequestQueries.ActAsync(lens, connection, new PullRequestQueries.PrAction
+            {
+                Action = action, Id = id, Repo = repo, Text = text, Thread = thread, File = file, Line = line, Vote = vote, Status = status,
+                Source = source, Target = target, Title = title, WorkItems = workItems, Reviewers = reviewers, Draft = draft,
+                DeleteSourceBranch = deleteSourceBranch, MergeStrategy = mergeStrategy,
+            }, ct));
+}
+
+[McpServerToolType, Toolset(Toolsets.Pipelines)]
+public static class PipelineTools
+{
+    [McpServerTool(Name = "ado_pipeline", ReadOnly = true, Idempotent = true)]
+    [Description("Builds: recent runs (optionally of one pipeline or branch); with build: why it failed - failed steps, errors and the error lines of the log.")]
+    public static Task<string> Pipeline(Lens lens,
+        int? build = null,
+        [Description("Pipeline name or id.")] string? definition = null,
+        string? branch = null,
+        int top = 10,
+        [Description("full: more steps and log lines.")] string? detail = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_pipeline", new { build, definition, branch, top, detail, project, connection },
+            () => build is { } b ? PipelineQueries.BuildAsync(lens, connection, project, b, detail, ct) : PipelineQueries.ListAsync(lens, connection, project, definition, branch, top, ct));
+
+    [McpServerTool(Name = "ado_pipeline_run")]
+    [Description("Queues a run of a pipeline, optionally on a branch.")]
+    public static Task<string> Run(Lens lens,
+        [Description("Pipeline name or id.")] string definition,
+        string? branch = null,
+        [Description("JSON object of pipeline variables.")] string? parameters = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_pipeline_run", new { definition, branch, project, connection },
+            () => PipelineQueries.RunAsync(lens, connection, project, definition, branch, parameters, ct));
 }
 
 [McpServerToolType, Toolset(Toolsets.Wiki)]
@@ -261,7 +367,7 @@ public static class WorkTools
         string? area = null,
         [Description("'a; b' replaces, '+a; -b' adds and removes.")] string? tags = null,
         [Description("Other fields by name or reference name; empty value clears.")] Dictionary<string, string>? fields = null,
-        [Description("Markdown comment added to each item.")] string? comment = null,
+        [Description("Markdown comment for each item, alone or with changes; @[name or e-mail] notifies a person.")] string? comment = null,
         [Description("Token from the preview.")] string? confirm = null,
         string? connection = null,
         CancellationToken ct = default)

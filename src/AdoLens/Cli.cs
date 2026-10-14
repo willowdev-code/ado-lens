@@ -44,6 +44,10 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           board [<board>]  --team <t>  --move <id> --column <name>  --detail summary|normal|full
           backlog          --level requirement|portfolio|task|<name>  --top 30  --move <id> --above <id> | --below <id>
           myday            --since 1d|3d|2w|yyyy-MM-dd (default: the previous working day)
+          trace <id>       was it done as asked, and where is it (DEV / UAT / PROD)   --detail summary|full
+          changes <523 | C523 | "PR 482" | sha --repo <r>>   files, X++ methods; --file <name> for a diff
+          pr [<id>]        PRs waiting for my review and mine (--list active: all); with id: reviewers, checks, threads
+          pipeline [<build id>]   recent builds (--definition <name> --branch <b> --top 10); with id: why it failed
           wiki [<page path>]  --search <text>  --depth 2  --detail full  --wiki <name>
           wiki-write <page path>  --file <page.md> (or standard input)  --mode create|append|prepend|replace
                             --version <v> (for replace, from 'wiki <path>')  --comment <text>
@@ -172,7 +176,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         {
             var pat = CredentialStore.Read(name) is not null ? "PAT stored" : "no stored PAT";
             Console.WriteLine($"{(name.Equals(settings.DefaultConnection, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {name,-16} " +
-                              $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}  team {c.Team ?? "-"}  ({pat})");
+                              $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}  team {c.Team ?? "-"}  ({pat})" +
+                              (c.Environments.Count > 0 ? $"\n  {"",-16} environments: {string.Join(", ", c.Environments.Select(e => $"{e.Key} = {e.Value}"))}" : ""));
         }
         return 0;
     }
@@ -189,9 +194,17 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     throw new ArgumentException($"no connection named '{name}' - add it with 'adolens login --connection {name}'");
                 if (cl.Opt("project") is { } p) { conn.Project = NullIfEmpty(p); changed = true; }
                 if (cl.Opt("team") is { } t) { conn.Team = NullIfEmpty(t); changed = true; }
+                while (cl.Opt("env") is { } e)
+                {
+                    var eq = e.IndexOf('=');
+                    if (eq <= 0 || eq == e.Length - 1) throw new ArgumentException($"--env takes branch=label, e.g. staging=UAT, not '{e}'");
+                    conn.Environments[e[..eq].Trim()] = e[(eq + 1)..].Trim();
+                    changed = true;
+                }
+                while (cl.Opt("remove-env") is { } r) { conn.Environments.Remove(r.Trim()); changed = true; }
             }
-            else if (cl.Peek("project") is not null || cl.Peek("team") is not null)
-                throw new ArgumentException("--project / --team need --connection <name>");
+            else if (cl.Peek("project") is not null || cl.Peek("team") is not null || cl.Peek("env") is not null || cl.Peek("remove-env") is not null)
+                throw new ArgumentException("--project / --team / --env need --connection <name>");
             if (cl.Opt("default-connection") is { } d)
             {
                 if (!settings.Connections.ContainsKey(d)) throw new ArgumentException($"no connection named '{d}'");
@@ -444,6 +457,38 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public async Task<int> MyDayAsync()
     {
         Print(await BoardQueries.MyDayAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("since")));
+        return 0;
+    }
+
+    public async Task<int> TraceAsync()
+    {
+        if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens trace <work item id> [--detail summary|full]"); return 2; }
+        Print(await TraceQueries.TraceAsync(NewLens(), cl.Opt("connection"), id, cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> ChangesAsync()
+    {
+        if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens changes <523 | C523 | \"PR 482\" | sha --repo <name>> [--file <name>]"); return 2; }
+        Print(await TraceQueries.ChangesAsync(NewLens(), cl.Opt("connection"), string.Join(' ', cl.Positional), cl.Opt("repo"), cl.Opt("file"), cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> PrAsync()
+    {
+        var lens = NewLens();
+        Print(Int(cl.Positional.FirstOrDefault()) is { } id
+            ? await PullRequestQueries.ShowAsync(lens, cl.Opt("connection"), id, cl.Opt("repo"), cl.Opt("detail"))
+            : await PullRequestQueries.ListAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("list")));
+        return 0;
+    }
+
+    public async Task<int> PipelineAsync()
+    {
+        var lens = NewLens();
+        Print(Int(cl.Positional.FirstOrDefault()) is { } build
+            ? await PipelineQueries.BuildAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("detail"))
+            : await PipelineQueries.ListAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("definition"), cl.Opt("branch"), Int(cl.Opt("top")) ?? 10));
         return 0;
     }
 
