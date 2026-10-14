@@ -172,7 +172,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         {
             var pat = CredentialStore.Read(name) is not null ? "PAT stored" : "no stored PAT";
             Console.WriteLine($"{(name.Equals(settings.DefaultConnection, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {name,-16} " +
-                              $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}  team {c.Team ?? "-"}  ({pat})");
+                              $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}  team {c.Team ?? "-"}  ({pat})" +
+                              (c.Environments.Count > 0 ? $"\n  {"",-16} environments: {string.Join(", ", c.Environments.Select(e => $"{e.Key} = {e.Value}"))}" : ""));
         }
         return 0;
     }
@@ -189,9 +190,17 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     throw new ArgumentException($"no connection named '{name}' - add it with 'adolens login --connection {name}'");
                 if (cl.Opt("project") is { } p) { conn.Project = NullIfEmpty(p); changed = true; }
                 if (cl.Opt("team") is { } t) { conn.Team = NullIfEmpty(t); changed = true; }
+                while (cl.Opt("env") is { } e)
+                {
+                    var eq = e.IndexOf('=');
+                    if (eq <= 0 || eq == e.Length - 1) throw new ArgumentException($"--env takes branch=label, e.g. staging=UAT, not '{e}'");
+                    conn.Environments[e[..eq].Trim()] = e[(eq + 1)..].Trim();
+                    changed = true;
+                }
+                while (cl.Opt("remove-env") is { } r) { conn.Environments.Remove(r.Trim()); changed = true; }
             }
-            else if (cl.Peek("project") is not null || cl.Peek("team") is not null)
-                throw new ArgumentException("--project / --team need --connection <name>");
+            else if (cl.Peek("project") is not null || cl.Peek("team") is not null || cl.Peek("env") is not null || cl.Peek("remove-env") is not null)
+                throw new ArgumentException("--project / --team / --env need --connection <name>");
             if (cl.Opt("default-connection") is { } d)
             {
                 if (!settings.Connections.ContainsKey(d)) throw new ArgumentException($"no connection named '{d}'");
@@ -444,6 +453,20 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public async Task<int> MyDayAsync()
     {
         Print(await BoardQueries.MyDayAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("since")));
+        return 0;
+    }
+
+    public async Task<int> TraceAsync()
+    {
+        if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens trace <work item id> [--detail summary|full]"); return 2; }
+        Print(await TraceQueries.TraceAsync(NewLens(), cl.Opt("connection"), id, cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> ChangesAsync()
+    {
+        if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens changes <523 | C523 | \"PR 482\" | sha --repo <name>> [--file <name>]"); return 2; }
+        Print(await TraceQueries.ChangesAsync(NewLens(), cl.Opt("connection"), string.Join(' ', cl.Positional), cl.Opt("repo"), cl.Opt("file"), cl.Opt("detail")));
         return 0;
     }
 

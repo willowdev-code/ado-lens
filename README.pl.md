@@ -13,7 +13,8 @@ a nie tysiące. Zmiany między wersjami: [CHANGELOG.md](CHANGELOG.md). Plan rozw
 Azure DevOps jest znakiem towarowym Microsoftu.
 
 > Stan: **0.x — w budowie.** Działają połączenia, rejestracja w Claude, lokalna struktura work itemów, work itemy,
-> sprinty, tablice, backlogi i wiki; śledzenie pracy do kodu, pull requesty i pipeline'y — według planu.
+> sprinty, tablice, backlogi, wiki oraz śledzenie pracy do kodu i wdrożeń; pull requesty, pipeline'y i instalator —
+> według planu.
 
 ## Czym się różni
 
@@ -92,7 +93,13 @@ adolens config --add-toolset pipelines       # dodatkowy zestaw narzędzi ponad 
 adolens config --confirm-above 3             # zmiany większej liczby elementów najpierw jako podgląd (0: zawsze)
 adolens config --usage-log false
 adolens config --show-tokens true            # każda odpowiedź kończy się [~N tokens]
+adolens config --connection contoso --env staging=UAT --env master=PROD   # co znaczą gałęzie (dla ado_trace)
 ```
+
+**Środowiska.** Azure DevOps nie wie, że gałąź `staging` to UAT. Zmapuj gałęzie na nazwy środowisk dla połączenia
+(`--env gałąź=etykieta`, `--remove-env gałąź`; dla TFVC użyj ostatniej części ścieżki gałęzi, np. `Main`). Wtedy
+`ado_trace` mówi „UAT: TAK” zamiast samej nazwy etapu release'u, a dla Gita sprawdza też, czy zmiana jest scalona do
+każdej zmapowanej gałęzi, nawet gdy żaden pipeline jej nie wdraża.
 
 Ustawienia siedzą w `%LOCALAPPDATA%\ado-lens\adolens.json` (bez sekretów) — można je też edytować ręcznie.
 
@@ -107,7 +114,8 @@ Nigdy nie jest uprawnieniem.
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
 | `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day` | ✓ | – | ✓ |
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
-| `trace`, `test`, `recipes` | w planie | ✓ | (trace, recipes) | ✓ |
+| `trace` | `ado_trace`, `ado_changes` | ✓ | ✓ | ✓ |
+| `test`, `recipes` | w planie | ✓ | (recipes) | ✓ |
 | `code`, `pr`, `pipelines` | w planie | – | ✓ | ✓ |
 
 ## Mapa narzędzi
@@ -127,6 +135,8 @@ Na co odpowiada każde narzędzie MCP, kiedy Claude powinien po nie sięgnąć i
 | `ado_sprint` | sprint zespołu (`current`, `next`, `previous` albo po nazwie): daty i dzień roboczy, elementy według stanu, szacunki, pozostała praca wobec pozostałej pojemności, elementy do uwagi (bez zmian od kilku dni, zablokowane, bez szacunku, bez kryteriów, bez osoby), postęp zadań per element; mówi wprost, gdy sprint się skończył | daily, przegląd sprintu, „czy zdążymy” | `adolens sprint`, `adolens sprint next --team "Demo Team" --detail summary` |
 | `ado_board` | tablica zespołu: kolumny z limitami WIP (przekroczenia oznaczone) i ich karty; `move` + `column` przesuwa kartę — stan wynika z mapowania kolumny dla typu elementu | „co jest w toku”, przesuwanie kart | `adolens board`, `adolens board --move 123 --column "In Progress"` |
 | `ado_backlog` | backlog zespołu w kolejności priorytetu (wymagania, portfolio, zadania albo po nazwie); `move` + `above`/`below` zmienia kolejność | refinement, priorytety | `adolens backlog --top 20`, `adolens backlog --move 123 --above 456` |
+| `ado_trace` | czy zrobiono to, o co proszono, i gdzie to jest: kryteria akceptacji (dla zadania — z elementu nadrzędnego) i to, czy zmieniły się po rozpoczęciu prac; changesety, commity i pull requesty podpięte pod element i jego zadania, z obiektami X++, których dotyczą; buildy (także usunięte przez retencję); każdy etap release'u gałęzi tego kodu z **TAK / JESZCZE NIE** i etykietą z mapy środowisk (`staging` → UAT); dla Gita — czy zmiana jest scalona do każdej zmapowanej gałęzi; testy, zadania i sygnały ostrzegawcze | „czy zrobili to, o co prosiłem”, „czy to już jest na UAT” | `adolens trace 123` |
+| `ado_changes` | pliki changesetu (`523`), pull requesta (`PR 482`) albo commita (sha + `repo`) z obiektami X++ i ich dodanymi / zmienionymi / usuniętymi metodami; `file` daje diff jednego pliku — dla AOT XML per metoda plus metadane (pola, kontrolki, właściwości) bez szumu surowego XML-a | czytanie, co dokładnie się zmieniło | `adolens changes 523`, `adolens changes 523 --file AxClass/SalesTable_Extension.xml` |
 | `ado_wiki` | wiki projektu: drzewo stron (`depth`), strona jako markdown z wersją i podstronami albo wyszukiwanie we wszystkich wiki projektu z fragmentami; długie strony są ucinane, chyba że `detail=full` | „jak działa X”, szukanie dokumentacji | `adolens wiki`, `adolens wiki "Team/Setup"`, `adolens wiki --search "dual write"` |
 | `ado_wiki_write` | `create` — nowa strona, `append` / `prepend` — dopisanie, `replace` — zastąpienie z wersją z ostatniego pełnego odczytu (strony zmienionej w międzyczasie przez kogoś innego nigdy nie nadpisze); opcjonalny komentarz zmiany | notatki wydania, aktualna dokumentacja | `adolens wiki-write "Team/Release notes" --file notes.md --mode append` |
 | `ado_my_day` | od poprzedniego dnia roboczego (albo `since`): gdzie cię oznaczono (wszystkie projekty), twoje i obserwowane elementy zmienione przez innych, pull requesty czekające na twój przegląd | początek dnia | `adolens myday --since 3d` |
@@ -158,7 +168,7 @@ Szacunek to znaki / 4; tokenizer Claude'a liczy trochę inaczej (polski tekst wy
 ## CLI
 
 ```
-adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday|wiki|wiki-write …
+adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday|wiki|wiki-write|trace|changes …
 adolens login|logout|connections|config|status|register|unregister|refresh|stats|api|mcp|version
 ```
 
@@ -221,6 +231,7 @@ i publikuje go razem z `.sha256` i opisem z `CHANGELOG.md` (podgląd: `.\release
 | `SetupTests.cs` | ustawienia, połączenia i kolejność PAT (najpierw Menedżer poświadczeń), linia poleceń, edycja konfiguracji Claude'a, Menedżer poświadczeń, ponawianie i błędy HTTP, budżet definicji narzędzi na tryb, faktyczna rejestracja narzędzi |
 | `MetadataTests.cs` | pobieranie struktury (poziomy, nazwa procesu dziedziczonego, bugi na backlogu wymagań), historia zmian, zwięzłe odpowiedzi `ado_fields` |
 | `BoardTests.cs` | postęp sprintu, pozostała pojemność z dniami wolnymi, lista do uwagi, wybór sprintu, zakończone sprinty, kolumny tablicy i WIP, przesuwanie kart z mapowaniem stanów, kolejność backlogu i jej zmiana, mój dzień |
+| `TraceTests.cs` | diff linii (Myers, bloki unified), X++ per metoda ze źródłami danych formularza, nazwy obiektów ze ścieżek AOT, `ado_trace` w TFVC i Gicie (wdrożone etapy TAK / JESZCZE NIE, etykiety środowisk, scalone gałęzie, usunięte buildy, kryteria zmienione po rozpoczęciu prac), listy i diffy plików w `ado_changes` |
 | `WikiTests.cs` | drzewo stron, strona z wersją, zastąpienie tylko z aktualną wersją (412 nigdy nie nadpisuje), dopisywanie, tworzenie na istniejącej stronie, fragmenty wyszukiwania |
 | `WorkItemTests.cs` | odpowiedzi o work itemach, pola wymagane i dozwolone wartości przed zapisem, przejścia stanów, podgląd i potwierdzanie zmian wsadowych, wzmianki, linki, zapytania, HTML ⇄ markdown, PAT nigdy do innych hostów |
 
@@ -235,6 +246,8 @@ organizacji do testów, zgłoszeń ani commitów.
 | odczyt, zapis i kontrole work itemów | `WorkItems.cs`, `WorkQueries.cs`; wyjście w `WorkItemFormat.cs` |
 | sprinty, pojemność, tablice, backlogi, mój dzień | `Boards.cs` (API w `Boards`, odpowiedzi w `BoardQueries`) |
 | wiki | `Wiki.cs` |
+| changesety, commity, PR-y, buildy, wdrożenia | `Code.cs`; śledzenie w `Trace.cs`; diffy i X++ per metoda w `Diff.cs` |
+| skille dla Claude'a | `skills\<nazwa>\SKILL.md` |
 | struktura work itemów (typy, pola, stany) | `MetadataService.cs` (pobieranie), `MetaStore.cs` (SQLite; podnieś `SchemaVersion`, żeby pobrać od nowa), `Metadata.cs` (wykrywanie zmian) |
 | tekst sformatowany | `Html.cs` |
 | osoby | `Identities.cs` |

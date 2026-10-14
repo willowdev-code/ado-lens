@@ -16,28 +16,22 @@ public static class McpTools
     static readonly Dictionary<string, string> Lines = new()
     {
         [Toolsets.Core] = """
-            - ado_status: version, connection, user. ado_fields: work item types by backlog level (portfolio / requirement /
-              task / bug), states, transitions, fields, allowed values, structure changes. Field names and values differ per
-              process and company: check them with ado_fields before writing fields or WIQL.
+            - Field names, values and states differ per process and company: check them with ado_fields before writing.
             """,
         [Toolsets.Work] = """
-            - ado_work_item reads items (include=comments,history); ado_query runs WIQL or a saved query; ado_create,
-              ado_update (one or many; many are previewed first: show the preview, then repeat the call with confirm),
-              ado_comment (@[name] mentions notify people), ado_link.
+            - ado_update on many items returns a preview: show it, then repeat the call with confirm.
             - Writing: short and complete - what to do or what was done, no filler. Requirement: goal in 1-2 sentences,
               scope as bullets, testable acceptance criteria in their own field. Bug: what happens, what should, numbered
               steps, where. Task: one sentence. Comment: decision or question first.
             """,
         [Toolsets.Boards] = """
-            - ado_sprint: sprint dates, progress, remaining work vs capacity, and what needs attention (stale, blocked,
-              no estimate, no criteria, unassigned) - say plainly when the sprint has ended. ado_board: columns with WIP
-              limits and cards; move=<id> column=<name> moves a card (state follows the column). ado_backlog: priority
-              order; move with above/below reorders. ado_my_day: mentions, own and followed items changed by others, PRs
-              waiting for review.
+            - Say plainly when a sprint has ended or a column is over its WIP limit.
+            """,
+        [Toolsets.Trace] = """
+            - Checking work against what was asked: ado_trace, then read the diffs with ado_changes - never assume.
             """,
         [Toolsets.Wiki] = """
-            - ado_wiki: page tree, a page (markdown, with its version), or search. ado_wiki_write: create, append, prepend,
-              or replace with the version from the last full read (a page changed meanwhile is never overwritten).
+            - Replace a wiki page only after reading it whole (detail=full), with its version.
             """,
     };
 
@@ -163,6 +157,30 @@ public static class BoardTools
             () => BoardQueries.MyDayAsync(lens, connection, project, since, null, ct));
 }
 
+[McpServerToolType, Toolset(Toolsets.Trace)]
+public static class TraceTools
+{
+    [McpServerTool(Name = "ado_trace", ReadOnly = true, Idempotent = true)]
+    [Description("Was a work item done as asked and where is it: acceptance criteria and their changes, linked code (item and tasks), builds, each release stage YES / NOT YET, tests, signals.")]
+    public static Task<string> Trace(Lens lens, int id,
+        [Description("summary | normal | full.")] string? detail = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_trace", new { id, detail, connection }, () => TraceQueries.TraceAsync(lens, connection, id, detail, ct));
+
+    [McpServerTool(Name = "ado_changes", ReadOnly = true, Idempotent = true)]
+    [Description("Files of a changeset (523), pull request (PR 482) or commit (sha + repo), X++ objects with added/changed/removed methods; with file: the diff of one file, X++ per method.")]
+    public static Task<string> Changes(Lens lens,
+        [Description("523, C523, PR 482, or a commit sha.")] string change,
+        [Description("Repository name, for commits.")] string? repo = null,
+        [Description("File name or end of its path.")] string? file = null,
+        [Description("summary | normal | full.")] string? detail = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_changes", new { change, repo, file, detail, connection },
+            () => TraceQueries.ChangesAsync(lens, connection, change, repo, file, detail, ct));
+}
+
 [McpServerToolType, Toolset(Toolsets.Wiki)]
 public static class WikiTools
 {
@@ -261,7 +279,7 @@ public static class WorkTools
         string? area = null,
         [Description("'a; b' replaces, '+a; -b' adds and removes.")] string? tags = null,
         [Description("Other fields by name or reference name; empty value clears.")] Dictionary<string, string>? fields = null,
-        [Description("Markdown comment added to each item.")] string? comment = null,
+        [Description("Markdown comment for each item, alone or with changes; @[name or e-mail] notifies a person.")] string? comment = null,
         [Description("Token from the preview.")] string? confirm = null,
         string? connection = null,
         CancellationToken ct = default)

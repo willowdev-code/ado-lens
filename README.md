@@ -13,7 +13,8 @@ not thousands. Changes between versions: [CHANGELOG.md](CHANGELOG.md). The road 
 Azure DevOps is a trademark of Microsoft.
 
 > Status: **0.x — in development.** Connections, Claude registration, the local work item structure, work items,
-> sprints, boards, backlogs and the wiki work; tracing work to code, pull requests and pipelines follow the plan.
+> sprints, boards, backlogs, the wiki and tracing work to code and deployments work; pull requests, pipelines and
+> the installer follow the plan.
 
 ## What it does differently
 
@@ -92,7 +93,13 @@ adolens config --add-toolset pipelines       # one more tool set on top of the m
 adolens config --confirm-above 3             # updates of more items are previewed first (0: always)
 adolens config --usage-log false
 adolens config --show-tokens true            # end every answer with [~N tokens]
+adolens config --connection contoso --env staging=UAT --env master=PROD   # what branches mean (for ado_trace)
 ```
+
+**Environments.** Azure DevOps does not know that the branch `staging` means UAT. Map branches to environment names per
+connection (`--env branch=label`, `--remove-env branch`; for TFVC use the last part of the branch path, e.g. `Main`).
+`ado_trace` then says "UAT: YES" instead of only naming the release stage, and for Git also checks whether the change is
+merged into each mapped branch even when no release pipeline deploys it.
 
 Settings live in `%LOCALAPPDATA%\ado-lens\adolens.json` (no secrets) — they can be edited by hand too.
 
@@ -107,7 +114,8 @@ never a permission.
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link` | ✓ | ✓ | ✓ |
 | `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day` | ✓ | – | ✓ |
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
-| `trace`, `test`, `recipes` | planned | ✓ | (trace, recipes) | ✓ |
+| `trace` | `ado_trace`, `ado_changes` | ✓ | ✓ | ✓ |
+| `test`, `recipes` | planned | ✓ | (recipes) | ✓ |
 | `code`, `pr`, `pipelines` | planned | – | ✓ | ✓ |
 
 ## Tool map
@@ -127,6 +135,8 @@ What each MCP tool answers, when Claude should reach for it, and the CLI command
 | `ado_sprint` | a team's sprint (`current`, `next`, `previous` or by name): dates and working day, items by state, estimates, remaining work against the capacity left, items needing attention (no change for days, blocked, no estimate, no criteria, unassigned), task progress per item; says plainly when the sprint has ended | stand-up, sprint review, "will we make it" | `adolens sprint`, `adolens sprint next --team "Demo Team" --detail summary` |
 | `ado_board` | a team's board: columns with WIP limits (over-limit flagged) and their cards; `move` + `column` moves a card — the state follows the column's mapping for the item's type | "what is in progress", moving cards | `adolens board`, `adolens board --move 123 --column "In Progress"` |
 | `ado_backlog` | a team's backlog in priority order (requirement, portfolio, task, or by name); `move` + `above`/`below` reorders | refinement, priorities | `adolens backlog --top 20`, `adolens backlog --move 123 --above 456` |
+| `ado_trace` | was it done as asked, and where is it: the acceptance criteria (from the parent for a task) and whether they changed after coding started; changesets, commits and pull requests linked to the item and its tasks with the X++ objects they touch; builds (also those deleted by retention); every release stage of the code's branches with **YES / NOT YET**, labelled by the environment map (`staging` → UAT); for Git, whether the change is merged into each mapped branch; tests, tasks and warning signals | "did they do what I asked", "is it on UAT yet" | `adolens trace 123` |
+| `ado_changes` | the files of a changeset (`523`), pull request (`PR 482`) or commit (sha + `repo`) with X++ objects and their added / changed / removed methods; `file` gives the diff of one file — for AOT XML per method plus the metadata (fields, controls, properties) without raw XML noise | reading what exactly changed | `adolens changes 523`, `adolens changes 523 --file AxClass/SalesTable_Extension.xml` |
 | `ado_wiki` | the project wiki: page tree (`depth`), one page as markdown with its version and subpages, or search across the project's wikis with snippets; long pages are cut unless `detail=full` | "how does X work", finding documentation | `adolens wiki`, `adolens wiki "Team/Setup"`, `adolens wiki --search "dual write"` |
 | `ado_wiki_write` | `create` a page, `append` / `prepend` to it, or `replace` it with the version from the last full read — a page changed by someone else in the meantime is never overwritten; optional change comment | release notes, keeping docs current | `adolens wiki-write "Team/Release notes" --file notes.md --mode append` |
 | `ado_my_day` | since the previous working day (or `since`): where you were mentioned (all projects), your items and followed items changed by others, pull requests waiting for your review | the start of the day | `adolens myday --since 3d` |
@@ -158,7 +168,7 @@ Estimates are characters / 4; Claude's tokenizer differs a little (Polish text r
 ## CLI
 
 ```
-adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday|wiki|wiki-write …
+adolens item|query|create|update|comment|link|fields|sprint|board|backlog|myday|wiki|wiki-write|trace|changes …
 adolens login|logout|connections|config|status|register|unregister|refresh|stats|api|mcp|version
 ```
 
@@ -221,6 +231,7 @@ regular expression per line, `!word` for allowed words. Without a list the relea
 | `SetupTests.cs` | settings, connections and PAT order (Credential Manager first), command line, Claude configuration edits, Credential Manager, HTTP retries and errors, tool definition budget per mode |
 | `MetadataTests.cs` | fetching the structure (levels, inherited process name, bugs on the requirement backlog), change history, compact `ado_fields` answers |
 | `BoardTests.cs` | sprint progress, capacity left with days off, attention list, picking sprints, ended sprints, board columns and WIP, moving cards with the state mapping, backlog order and reordering, my day |
+| `TraceTests.cs` | line diff (Myers, unified hunks), X++ per method with form data sources, object names from AOT paths, `ado_trace` across TFVC and Git (deployed stages YES / NOT YET, environment labels, merged branches, deleted builds, criteria changed after coding), `ado_changes` lists and file diffs |
 | `WikiTests.cs` | page tree, page with version, replace only with the current version (412 never overwrites), append, create over an existing page, search snippets |
 | `WorkItemTests.cs` | work item answers, required fields and allowed values before writing, transitions, preview and confirm of bulk updates, mentions, links, queries, HTML ⇄ markdown, PAT never sent to other hosts |
 
@@ -235,6 +246,8 @@ issues or commits.
 | work item reads, writes, checks | `WorkItems.cs`, `WorkQueries.cs`; output in `WorkItemFormat.cs` |
 | sprints, capacity, boards, backlogs, my day | `Boards.cs` (API in `Boards`, answers in `BoardQueries`) |
 | wiki | `Wiki.cs` |
+| changesets, commits, PRs, builds, deployments | `Code.cs`; tracing in `Trace.cs`; diffs and X++ per method in `Diff.cs` |
+| skills for Claude | `skills\<name>\SKILL.md` |
 | work item structure (types, fields, states) | `MetadataService.cs` (fetch), `MetaStore.cs` (SQLite; raise `SchemaVersion` to refetch), `Metadata.cs` (change detection) |
 | rich text | `Html.cs` |
 | people | `Identities.cs` |

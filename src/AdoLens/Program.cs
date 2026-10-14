@@ -72,6 +72,10 @@ try
             return await cli.BacklogAsync();
         case "myday":
             return await cli.MyDayAsync();
+        case "trace":
+            return await cli.TraceAsync();
+        case "changes":
+            return await cli.ChangesAsync();
         case "wiki":
             return await cli.WikiAsync();
         case "wiki-write":

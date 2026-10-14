@@ -10,6 +10,8 @@ public sealed record Session(Config Config, AdoClient Client, MetadataService Me
     WorkItems? _work;
     public WorkItems Work => _work ??= new(Client, Meta, People, Config);
 
+    public Code Code { get; } = new(Client);
+
     /// <summary>The project given, else the connection's default project.</summary>
     public string Project(string? project) =>
         !string.IsNullOrWhiteSpace(project) ? project.Trim()
