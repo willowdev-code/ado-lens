@@ -19,6 +19,8 @@ Tests, templates, and two more ways to install.
 - `adolens login --pat-env <variable>` for unattended setups; without a project and with several in the organization it
   lists them and stops (exit code 4) instead of asking.
 - Releases publish the installer and the extension next to the ZIP, each with its SHA-256; CI builds all three.
+- `ado_upgrade` of an installation made with the installer EXE updates with the new installer EXE (SHA-256 checked,
+  no questions), so the entry in Settings → Apps shows the new version.
 
 ## 0.4.0 — 2026-10-15
 

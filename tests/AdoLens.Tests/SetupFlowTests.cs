@@ -27,11 +27,13 @@ public class UpdaterTests
         var r = Updater.ParseRelease("""
             {"tag_name":"v0.3.0","html_url":"https://github.com/x/releases/v0.3.0","body":"- new","prerelease":false,
              "assets":[{"name":"ado-lens-0.3.0.zip.sha256","browser_download_url":"https://x/s"},
-                       {"name":"ado-lens-0.3.0.zip","browser_download_url":"https://x/z","digest":"sha256:ABC123"}]}
+                       {"name":"ado-lens-0.3.0.zip","browser_download_url":"https://x/z","digest":"sha256:ABC123"},
+                       {"name":"ado-lens-setup-0.3.0.exe","browser_download_url":"https://x/e","digest":"sha256:DEF456"}]}
             """)!;
         Assert.Equal("0.3.0", r.Version.ToString());
         Assert.Equal("ado-lens-0.3.0.zip", r.AssetName);
         Assert.Equal("abc123", r.Sha256);
+        Assert.Equal(("ado-lens-setup-0.3.0.exe", "https://x/e", "def456"), r.Setup);
     }
 }
 
