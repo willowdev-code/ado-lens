@@ -278,7 +278,9 @@ public static partial class TraceQueries
         // No environment names yet: propose the flow found here, so Claude asks once and saves it for good.
         if (env.Count == 0 && changes.Count > 0)
         {
+            // Stages not deployed for half a year are leftovers, not part of the flow.
             var candidates = deployments
+                .Where(d => d.When is { } w && w > DateTime.UtcNow.AddDays(-183))
                 .Where(d => where.Any(w => w.Contains($"{d.Definition} / {d.Stage}", StringComparison.Ordinal)))
                 .Select(d => d.Branch?.StartsWith("$/", StringComparison.Ordinal) == true ? $"{d.Definition}/{d.Stage}" : Code.Short(d.Branch))
                 .Concat(changes.Select(x => x.Change.TargetBranch))
@@ -288,7 +290,7 @@ public static partial class TraceQueries
                 sb.AppendLine("\nSETUP").AppendLine(
                     $"environment names are not set for connection {session.Config.Connection}. Found: {string.Join(", ", proposal.Select(p => p.Guess is null ? p.Key : $"{p.Key} (looks like {p.Guess})"))}. " +
                     "Ask the user what each is called and in which order code moves through them (e.g. DEV sbx01 -> UAT sbx03 -> PROD), " +
-                    "save it once with ado_settings environments=\"" + string.Join("; ", proposal.Select(p => $"{p.Key}={p.Guess ?? "…"}")) + "\", then answer with those names.");
+                    "save it once with ado_settings environments=\"" + string.Join("; ", proposal.Select(p => $"{p.Key}={p.Guess ?? "<name>"}")) + "\", then answer with those names.");
         }
         if (changes.Count > 0 && where.Count > 0 && !anyIn)
             signals.Add("not deployed to any stage yet");
