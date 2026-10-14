@@ -55,7 +55,55 @@ public static class Usage
 
     public sealed record Entry(DateTime Utc, string Tool, string Args, int Chars, long Ms, bool Empty, bool Error)
     {
-        public int Tokens => (Chars + 3) / 4;
+        public int Tokens => Estimate(Chars);
+    }
+
+    /// <summary>Estimated tokens: characters / 4 (Claude's tokenizer differs; Polish text runs somewhat higher).</summary>
+    public static int Estimate(int chars) => (chars + 3) / 4;
+
+    public static string Footer(string answer) => $"[~{Estimate(answer.Length):N0} tokens]";
+
+    /// <summary>
+    /// Follows the usage log and prints each new call as it happens (time, tool, tokens, ms, arguments) until Ctrl+C.
+    /// </summary>
+    public static async Task LiveAsync(TextWriter output, CancellationToken ct)
+    {
+        Directory.CreateDirectory(Dir);
+        output.WriteLine($"watching {Dir} - every MCP call of ADO Lens appears here (Ctrl+C to stop)");
+        output.WriteLine($"{"time",-9}{"tool",-16}{"tokens",8}{"ms",8}  arguments");
+        string? file = null;
+        long pos = 0;
+        long total = 0;
+        var calls = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            var current = Path.Combine(Dir, $"usage-{DateTime.UtcNow:yyyyMM}.jsonl");
+            if (current != file) { file = current; pos = File.Exists(file) ? new FileInfo(file).Length : 0; }
+            if (File.Exists(file) && new FileInfo(file).Length > pos)
+            {
+                using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                fs.Seek(pos, SeekOrigin.Begin);
+                using var reader = new StreamReader(fs);
+                while (await reader.ReadLineAsync(ct) is { } line)
+                {
+                    if (!line.EndsWith('}')) break; // a line still being written: read it next time
+                    pos += System.Text.Encoding.UTF8.GetByteCount(line) + 1;
+                    try
+                    {
+                        var n = JsonNode.Parse(line)!;
+                        var tokens = Estimate(n["chars"]!.GetValue<int>());
+                        total += tokens;
+                        calls++;
+                        var flag = n["error"]?.GetValue<bool>() == true ? " ERROR" : n["empty"]?.GetValue<bool>() == true ? " (empty)" : "";
+                        var t = DateTime.Parse(n["t"]!.GetValue<string>(), null, System.Globalization.DateTimeStyles.RoundtripKind).ToLocalTime();
+                        output.WriteLine($"{t:HH:mm:ss} {n["tool"]!.GetValue<string>(),-16}{tokens,8:N0}{n["ms"]!.GetValue<long>(),8:N0}  " +
+                                         $"{Formatting.Collapse(n["args"]?.ToJsonString() ?? "", 100)}{flag}   (session total ~{total:N0} in {calls} calls)");
+                    }
+                    catch (Exception) { }
+                }
+            }
+            try { await Task.Delay(500, ct); } catch (TaskCanceledException) { break; }
+        }
     }
 
     public static List<Entry> Load(DateTime sinceUtc)

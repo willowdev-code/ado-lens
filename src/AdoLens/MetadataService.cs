@@ -12,7 +12,7 @@ public sealed class MetadataService(AdoClient client, MetaStore store)
     public static readonly TimeSpan MaxAge = TimeSpan.FromHours(6);
     const int Parallel = 6;
 
-    readonly ConcurrentDictionary<string, Task<(Snapshot, List<ChangeRecord>)>> _running = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, Task<(Snapshot, List<ChangeRecord>)>> _running = new(StringComparer.OrdinalIgnoreCase);
 
     public MetaStore Store => store;
 
@@ -33,14 +33,18 @@ public sealed class MetadataService(AdoClient client, MetaStore store)
     /// <summary>Fetches the structure of the project and stores it; concurrent calls for the same project share one fetch.</summary>
     public Task<(Snapshot Snapshot, List<ChangeRecord> Changes)> RefreshAsync(string project, CancellationToken ct = default)
     {
-        var task = _running.GetOrAdd(project, p => Task.Run(async () =>
+        // A fetch still running is shared; a finished one is never reused, so a refresh after a refresh fetches again.
+        lock (_running)
         {
-            var snap = await FetchAsync(p, ct);
-            return (snap, store.Save(snap));
-        }, ct));
-        // Removed only after it is in the dictionary, and only this task (not a newer one for the same project).
-        task.ContinueWith(t => _running.TryRemove(KeyValuePair.Create(project, t)), TaskScheduler.Default);
-        return task;
+            if (_running.TryGetValue(project, out var running) && !running.IsCompleted) return running;
+            var task = Task.Run(async () =>
+            {
+                var snap = await FetchAsync(project, ct);
+                return (snap, store.Save(snap));
+            }, ct);
+            _running[project] = task;
+            return task;
+        }
     }
 
     async Task<Snapshot> FetchAsync(string project, CancellationToken ct)

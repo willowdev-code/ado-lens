@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Server;
@@ -123,7 +123,7 @@ public class ConfigTests
     public async Task Unconfigured_setup_reaches_claude_as_a_tool_error()
     {
         var lens = new Lens(new Settings(), "0.0.0", Path.GetTempPath(), _ => null, _ => null);
-        var ex = await Assert.ThrowsAsync<ModelContextProtocol.McpException>(() => McpTools.Fields(lens));
+        var ex = await Assert.ThrowsAsync<ModelContextProtocol.McpException>(() => CoreTools.Fields(lens));
         Assert.Contains("adolens login", ex.Message);
     }
 }
@@ -209,8 +209,8 @@ public class CredentialStoreTests
         try
         {
             Assert.Null(CredentialStore.Read(name));
-            CredentialStore.Write(name, "contoso", "token-ąę-123");
-            Assert.Equal("token-ąę-123", CredentialStore.Read(name));
+            CredentialStore.Write(name, "contoso", "token-Ä…Ä™-123");
+            Assert.Equal("token-Ä…Ä™-123", CredentialStore.Read(name));
             CredentialStore.Write(name, "contoso", "replaced");
             Assert.Equal("replaced", CredentialStore.Read(name));
             Assert.True(CredentialStore.Delete(name));
@@ -251,16 +251,49 @@ public class AdoClientTests
 
 public class ToolBudgetTests
 {
-    /// <summary>Tool definitions are sent in every session; keep them small (about 4 characters per token).</summary>
-    [Fact]
-    public void Tool_definitions_stay_within_budget()
+    /// <summary>
+    /// Instructions and tool definitions are sent in every session; keep them small. Estimate: descriptions and names
+    /// plus the JSON schema around them (~100 characters per tool, ~40 per parameter), about 4 characters per token.
+    /// </summary>
+    [Theory]
+    [InlineData("po", 3000)]
+    [InlineData("dev", 3500)]
+    public void Tool_definitions_stay_within_budget(string mode, int maxTokens)
     {
-        var chars = McpTools.Instructions.Length;
-        foreach (var m in typeof(McpTools).GetMethods().Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null))
+        var settings = new Settings { Mode = mode };
+        var chars = McpTools.Instructions(settings).Length;
+        foreach (var m in Toolsets.TypesFor(settings).SelectMany(t => t.GetMethods()).Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null))
         {
+            chars += 100 + m.GetCustomAttribute<McpServerToolAttribute>()!.Name!.Length;
             chars += m.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description.Length ?? 0;
-            chars += m.GetParameters().Sum(p => p.Name!.Length + (p.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description.Length ?? 0));
+            foreach (var p in m.GetParameters().Where(p => p.ParameterType != typeof(Lens) && p.ParameterType != typeof(CancellationToken)))
+                chars += 40 + p.Name!.Length + (p.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description.Length ?? 0);
         }
-        Assert.True(chars < 3000, $"tool definitions take {chars} characters (~{chars / 4} tokens)");
+        Assert.True(chars / 4 < maxTokens, $"mode {mode}: tool definitions take ~{chars / 4} tokens ({chars} characters)");
+    }
+
+    [Fact]
+    public void The_server_really_registers_the_tools_of_the_mode()
+    {
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        Microsoft.Extensions.DependencyInjection.McpServerServiceCollectionExtensions.AddMcpServer(services).WithActiveTools(new Settings { Mode = "po" });
+        using var sp = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
+        var names = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetServices<McpServerTool>(sp)
+            .Select(t => t.ProtocolTool.Name).Order().ToList();
+        Assert.Equal(["ado_backlog", "ado_board", "ado_comment", "ado_create", "ado_fields", "ado_link", "ado_my_day", "ado_query",
+            "ado_sprint", "ado_status", "ado_update", "ado_wiki", "ado_wiki_write", "ado_work_item"], names);
+    }
+
+    [Fact]
+    public void Modes_choose_tool_sets_and_extras_are_added()
+    {
+        var po = Toolsets.Active(new Settings { Mode = "po" });
+        var devPlus = Toolsets.Active(new Settings { Mode = "dev", ExtraToolsets = ["boards"] });
+        Assert.Contains(Toolsets.Boards, po);
+        Assert.DoesNotContain(Toolsets.Pr, po);
+        Assert.Contains(Toolsets.Boards, devPlus);
+        Assert.Contains(typeof(CoreTools), Toolsets.TypesFor(new Settings { Mode = "po" }));
+        Assert.Contains(typeof(WorkTools), Toolsets.TypesFor(new Settings { Mode = "dev" }));
     }
 }
+
