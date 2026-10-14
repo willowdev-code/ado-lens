@@ -5,6 +5,11 @@ namespace AdoLens;
 /// <summary>A resolved connection with its HTTP client and metadata.</summary>
 public sealed record Session(Config Config, AdoClient Client, MetadataService Meta)
 {
+    public Identities People { get; } = new(Client);
+
+    WorkItems? _work;
+    public WorkItems Work => _work ??= new(Client, Meta, People, Config);
+
     /// <summary>The project given, else the connection's default project.</summary>
     public string Project(string? project) =>
         !string.IsNullOrWhiteSpace(project) ? project.Trim()

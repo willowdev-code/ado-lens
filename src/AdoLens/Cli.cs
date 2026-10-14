@@ -32,6 +32,14 @@ sealed class Cli(CommandLine cl, string version)
           unregister      remove it (only when it points to this exe, unless --any)
           refresh         fetch the work item structure of a project now     --connection  --project
           fields          same as the ado_fields tool: [--type <t>] [--field <f>] [--changes 30d] [--all] [--refresh]
+          item <ids>      work items                     --include comments,history  --detail summary|normal|full
+          query           --wiql "<WIQL>" | --query "<saved query path or id>"  [--top 50]
+          create          --type <t> --title <t> [--description <md>] [--criteria <md>] [--assign <name>] [--parent <id>]
+                            [--iteration <path|current>] [--area <path>] [--tags "a; b"] [--state <s>] [--field "Name=Value"]…
+          update <ids>    or --wiql "<WIQL>"; same options as create, plus --reason, --comment <md>, --confirm <token>
+          comment <id> <markdown with @[name] mentions>
+          link <id> <targets>  --type parent|child|related|predecessor|successor|duplicate|duplicate-of|tested-by|tests [--remove]
+          api <path>      raw JSON of a GET request (development)
           stats           MCP calls of the last days: answer sizes, times, empty answers   --days 7 --top 10
           version         print the version
 
@@ -177,6 +185,22 @@ sealed class Cli(CommandLine cl, string version)
                 settings.UsageLog = bool.TryParse(u, out var b) ? b : throw new ArgumentException("--usage-log takes true or false");
                 changed = true;
             }
+            while (cl.Opt("add-toolset") is { } add)
+            {
+                var toolset = Toolsets.Normalize(add);
+                if (!settings.ExtraToolsets.Contains(toolset)) settings.ExtraToolsets.Add(toolset);
+                changed = true;
+            }
+            while (cl.Opt("remove-toolset") is { } rem)
+            {
+                settings.ExtraToolsets.Remove(Toolsets.Normalize(rem));
+                changed = true;
+            }
+            if (cl.Opt("confirm-above") is { } ca)
+            {
+                settings.ConfirmBulkAbove = int.TryParse(ca, out var n) && n >= 0 ? n : throw new ArgumentException("--confirm-above takes a number (0 previews every update)");
+                changed = true;
+            }
         }
         catch (ArgumentException ex)
         {
@@ -185,7 +209,8 @@ sealed class Cli(CommandLine cl, string version)
         }
         if (changed) settings.Save(SettingsPath);
         Console.WriteLine($"settings: {SettingsPath}{(changed ? " (saved)" : "")}");
-        Console.WriteLine($"mode: {settings.Mode}   usage log: {(settings.UsageLog ? "on" : "off")}   default connection: {settings.DefaultConnection ?? "-"}");
+        Console.WriteLine($"mode: {settings.Mode} (tool sets: {string.Join(", ", Toolsets.Active(settings).OrderBy(t => Array.IndexOf(Toolsets.All, t)))})");
+        Console.WriteLine($"usage log: {(settings.UsageLog ? "on" : "off")}   preview updates of more than {settings.ConfirmBulkAbove} items   default connection: {settings.DefaultConnection ?? "-"}");
         return Connections();
     }
 
@@ -298,6 +323,74 @@ sealed class Cli(CommandLine cl, string version)
     {
         Console.WriteLine(await Queries.FieldsAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("type") ?? cl.Positional.FirstOrDefault(),
             cl.Opt("field"), cl.Opt("changes"), cl.Flag("all"), cl.Flag("refresh")));
+        return 0;
+    }
+
+    public async Task<int> ItemAsync()
+    {
+        Console.WriteLine(await WorkQueries.ItemAsync(NewLens(), cl.Opt("connection"), string.Join(';', cl.Positional), cl.Opt("include"), cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> QueryAsync()
+    {
+        var top = int.TryParse(cl.Opt("top"), out var t) ? t : 50;
+        Console.WriteLine(await WorkQueries.QueryAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("wiql"), cl.Opt("query"), top));
+        return 0;
+    }
+
+    /// <summary>--field "Name=Value", repeatable.</summary>
+    Dictionary<string, string>? FieldOptions()
+    {
+        Dictionary<string, string>? fields = null;
+        while (cl.Opt("field") is { } f)
+        {
+            var eq = f.IndexOf('=');
+            if (eq <= 0) throw new ArgumentException($"--field takes Name=Value, not '{f}'");
+            (fields ??= new(StringComparer.OrdinalIgnoreCase))[f[..eq].Trim()] = f[(eq + 1)..];
+        }
+        return fields;
+    }
+
+    public async Task<int> CreateAsync()
+    {
+        var type = cl.Opt("type") ?? throw new ArgumentException("--type is required");
+        var r = new WriteRequest
+        {
+            Title = cl.Opt("title"), Description = cl.Opt("description"), AcceptanceCriteria = cl.Opt("criteria"), AssignedTo = cl.Opt("assign"),
+            Parent = int.TryParse(cl.Opt("parent"), out var p) ? p : null, Iteration = cl.Opt("iteration"), Area = cl.Opt("area"),
+            Tags = cl.Opt("tags"), State = cl.Opt("state"), Fields = FieldOptions(),
+        };
+        Console.WriteLine(await WorkQueries.CreateAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), type, r));
+        return 0;
+    }
+
+    public async Task<int> UpdateAsync()
+    {
+        var lens = NewLens();
+        var r = new WriteRequest
+        {
+            Title = cl.Opt("title"), Description = cl.Opt("description"), AcceptanceCriteria = cl.Opt("criteria"), State = cl.Opt("state"),
+            Reason = cl.Opt("reason"), AssignedTo = cl.Opt("assign"), Iteration = cl.Opt("iteration"), Area = cl.Opt("area"),
+            Tags = cl.Opt("tags"), Fields = FieldOptions(),
+        };
+        var ids = cl.Opt("ids") ?? (cl.Positional.Count > 0 ? string.Join(';', cl.Positional) : null);
+        Console.WriteLine(await WorkQueries.UpdateAsync(lens, cl.Opt("connection"), ids, cl.Opt("wiql"), r, cl.Opt("comment"), cl.Opt("confirm"), lens.Settings.ConfirmBulkAbove));
+        return 0;
+    }
+
+    public async Task<int> CommentAsync()
+    {
+        if (cl.Positional.Count < 2 || !int.TryParse(cl.Positional[0], out var id)) { Console.Error.WriteLine("usage: adolens comment <id> <text>"); return 2; }
+        Console.WriteLine(await WorkQueries.CommentAsync(NewLens(), cl.Opt("connection"), id, string.Join(' ', cl.Positional.Skip(1))));
+        return 0;
+    }
+
+    public async Task<int> LinkAsync()
+    {
+        if (cl.Positional.Count < 2 || !int.TryParse(cl.Positional[0], out var id)) { Console.Error.WriteLine("usage: adolens link <id> <targets> --type parent|child|related|…"); return 2; }
+        Console.WriteLine(await WorkQueries.LinkAsync(NewLens(), cl.Opt("connection"), id, string.Join(';', cl.Positional.Skip(1)),
+            cl.Opt("type") ?? "related", cl.Flag("remove")));
         return 0;
     }
 

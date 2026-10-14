@@ -23,6 +23,12 @@ public sealed partial class Settings
     /// <summary>Which tool sets Claude sees: po, dev or full. Never a permission: the PAT decides what is allowed.</summary>
     public string Mode { get; set; } = "po";
 
+    /// <summary>Tool sets added to the mode (e.g. "pipelines" for a PO who follows builds).</summary>
+    public List<string> ExtraToolsets { get; set; } = [];
+
+    /// <summary>Updates of more work items than this are previewed first and written only with the preview's token.</summary>
+    public int ConfirmBulkAbove { get; set; } = 3;
+
     public bool UsageLog { get; set; } = true;
 
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)

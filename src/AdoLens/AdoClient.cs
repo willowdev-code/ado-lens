@@ -64,13 +64,34 @@ public sealed class AdoClient(HttpClient http, string organization)
     static string WithApiVersion(string url) =>
         url.Contains("api-version=", StringComparison.Ordinal) ? url : url + (url.Contains('?') ? "&" : "?") + "api-version=" + ApiVersion;
 
-    public async Task<JsonElement> GetAsync(string url, CancellationToken ct = default)
+    public Task<JsonElement> GetAsync(string url, CancellationToken ct = default) => SendAsync(HttpMethod.Get, url, null, null, ct);
+
+    public Task<JsonElement> PostAsync(string url, object body, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Post, url, body, "application/json", ct);
+
+    /// <summary>JSON Patch (work item create and update).</summary>
+    public Task<JsonElement> PatchAsync(string url, object operations, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Patch, url, operations, "application/json-patch+json", ct);
+
+    /// <summary>
+    /// Sends one request: relative URLs go to the organization, absolute ones only to Azure DevOps hosts (vssps, vsrm),
+    /// so a URL taken from data can never carry the PAT anywhere else.
+    /// </summary>
+    public async Task<JsonElement> SendAsync(HttpMethod method, string url, object? body, string? contentType, CancellationToken ct = default)
     {
         url = WithApiVersion(url);
+        if (Uri.TryCreate(url, UriKind.Absolute, out var abs) && abs.Scheme is "https" or "http" && !IsAzureDevOpsHost(abs))
+            throw new AdoApiException($"refusing to send the PAT to {abs.Host}: only Azure DevOps hosts are allowed");
+        var payload = body is null ? null : JsonSerializer.SerializeToUtf8Bytes(body, BodyJson);
         for (var attempt = 1; ; attempt++)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            using var req = new HttpRequestMessage(method, url);
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            if (payload is not null)
+            {
+                req.Content = new ByteArrayContent(payload);
+                req.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType ?? "application/json");
+            }
             using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             if (attempt < MaxAttempts && RetryDelay(res) is { } delay)
             {
@@ -78,11 +99,25 @@ public sealed class AdoClient(HttpClient http, string organization)
                 continue;
             }
             await EnsureSuccessAsync(res, ct);
-            await using var body = await res.Content.ReadAsStreamAsync(ct);
-            using var doc = await JsonDocument.ParseAsync(body, cancellationToken: ct);
+            await using var stream = await res.Content.ReadAsStreamAsync(ct);
+            if (res.Content.Headers.ContentLength == 0) return default;
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             return doc.RootElement.Clone();
         }
     }
+
+    static readonly JsonSerializerOptions BodyJson = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    static bool IsAzureDevOpsHost(Uri uri) =>
+        uri.Scheme == "https" && (uri.Host.Equals("dev.azure.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith(".dev.azure.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith(".visualstudio.com", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Organization-level host of another Azure DevOps service, e.g. "vssps" or "vsrm".</summary>
+    public string ServiceUrl(string service) => $"https://{service}.dev.azure.com/{Uri.EscapeDataString(organization)}/";
 
     /// <summary>The "value" array of a list response.</summary>
     public async Task<List<JsonElement>> GetListAsync(string url, CancellationToken ct = default)
@@ -132,6 +167,7 @@ public sealed class AdoClient(HttpClient http, string organization)
         }
         catch (JsonException) { }
         message ??= text.Length > 300 ? text[..300] + "…" : text;
+        message = Explain(message);
 
         var hint = res.StatusCode == HttpStatusCode.Forbidden ? " (the PAT or the account lacks the permission or scope for this)" : "";
         throw new AdoApiException(
@@ -140,6 +176,24 @@ public sealed class AdoClient(HttpClient http, string organization)
     }
 
     static string Describe(Uri? uri) => uri is null ? "request" : uri.GetLeftPart(UriPartial.Path);
+
+    static readonly System.Text.RegularExpressions.Regex RuleError =
+        new(@"Rule Error for field (?<field>.+?)\. Error code: (?<code>\w+)", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Work item rule errors (TF401320) in plain words; Claude can fix the request from them.</summary>
+    internal static string Explain(string message)
+    {
+        var parts = RuleError.Matches(message).Select(m => m.Groups["code"].Value switch
+        {
+            "Required" => $"field '{m.Groups["field"].Value}' is required for this change",
+            "InvalidListValue" or "InvalidNotEmpty" => $"field '{m.Groups["field"].Value}' has a value that is not allowed (ado_fields field=… lists the values)",
+            "InvalidEmpty" => $"field '{m.Groups["field"].Value}' must be empty",
+            "InvalidNotOldValue" => $"field '{m.Groups["field"].Value}' must change",
+            "InvalidChangedValue" or "ReadOnly" => $"field '{m.Groups["field"].Value}' cannot be changed",
+            var code => $"field '{m.Groups["field"].Value}': {code}",
+        }).Distinct().ToList();
+        return parts.Count == 0 ? message : string.Join("; ", parts) + $" ({message.Split('\n')[0].Trim()})";
+    }
 }
 
 /// <summary>Small helpers for reading JsonElement without exceptions.</summary>

@@ -48,6 +48,18 @@ try
             return cli.Stats();
         case "api":
             return await cli.ApiAsync();
+        case "item":
+            return await cli.ItemAsync();
+        case "query":
+            return await cli.QueryAsync();
+        case "create":
+            return await cli.CreateAsync();
+        case "update":
+            return await cli.UpdateAsync();
+        case "comment":
+            return await cli.CommentAsync();
+        case "link":
+            return await cli.LinkAsync();
         case "help" or "--help" or "-h" or "/?":
             Cli.PrintUsage();
             return 0;
@@ -73,15 +85,19 @@ async Task<int> RunServerAsync()
     builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
+    var toolTypes = Toolsets.TypesFor(lens.Settings);
+    if (Environment.GetEnvironmentVariable("ADOLENS_VERBOSE") == "1")
+        Console.Error.WriteLine($"ado-lens: mode {lens.Settings.Mode}, tool classes: {string.Join(", ", toolTypes.Select(t => t.Name))}");
+
     builder.Services.AddSingleton(lens);
     builder.Services
         .AddMcpServer(o =>
         {
             o.ServerInfo = new() { Name = "ado-lens", Version = version };
-            o.ServerInstructions = McpTools.Instructions;
+            o.ServerInstructions = McpTools.Instructions(lens.Settings);
         })
         .WithStdioServerTransport()
-        .WithToolsFromAssembly();
+        .WithActiveTools(lens.Settings);
     await builder.Build().RunAsync();
     return 0;
 }
