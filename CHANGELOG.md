@@ -13,6 +13,10 @@ Screenshots and documents for Claude, D365 labels, checks before testing, ready 
 - `ado_create_tree`: a tree of work items from an indented list, previewed, one undo for all of it.
 - `ado_metrics`: velocity per sprint, cycle and lead time, what is in progress longest.
 - `ado_changes file=a;b;c`: several diffs in one call.
+- Outlook e-mails (.msg) attached to work items are read: subject, sender, recipients, date, the files attached to the
+  e-mail and its text (plain, or HTML turned into text).
+- Required label languages per connection (`adolens config --connection <c> --label-languages "en-US, pl"`, or the
+  settings menu): `ado_review` and `ado_label` report missing texts only in those languages.
 - Prompts (ready commands in Claude Desktop "+" and Claude Code "/"): verify, explain, story, sprint, refine, test, wiki,
   label, dev_start, dev_pr, dev_build, dev_why - each runs its skill, no skill upload needed.
 - Skills `po-refine`, `po-test`, `po-wiki`, `dev-start`, `dev-pr`, `dev-build`, `dev-why`; `po-verify`, `po-explain`

@@ -209,30 +209,6 @@ begin
   RegWriteExpandStringValue(HKCU, 'Environment', 'Path', Kept);
 end;
 
-var
-  RemoveUserData: Boolean;
-
-{ Before the files go: ask whether to remove the stored PATs and the local data (default: keep them), and sign out
-  with the program while it is still there. After: take the program folder off the PATH and delete the data. }
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var
-  Code: Integer;
-begin
-  if CurUninstallStep = usUninstall then
-  begin
-    RemoveUserData := not UninstallSilent and
-      (MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES);
-    if RemoveUserData then
-      Exec(ExpandConstant('{app}\bin\adolens.exe'), 'logout --all', '', SW_HIDE, ewWaitUntilTerminated, Code);
-    RemoveCodeSkills;
-  end
-  else if CurUninstallStep = usPostUninstall then
-  begin
-    RemoveFromPath(ExpandConstant('{app}\bin'));
-    if RemoveUserData then DelTree(ExpandConstant('{localappdata}\ado-lens'), True, True, True);
-  end;
-end;
-
 function HasClaudeCode: Boolean;
 begin
   Result := DirExists(ExpandConstant('{%USERPROFILE}\.claude'));
@@ -300,6 +276,31 @@ begin
     FindClose(F);
   end;
 end;
+
+var
+  RemoveUserData: Boolean;
+
+{ Before the files go: ask whether to remove the stored PATs and the local data (default: keep them), and sign out
+  with the program while it is still there. After: take the program folder off the PATH and delete the data. }
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Code: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    RemoveUserData := not UninstallSilent and
+      (MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES);
+    if RemoveUserData then
+      Exec(ExpandConstant('{app}\bin\adolens.exe'), 'logout --all', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    RemoveCodeSkills;
+  end
+  else if CurUninstallStep = usPostUninstall then
+  begin
+    RemoveFromPath(ExpandConstant('{app}\bin'));
+    if RemoveUserData then DelTree(ExpandConstant('{localappdata}\ado-lens'), True, True, True);
+  end;
+end;
+
 
 function SettingsFile: String;
 begin

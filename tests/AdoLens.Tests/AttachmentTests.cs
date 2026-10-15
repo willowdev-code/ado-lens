@@ -63,4 +63,72 @@ public class AttachmentTests
         Assert.Equal("image/jpeg", Attachments.ImageMime([0xFF, 0xD8, 0xFF, 0xE0]));
         Assert.Null(Attachments.ImageMime(Encoding.UTF8.GetBytes("plain text here")));
     }
+
+    /// <summary>A minimal compound file (version 3, 512-byte sectors, no mini stream) with the given top-level streams.</summary>
+    static byte[] Msg(params (string Name, byte[] Data)[] streams)
+    {
+        const uint Free = 0xFFFFFFFF, End = 0xFFFFFFFE;
+        var sectors = new List<byte[]>();
+        var fat = new List<uint> { 0xFFFFFFFD, 2, End }; // sector 0: the FAT, sectors 1-2: the directory
+        var starts = new List<uint>();
+        foreach (var (_, data) in streams)
+        {
+            var count = Math.Max(1, (data.Length + 511) / 512);
+            starts.Add((uint)(3 + sectors.Count));
+            for (var k = 0; k < count; k++)
+            {
+                var sec = new byte[512];
+                Array.Copy(data, k * 512, sec, 0, Math.Min(512, data.Length - k * 512));
+                sectors.Add(sec);
+                fat.Add(k == count - 1 ? End : (uint)(fat.Count + 1));
+            }
+        }
+        var header = new byte[512];
+        BitConverter.GetBytes(0xE11AB1A1E011CFD0).CopyTo(header, 0);
+        BitConverter.GetBytes((ushort)0x3E).CopyTo(header, 0x18);
+        BitConverter.GetBytes((ushort)3).CopyTo(header, 0x1A);
+        BitConverter.GetBytes((ushort)0xFFFE).CopyTo(header, 0x1C);
+        BitConverter.GetBytes((ushort)9).CopyTo(header, 0x1E);
+        BitConverter.GetBytes((ushort)6).CopyTo(header, 0x20);
+        BitConverter.GetBytes(1u).CopyTo(header, 0x2C);
+        BitConverter.GetBytes(1u).CopyTo(header, 0x30);
+        BitConverter.GetBytes(0u).CopyTo(header, 0x38); // cutoff 0: every stream in regular sectors
+        BitConverter.GetBytes(End).CopyTo(header, 0x3C);
+        BitConverter.GetBytes(End).CopyTo(header, 0x44);
+        for (var k = 0; k < 109; k++) BitConverter.GetBytes(k == 0 ? 0u : Free).CopyTo(header, 0x4C + k * 4);
+        var fatSector = new byte[512];
+        for (var k = 0; k < 128; k++) BitConverter.GetBytes(k < fat.Count ? fat[k] : Free).CopyTo(fatSector, k * 4);
+        var dir = new byte[1024];
+        void Entry(int index, string name, byte type, uint start, uint size, uint right, uint child)
+        {
+            var o = index * 128;
+            var n = Encoding.Unicode.GetBytes(name + "\0");
+            n.CopyTo(dir, o);
+            BitConverter.GetBytes((ushort)n.Length).CopyTo(dir, o + 64);
+            dir[o + 66] = type;
+            dir[o + 67] = 1;
+            BitConverter.GetBytes(Free).CopyTo(dir, o + 68);
+            BitConverter.GetBytes(right).CopyTo(dir, o + 72);
+            BitConverter.GetBytes(child).CopyTo(dir, o + 76);
+            BitConverter.GetBytes(start).CopyTo(dir, o + 116);
+            BitConverter.GetBytes((ulong)size).CopyTo(dir, o + 120);
+        }
+        Entry(0, "Root Entry", 5, End, 0, Free, 1);
+        for (var k = 0; k < streams.Length; k++)
+            Entry(k + 1, streams[k].Name, 2, starts[k], (uint)streams[k].Data.Length, k + 2 <= streams.Length ? (uint)(k + 2) : Free, Free);
+        return [.. header, .. fatSector, .. dir, .. sectors.SelectMany(x => x)];
+    }
+
+    [Fact]
+    public void Outlook_messages_are_read_as_text()
+    {
+        var msg = Msg(
+            ("__substg1.0_0037001F", Encoding.Unicode.GetBytes("Re: shelf labels")),
+            ("__substg1.0_0C1A001F", Encoding.Unicode.GetBytes("Anna Nowak")),
+            ("__substg1.0_0E04001F", Encoding.Unicode.GetBytes("Ben Kowalski")),
+            ("__substg1.0_1000001F", Encoding.Unicode.GetBytes("Hi Ben,\r\nyes, switch it off.\r\n" + new string('.', 600))));
+        var text = Attachments.Extract("reply.msg", msg)!;
+        Assert.StartsWith("Subject: Re: shelf labels\nFrom: Anna Nowak\nTo: Ben Kowalski\n\nHi Ben,\nyes, switch it off.", text.Replace("\r", ""));
+        Assert.Null(OutlookMsg.Read([1, 2, 3]));
+    }
 }

@@ -30,6 +30,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
                             --show-tokens true|false  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
                             --language pl|en|auto (settings console and installer texts)
+                            --connection <c> --label-languages "en-US, pl"|all  (languages review and label require)
           status          configuration, connection check, metadata and Claude registrations
                             --connection <name>  --offline  --quiet
           register        add / update the 'ado-lens' MCP server in Claude Desktop and Claude Code
@@ -238,7 +239,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             var pat = CredentialStore.Read(name) is not null ? "PAT stored" : "no stored PAT";
             Console.WriteLine($"{(name.Equals(settings.DefaultConnection, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {name,-16} " +
                               $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}  team {c.Team ?? "-"}  ({pat})" +
-                              (c.Environments.Count > 0 ? $"\n  {"",-16} environments: {string.Join(", ", c.Environments.Select(e => $"{e.Key} = {e.Value}"))}" : ""));
+                              (c.Environments.Count > 0 ? $"\n  {"",-16} environments: {string.Join(", ", c.Environments.Select(e => $"{e.Key} = {e.Value}"))}" : "") +
+                (c.LabelLanguages.Count > 0 ? $"\n  {"",-16} label languages: {string.Join(", ", c.LabelLanguages)}" : ""));
         }
         return 0;
     }
@@ -263,9 +265,15 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     changed = true;
                 }
                 while (cl.Opt("remove-env") is { } r) { conn.Environments.Remove(r.Trim()); changed = true; }
+                if (cl.Opt("label-languages") is { } ll)
+                {
+                    conn.LabelLanguages = SplitLanguages(ll);
+                    changed = true;
+                }
             }
-            else if (cl.Peek("project") is not null || cl.Peek("team") is not null || cl.Peek("env") is not null || cl.Peek("remove-env") is not null)
-                throw new ArgumentException("--project / --team / --env need --connection <name>");
+            else if (cl.Peek("project") is not null || cl.Peek("team") is not null || cl.Peek("env") is not null || cl.Peek("remove-env") is not null
+                     || cl.Peek("label-languages") is not null)
+                throw new ArgumentException("--project / --team / --env / --label-languages need --connection <name>");
             if (cl.Opt("default-connection") is { } d)
             {
                 if (!settings.Connections.ContainsKey(d)) throw new ArgumentException($"no connection named '{d}'");
@@ -723,6 +731,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Console.WriteLine(Ui.T("  4. Remove a connection", "  4. Usuń połączenie"));
             Console.WriteLine(Ui.T("  5. Status (is everything working)", "  5. Status (czy wszystko działa)"));
             Console.WriteLine(Ui.T("  6. Language: Polish / English", "  6. Język: polski / angielski"));
+            Console.WriteLine(Ui.T("  7. Required label languages (checks of D365 changes)", "  7. Wymagane języki etykiet (kontrola zmian D365)"));
             var choice = Prompt(Ui.T("Choice (Enter = done): ", "Wybór (Enter = koniec): "));
             switch (choice?.Trim())
             {
@@ -762,9 +771,29 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     settings.Save(SettingsPath);
                     Ui.Polish = settings.Language == "pl" || settings.Language is null && Ui.Polish;
                     break;
+                case "7":
+                    var cn = PickConnection(settings);
+                    if (cn is null) break;
+                    var now = settings.Connections[cn].LabelLanguages;
+                    Console.WriteLine(Ui.T($"  now: {(now.Count == 0 ? "all languages of the label files" : string.Join(", ", now))}",
+                                           $"  teraz: {(now.Count == 0 ? "wszystkie języki plików etykiet" : string.Join(", ", now))}"));
+                    var langs = Prompt(Ui.T("  languages every label must have, e.g. en-US, pl ('all' = every one, Enter = keep): ",
+                                            "  języki, które musi mieć każda etykieta, np. en-US, pl ('all' = wszystkie, Enter = bez zmian): "));
+                    if (!string.IsNullOrWhiteSpace(langs))
+                    {
+                        settings.Connections[cn].LabelLanguages = SplitLanguages(langs);
+                        settings.Save(SettingsPath);
+                        Console.WriteLine(Ui.T("  saved", "  zapisane"));
+                    }
+                    break;
             }
         }
     }
+
+    /// <summary>"en-US, pl" → [en-US, pl]; "all" or empty → [] (every language required).</summary>
+    static List<string> SplitLanguages(string text) =>
+        text.Trim().Equals("all", StringComparison.OrdinalIgnoreCase) ? []
+            : text.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     string? PickConnection(Settings settings)
     {

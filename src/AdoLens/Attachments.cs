@@ -78,7 +78,7 @@ public static class Attachments
         if (list.Count == 0) return ($"{head}: no attachments and no pasted images", null);
         if (string.IsNullOrWhiteSpace(file))
             return ($"{head}: {list.Count} file(s)\n" + string.Join('\n', list.Select((a, i) => $"{i + 1}. {a.Name}{Size(a.Size)}{(a.Comment is { Length: > 0 } c ? $" - {c}" : "")}")) +
-                    "\nfile=<name or number> reads one: documents as text (Word, Excel, text), images are shown.", null);
+                    "\nfile=<name or number> reads one: documents as text (Word, Excel, e-mail, text), images are shown.", null);
 
         var pick = int.TryParse(file, out var n) && n >= 1 && n <= list.Count ? list[n - 1]
             : list.FirstOrDefault(a => a.Name.Equals(file.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -117,6 +117,8 @@ public static class Attachments
                     return Word(bytes);
                 case ".xlsx" or ".xlsm":
                     return Excel(bytes);
+                case ".msg":
+                    return OutlookMsg.Read(bytes);
                 case ".txt" or ".md" or ".csv" or ".json" or ".xml" or ".log" or ".sql" or ".cs" or ".xpp" or ".yml" or ".yaml" or ".html" or ".htm":
                     return Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
             }

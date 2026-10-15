@@ -137,6 +137,8 @@ public static partial class Labels
             {
                 var content = await ReadAsync(client, lf, ct);
                 var value = content is null ? null : Parse(content).GetValueOrDefault(id);
+                // A language the connection does not require is left out when the label has no text in it.
+                if (value is null && !session.Config.LabelLanguageRequired(lf.Language)) continue;
                 sb.AppendLine($"  {lf.Language}: {(value is null ? "MISSING" : Formatting.Collapse(value, 200))}");
             }
             sb.AppendLine("  used in:");

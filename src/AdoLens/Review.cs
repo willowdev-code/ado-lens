@@ -119,6 +119,7 @@ public static partial class Review
             var languages = await LanguageFilesAsync(session, c, folder, fileId, ct);
             foreach (var (lang, path) in languages)
             {
+                if (!session.Config.LabelLanguageRequired(lang)) continue;
                 var text = await ReadAtAsync(session, c, path, ct);
                 var map = text is null ? [] : Labels.Parse(text);
                 var absent = ids.Where(i => !map.ContainsKey(i)).ToList();

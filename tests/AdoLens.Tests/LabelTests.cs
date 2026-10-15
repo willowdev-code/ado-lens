@@ -74,4 +74,14 @@ public class LabelTests
         Assert.Contains(added, x => x.Method == "check");
         Assert.DoesNotContain(added, x => x.Line.Contains("@Demo:Done"));
     }
+
+    [Fact]
+    public void Only_the_required_label_languages_are_reported()
+    {
+        var all = new Config("c", "contoso", "pat", "Demo", null, "test");
+        var some = all with { LabelLanguages = ["en-US", "PL"] };
+        Assert.True(all.LabelLanguageRequired("ro-RO"));
+        Assert.True(some.LabelLanguageRequired("pl"));
+        Assert.False(some.LabelLanguageRequired("ro-RO"));
+    }
 }

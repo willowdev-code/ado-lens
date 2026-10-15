@@ -499,7 +499,7 @@ public static class WorkTools
             () => WorkTree.CreateAsync(lens, connection, project, parent, items, iteration, area, confirm, ct));
 
     [McpServerTool(Name = "ado_attachments")]
-    [Description("Files of a work item and screenshots pasted into its text or comments: the list; file=<name or number> shows an image or the text of a document (Word, Excel, text); add=<local path> attaches a file.")]
+    [Description("Files of a work item and screenshots pasted into its text or comments: the list; file=<name or number> shows an image or the text of a document (Word, Excel, Outlook e-mail, text); add=<local path> attaches a file.")]
     public static async Task<IEnumerable<ModelContextProtocol.Protocol.ContentBlock>> AttachmentsTool(Lens lens, int id,
         string? file = null,
         [Description("Local file to attach.")] string? add = null,

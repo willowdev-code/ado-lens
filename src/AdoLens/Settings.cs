@@ -16,6 +16,12 @@ public sealed class Connection
     /// e.g. "Main"). Azure DevOps does not know it; ado_trace uses it to say where a change has arrived.
     /// </summary>
     public Dictionary<string, string> Environments { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Languages every label must have (e.g. en-US, pl); others found in the label files are not reported as missing.
+    /// Empty: every language of the label file is required.
+    /// </summary>
+    public List<string> LabelLanguages { get; set; } = [];
 }
 
 /// <summary>Non-secret settings (adolens.json in the data folder). PATs live in Windows Credential Manager.</summary>
@@ -67,7 +73,10 @@ public sealed partial class Settings
         // The deserializer replaces the dictionaries, so the case-insensitive comparers have to be restored.
         s.Connections = new Dictionary<string, Connection>(s.Connections, StringComparer.OrdinalIgnoreCase);
         foreach (var c in s.Connections.Values)
+        {
             c.Environments = new Dictionary<string, string>(c.Environments ?? [], StringComparer.OrdinalIgnoreCase);
+            c.LabelLanguages ??= [];
+        }
         return s;
     }
 
@@ -132,6 +141,13 @@ public sealed record Config(string Connection, string Organization, string Pat, 
     /// <summary>Branch → environment label of the connection (see <see cref="AdoLens.Connection.Environments"/>).</summary>
     public IReadOnlyDictionary<string, string> Environments { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>See <see cref="AdoLens.Connection.LabelLanguages"/>.</summary>
+    public IReadOnlyList<string> LabelLanguages { get; init; } = [];
+
+    /// <summary>Whether a missing label text in this language is worth reporting.</summary>
+    public bool LabelLanguageRequired(string language) =>
+        LabelLanguages.Count == 0 || LabelLanguages.Any(l => l.Equals(language, StringComparison.OrdinalIgnoreCase));
+
     public const string ConnectionVar = "ADOLENS_CONNECTION";
     public const string OrgVar = "AZURE_DEVOPS_ORG";
     public const string PatVar = "AZURE_DEVOPS_PAT";
@@ -184,9 +200,10 @@ public sealed record Config(string Connection, string Organization, string Pat, 
                     ? $"{envPat.Var} is set too but differs from the PAT in Credential Manager (which is used)"
                     : null,
                 Environments = conn.Environments,
+                LabelLanguages = conn.LabelLanguages ?? [],
             };
         if (envPat.Value is { } pat)
-            return new Config(name, org, pat, project, NullIfEmpty(conn.Team), $"environment variable {envPat.Var}") { Environments = conn.Environments };
+            return new Config(name, org, pat, project, NullIfEmpty(conn.Team), $"environment variable {envPat.Var}") { Environments = conn.Environments, LabelLanguages = conn.LabelLanguages ?? [] };
 
         throw new InvalidOperationException(
             $"no PAT for connection '{name}': run 'adolens login --connection {name}' (stores it in Windows Credential Manager) or set {envVar}");
