@@ -54,6 +54,35 @@ public static class McpTools
         return Intro + string.Concat(Lines.Where(l => active.Contains(l.Key)).Select(l => l.Value));
     }
 
+    /// <summary>
+    /// Field values as Claude sends them: an object whose values are text, numbers or booleans, or that object as a JSON
+    /// string, or "Name=Value; Name2=Value2". A strict Dictionary&lt;string,string&gt; would reject {"Priority": 2} before the
+    /// tool runs, with no message.
+    /// </summary>
+    internal static Dictionary<string, string>? Fields(System.Text.Json.JsonElement? fields)
+    {
+        if (fields is not { } f || f.ValueKind is System.Text.Json.JsonValueKind.Null or System.Text.Json.JsonValueKind.Undefined) return null;
+        if (f.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            var s = f.GetString() ?? "";
+            if (s.TrimStart().StartsWith('{'))
+                try { return Fields(System.Text.Json.JsonDocument.Parse(s).RootElement.Clone()); }
+                catch (System.Text.Json.JsonException) { throw new ArgumentException("fields is not valid JSON; give an object like {\"Priority\": 2}"); }
+            return s.Split([';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(p => p.Split('=', 2)).Where(p => p.Length == 2)
+                .ToDictionary(p => p[0].Trim(), p => p[1].Trim(), StringComparer.OrdinalIgnoreCase);
+        }
+        if (f.ValueKind != System.Text.Json.JsonValueKind.Object) throw new ArgumentException("fields is an object: {\"Field name\": \"value\"}");
+        return f.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => p.Value.GetString() ?? "",
+            System.Text.Json.JsonValueKind.Null => "",
+            System.Text.Json.JsonValueKind.True => "true",
+            System.Text.Json.JsonValueKind.False => "false",
+            _ => p.Value.GetRawText(),
+        }, StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>Set at server start from the settings: end every answer with "[~N tokens]".</summary>
     public static bool ShowTokens { get; set; }
 
@@ -88,6 +117,12 @@ public static class McpTools
         {
             error = true;
             throw new McpException("Azure DevOps did not answer in time");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not McpException)
+        {
+            // Anything unexpected still says what happened: otherwise the client shows only "An error occurred".
+            error = true;
+            throw new McpException($"{tool} failed ({ex.GetType().Name}): {ex.Message}");
         }
         finally
         {
@@ -438,7 +473,7 @@ public static class WorkTools
         string? area = null,
         [Description("Tags separated by ';'.")] string? tags = null,
         string? state = null,
-        [Description("Other fields by name or reference name.")] Dictionary<string, string>? fields = null,
+        [Description("Other fields by name or reference name: {\"Priority\": 2}.")] System.Text.Json.JsonElement? fields = null,
         [Description("A team template (ado_fields type=… lists them) for the values not given.")] string? template = null,
         string? project = null,
         string? connection = null,
@@ -447,7 +482,7 @@ public static class WorkTools
             () => WorkQueries.CreateAsync(lens, connection, project, type, new WriteRequest
             {
                 Title = title, Description = description, AcceptanceCriteria = acceptanceCriteria, AssignedTo = assignedTo,
-                Parent = parent, Iteration = iteration, Area = area, Tags = tags, State = state, Fields = fields, Template = template,
+                Parent = parent, Iteration = iteration, Area = area, Tags = tags, State = state, Fields = McpTools.Fields(fields), Template = template,
             }, ct));
 
     [McpServerTool(Name = "ado_update")]
@@ -464,7 +499,7 @@ public static class WorkTools
         [Description("Iteration path, 'current' or 'next'.")] string? iteration = null,
         string? area = null,
         [Description("'a; b' replaces, '+a; -b' adds and removes.")] string? tags = null,
-        [Description("Other fields by name or reference name; empty value clears.")] Dictionary<string, string>? fields = null,
+        [Description("Other fields by name or reference name; empty value clears.")] System.Text.Json.JsonElement? fields = null,
         [Description("Markdown comment for each item, alone or with changes; @[name or e-mail] notifies a person.")] string? comment = null,
         [Description("Token from the preview.")] string? confirm = null,
         string? connection = null,
@@ -473,7 +508,7 @@ public static class WorkTools
             () => WorkQueries.UpdateAsync(lens, connection, ids, wiql, new WriteRequest
             {
                 Title = title, Description = description, AcceptanceCriteria = acceptanceCriteria, State = state, Reason = reason,
-                AssignedTo = assignedTo, Iteration = iteration, Area = area, Tags = tags, Fields = fields,
+                AssignedTo = assignedTo, Iteration = iteration, Area = area, Tags = tags, Fields = McpTools.Fields(fields),
             }, comment, confirm, lens.Settings.ConfirmBulkAbove, ct));
 
     [McpServerTool(Name = "ado_comment")]
@@ -580,7 +615,7 @@ public static class RecipeTools
     public static Task<string> Recipe(Lens lens, string action,
         string? name = null,
         [Description("For save: the recipe JSON.")] string? recipe = null,
-        [Description("For run: parameter values.")] Dictionary<string, string>? @params = null,
+        [Description("For run: parameter values.")] System.Text.Json.JsonElement? @params = null,
         string? confirm = null,
         string? connection = null,
         CancellationToken ct = default)
@@ -593,7 +628,7 @@ public static class RecipeTools
                 "show" => Recipes.Show(lens, Need(name, "name")),
                 "save" => Recipes.Save(lens, Need(name, "name"), Need(recipe, "recipe")),
                 "delete" => Recipes.Delete(lens, Need(name, "name")),
-                "run" => await Recipes.RunAsync(lens, connection, Need(name, "name"), @params, confirm, yes: false, ct),
+                "run" => await Recipes.RunAsync(lens, connection, Need(name, "name"), McpTools.Fields(@params), confirm, yes: false, ct),
                 _ => throw new ArgumentException("action is list, show, save, run or delete"),
             };
         });

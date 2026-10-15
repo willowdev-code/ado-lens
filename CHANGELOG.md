@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.1 — 2026-10-15
+
+Fixes from use in a process with many required fields.
+
+- Creating a work item no longer asks for fields Azure DevOps fills itself (Iteration ID, Area ID and other system
+  fields some processes mark as required); the message names each missing field with its reference name and allowed
+  values.
+- `fields` of `ado_create`, `ado_update` and recipe parameters take numbers and booleans (`{"Priority": 2}`), an object
+  sent as a JSON string, or `Name=Value; …` - before, such calls failed with no message.
+- An unexpected error inside a tool now says what happened instead of "An error occurred invoking …".
+- A value that matches several allowed values (e.g. "2" for "2 - High" and "20 - …") names them instead of failing
+  with a vague message.
+
 ## 0.7.0 — 2026-10-15
 
 Files from Azure DevOps: read what can be read, save the rest.

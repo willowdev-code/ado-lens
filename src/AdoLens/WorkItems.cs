@@ -221,13 +221,15 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
 
         if (current is null)
         {
+            // Fields Azure DevOps fills itself (ids from the paths, the creator, dates) are "required" in some processes
+            // but cannot be given: never ask for them.
             var missing = s.FieldsOf(type.Name)
-                .Where(f => f.Required && string.IsNullOrEmpty(f.Default) && !set.ContainsKey(f.Ref)
-                            && f.Ref is not ("System.State" or "System.Reason" or "System.AreaPath" or "System.IterationPath"))
-                .Select(f => f.Allowed.Count > 0 ? $"{f.Name} ({string.Join(" | ", f.Allowed.Take(10))}{(f.Allowed.Count > 10 ? " | …" : "")})" : f.Name)
+                .Where(f => f.Required && string.IsNullOrEmpty(f.Default) && !set.ContainsKey(f.Ref) && !FilledByAzureDevOps(f.Ref)
+                            && !(s.Fields.TryGetValue(f.Ref, out var def) && def.ReadOnly))
+                .Select(f => $"{f.Name} [{f.Ref}]" + (f.Allowed.Count > 0 ? $" ({string.Join(" | ", f.Allowed.Take(10))}{(f.Allowed.Count > 10 ? " | …" : "")})" : ""))
                 .ToList();
             if (missing.Count > 0)
-                throw new InvalidOperationException($"{type.Name} needs: {string.Join("; ", missing)} - pass them in fields");
+                throw new InvalidOperationException($"{type.Name} needs: {string.Join("; ", missing)} - pass them in fields (by name or [reference]); area and iteration are fine as given");
         }
 
         foreach (var (reference, value) in set)
@@ -245,6 +247,14 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         Lengths(type, r, notes);
         return ops;
     }
+
+    /// <summary>Fields set by Azure DevOps on every save, never by the caller.</summary>
+    internal static bool FilledByAzureDevOps(string reference) =>
+        reference is "System.State" or "System.Reason" or "System.AreaPath" or "System.IterationPath" or "System.AreaId" or "System.IterationId"
+            or "System.Id" or "System.Rev" or "System.TeamProject" or "System.WorkItemType" or "System.CreatedBy" or "System.CreatedDate"
+            or "System.ChangedBy" or "System.ChangedDate" or "System.AuthorizedAs" or "System.AuthorizedDate" or "System.RevisedDate"
+            or "System.Watermark" or "System.NodeName" or "System.PersonId" or "System.CommentCount"
+        || reference.StartsWith("System.AreaLevel", StringComparison.Ordinal) || reference.StartsWith("System.IterationLevel", StringComparison.Ordinal);
 
     static bool Has(Snapshot s, TypeInfo type, string reference) =>
         s.FieldsOf(type.Name).Any(f => f.Ref.Equals(reference, StringComparison.OrdinalIgnoreCase));
@@ -273,9 +283,13 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         if (def?.ReadOnly == true) throw new InvalidOperationException($"{tf.Name} is read-only");
         if (tf.Allowed.Count > 0)
         {
-            var hit = tf.Allowed.FirstOrDefault(a => a.Equals(v, StringComparison.OrdinalIgnoreCase))
-                      ?? tf.Allowed.SingleOrDefault(a => a.StartsWith(v, StringComparison.OrdinalIgnoreCase) || a.Contains(" - " + v, StringComparison.OrdinalIgnoreCase));
-            return hit ?? throw new InvalidOperationException($"'{value}' is not allowed in {tf.Name} of {type.Name}; values: {string.Join(" | ", tf.Allowed.Take(30))}");
+            var exact = tf.Allowed.FirstOrDefault(a => a.Equals(v, StringComparison.OrdinalIgnoreCase));
+            if (exact is not null) return exact;
+            var near = tf.Allowed.Where(a => a.StartsWith(v, StringComparison.OrdinalIgnoreCase) || a.Contains(" - " + v, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (near.Count == 1) return near[0];
+            throw new InvalidOperationException(near.Count > 1
+                ? $"'{value}' matches several values of {tf.Name}: {string.Join(" | ", near.Take(10))} - give the whole value"
+                : $"'{value}' is not allowed in {tf.Name} of {type.Name}; values: {string.Join(" | ", tf.Allowed.Take(30))}");
         }
         switch (def?.Type)
         {

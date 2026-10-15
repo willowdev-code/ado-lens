@@ -54,6 +54,7 @@ sealed class DemoProject
     public bool CustomerRequired;
     public bool ExtraState;
     public bool TestCaseType;
+    public bool SystemIdsRequired;
 
     public FakeAdo Routes(FakeAdo ado) => ado
         .On("/contoso/_apis/projects/Demo", """
@@ -100,7 +101,7 @@ sealed class DemoProject
               {"referenceName":"System.Description","name":"Description"},
               {"referenceName":"Microsoft.VSTS.Common.AcceptanceCriteria","name":"Acceptance Criteria"},
               {"referenceName":"Custom.Customer","name":"Customer","alwaysRequired":{{{(CustomerRequired ? "true" : "false")}}},"allowedValues":["Alpha","Beta"]},
-              {"referenceName":"WEF_ABC_Kanban.Column","name":"Board Column"}
+              {"referenceName":"WEF_ABC_Kanban.Column","name":"Board Column"}{{{(SystemIdsRequired ? ",{\"referenceName\":\"System.IterationId\",\"name\":\"Iteration ID\",\"alwaysRequired\":true},{\"referenceName\":\"System.AreaId\",\"name\":\"Area ID\",\"alwaysRequired\":true}" : "")}}}
             ]}
             """)
         .On("/contoso/Demo/_apis/wit/workitemtypes/Bug/fields", () => $$$"""
