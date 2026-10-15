@@ -95,7 +95,7 @@ else {
         }
         Copy-Item $f.FullName $dst -Force
     }
-    foreach ($f in 'install.ps1', 'uninstall.ps1', 'README.md', 'README.pl.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE') {
+    foreach ($f in 'install.ps1', 'uninstall.ps1', 'README.md', 'README.pl.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md') {
         if (Test-Path (Join-Path $src $f)) { Copy-Item (Join-Path $src $f) $InstallDir -Force }
     }
     if (Test-Path (Join-Path $src 'skills')) { Copy-Item (Join-Path $src 'skills') $InstallDir -Recurse -Force }

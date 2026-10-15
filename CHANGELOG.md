@@ -14,6 +14,7 @@ Files from Azure DevOps: read what can be read, save the rest.
   (`part=` reads a file), `save=true` saves it.
 - Download folder: `adolens config --download-dir <folder>` or the settings menu (default Downloads\ADO Lens).
 - A required label language with no label file in the model is reported by `ado_review` and `ado_label`.
+- THIRD-PARTY-NOTICES.md lists the bundled libraries and their licenses (PdfPig: Apache 2.0); shipped in every package.
 
 ## 0.6.0 — 2026-10-15
 
