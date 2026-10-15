@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — unreleased
+
+- A required label language with no label file in the model is reported by `ado_review` and `ado_label`.
+
 ## 0.6.0 — 2026-10-15
 
 Screenshots and documents for Claude, D365 labels, checks before testing, ready commands, a settings menu.
