@@ -22,7 +22,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           login           add or update a connection: organization, default project and PAT
                             --org <name|url>  --project <name>  --team <name>  --connection <name>
                             --pat-stdin (read the PAT from standard input)  --default (make it the default connection)
-          logout          remove the stored PAT of a connection        --connection <name>
+          logout          remove the stored PAT of a connection        --connection <name> | --all
           connections     list the connections
           config          show or change settings
                             --connection <name> --project <name> --team <name>   (defaults of a connection)
@@ -184,6 +184,13 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public int Logout()
     {
         var settings = Settings.Load(SettingsPath);
+        if (cl.Flag("all"))
+        {
+            // Uninstall: every stored PAT of the connections in the settings.
+            foreach (var conn in settings.Connections.Keys)
+                Console.WriteLine(CredentialStore.Delete(conn) ? $"removed {CredentialStore.TargetFor(conn)}" : $"no stored PAT for '{conn}'");
+            return 0;
+        }
         var name = cl.Opt("connection") ?? settings.DefaultConnection;
         if (string.IsNullOrWhiteSpace(name)) { Console.WriteLine("no connection configured - nothing to remove"); return 0; }
         Console.WriteLine(CredentialStore.Delete(name)

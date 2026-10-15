@@ -26,7 +26,11 @@ AppSupportURL=https://github.com/willowdev-code/ado-lens/issues
 DefaultDirName={localappdata}\Programs\ADO Lens
 DisableDirPage=yes
 DisableProgramGroupPage=yes
+DefaultGroupName=ADO Lens
 DisableReadyPage=yes
+SetupIconFile={#SourcePath}..\icon\adolens.ico
+; The program folder goes on the user's PATH, so "adolens" works in any new terminal.
+ChangesEnvironment=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -52,6 +56,19 @@ Source: "{#DesktopSkills}\*.zip"; DestDir: "{app}\skills-for-claude-desktop"; Fl
 ; Claude Code reads skills from %USERPROFILE%\.claude\skills (only when Claude Code is there); removed on uninstall.
 Source: "{#Source}\skills\*"; DestDir: "{%USERPROFILE}\.claude\skills"; Flags: recursesubdirs ignoreversion; Check: HasClaudeCode
 
+[Icons]
+; Start menu: settings and status open in a console that stays open (adolens commands work there too).
+Name: "{group}\{cm:IconSettings}"; Filename: "{cmd}"; Parameters: "/k """"{app}\bin\adolens.exe"" setup"""; WorkingDir: "{app}"; IconFilename: "{app}\bin\adolens.exe"
+Name: "{group}\{cm:IconStatus}"; Filename: "{cmd}"; Parameters: "/k """"{app}\bin\adolens.exe"" status"""; WorkingDir: "{app}"; IconFilename: "{app}\bin\adolens.exe"
+Name: "{group}\{cm:IconSkills}"; Filename: "{app}\skills-for-claude-desktop"
+Name: "{group}\{cm:UninstallProgram,ADO Lens}"; Filename: "{uninstallexe}"; IconFilename: "{app}\bin\adolens.exe"
+
+[Registry]
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; Check: NeedsAddPath(ExpandConstant('{app}\bin'))
+
+[UninstallDelete]
+Type: files; Name: "{app}\bin\*.old"
+
 [UninstallRun]
 Filename: "{app}\bin\adolens.exe"; Parameters: "unregister"; Flags: runhidden waituntilterminated; RunOnceId: "unregister"
 
@@ -60,6 +77,14 @@ Filename: "{app}\skills-for-claude-desktop"; Description: "{cm:OpenSkills}"; Fla
 Filename: "https://github.com/willowdev-code/ado-lens#readme"; Description: "{cm:OpenReadme}"; Flags: postinstall shellexec skipifsilent unchecked
 
 [CustomMessages]
+en.IconSettings=ADO Lens - settings
+en.IconStatus=ADO Lens - status
+en.IconSkills=ADO Lens - skills for Claude Desktop
+en.RemoveData=Also remove the stored personal access tokens (Windows Credential Manager) and the settings and cache of ADO Lens?%n%nChoose No to keep them for a later installation.
+pl.IconSettings=ADO Lens - ustawienia
+pl.IconStatus=ADO Lens - status
+pl.IconSkills=ADO Lens - skille dla Claude Desktop
+pl.RemoveData=Usunąć też zapisane tokeny dostępu (Menedżer poświadczeń Windows) oraz ustawienia i pamięć podręczną ADO Lens?%n%nWybierz Nie, aby zachować je na potrzeby ponownej instalacji.
 en.ConnTitle=Azure DevOps
 en.ConnSub=Where your work items are
 en.ConnText=Paste a link to your Azure DevOps project from the browser (for example https://dev.azure.com/contoso/Sales), or the organization name.
@@ -118,6 +143,64 @@ var
 
 function SetEnvironmentVariable(lpName: String; lpValue: String): Boolean;
   external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
+{ Whether a folder is missing from the user's PATH (compared without case and trailing backslash). }
+function NeedsAddPath(Dir: String): Boolean;
+var
+  Path: String;
+begin
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', Path) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  Result := Pos(';' + Lowercase(RemoveBackslashUnlessRoot(Dir)) + ';', ';' + Lowercase(Path) + ';') = 0;
+end;
+
+procedure RemoveFromPath(Dir: String);
+var
+  Path, Item, Kept: String;
+  P: Integer;
+begin
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', Path) then Exit;
+  Kept := '';
+  Path := Path + ';';
+  while Path <> '' do
+  begin
+    P := Pos(';', Path);
+    Item := Copy(Path, 1, P - 1);
+    Delete(Path, 1, P);
+    if (Item <> '') and (Lowercase(RemoveBackslashUnlessRoot(Item)) <> Lowercase(RemoveBackslashUnlessRoot(Dir))) then
+    begin
+      if Kept <> '' then Kept := Kept + ';';
+      Kept := Kept + Item;
+    end;
+  end;
+  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', Kept);
+end;
+
+var
+  RemoveUserData: Boolean;
+
+{ Before the files go: ask whether to remove the stored PATs and the local data (default: keep them), and sign out
+  with the program while it is still there. After: take the program folder off the PATH and delete the data. }
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Code: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    RemoveUserData := not UninstallSilent and
+      (MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES);
+    if RemoveUserData then
+      Exec(ExpandConstant('{app}\bin\adolens.exe'), 'logout --all', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  end
+  else if CurUninstallStep = usPostUninstall then
+  begin
+    RemoveFromPath(ExpandConstant('{app}\bin'));
+    if RemoveUserData then DelTree(ExpandConstant('{localappdata}\ado-lens'), True, True, True);
+  end;
+end;
 
 function HasClaudeCode: Boolean;
 begin

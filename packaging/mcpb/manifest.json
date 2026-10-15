@@ -17,6 +17,7 @@
   "documentation": "https://github.com/willowdev-code/ado-lens#readme",
   "support": "https://github.com/willowdev-code/ado-lens/issues",
   "license": "MIT",
+  "icon": "icon.png",
   "keywords": ["azure devops", "work items", "sprint", "wiki", "tfvc", "git", "pull requests"],
   "server": {
     "type": "binary",

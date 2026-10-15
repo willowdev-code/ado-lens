@@ -1,3 +1,5 @@
+<img src="packaging/icon/icon.png" alt="ADO Lens" width="96" align="right">
+
 # ADO Lens for Azure DevOps — an MCP server for Claude
 
 [![CI](https://github.com/willowdev-code/ado-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/willowdev-code/ado-lens/actions/workflows/ci.yml)
@@ -47,8 +49,12 @@ The install package is not part of the repository (`dist\` is excluded by `.giti
 administrator rights. It asks for the Azure DevOps link and the PAT (checked before anything is installed), who uses
 it (Product Owner / developer / everything), installs the skills and registers ADO Lens in Claude; an update skips the
 questions. Until the program is signed, Windows SmartScreen may show "Windows protected your PC" for a file downloaded
-in a browser: *More info → Run anyway* (or use the one-line install above, which avoids it). Uninstall it from
-*Settings → Apps*.
+in a browser: *More info → Run anyway* (or use the one-line install above, which avoids it).
+
+After installing, the Start menu has an **ADO Lens** folder: *settings* (mode, environments, another connection —
+`adolens setup` in a console), *status* (is everything working) and the skills for Claude Desktop; `adolens` works in
+any new terminal. Uninstall from *Settings → Apps → ADO Lens* (or the Start menu): it removes the program, its Claude
+registrations and skills, and asks whether to remove the stored PATs and settings too (by default they stay).
 
 **Claude Desktop only (extension).** `ado-lens-X.Y.Z.mcpb` from **Releases**: open it with Claude Desktop (or drag it
 into *Settings → Extensions*) and fill in the project link and the PAT, which Claude Desktop keeps in the system's secure
@@ -103,7 +109,7 @@ mentions it once per session; say "update ADO Lens" and `ado_upgrade` downloads 
 installer in its own window. From a terminal: `adolens upgrade` shows what is new, `adolens upgrade --install` installs
 it (`--pre` includes test releases). Settings, PATs and metadata are kept; Claude may stay open.
 
-Uninstall: `uninstall.ps1` in the installation folder (removes the Claude registrations and skills of this installation,
+Uninstall (ZIP and one-line installs): `uninstall.ps1` in the installation folder (removes the Claude registrations and skills of this installation,
 asks about the stored PATs and the local data).
 
 ### The PAT
