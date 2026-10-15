@@ -17,7 +17,7 @@ public sealed partial class CommandLine
         ["login"] = ["connection=", "org=", "project=", "team=", "pat-stdin", "pat-env=", "default"],
         ["tests"] = ["connection=", "team=", "detail="],
         ["test-create"] = ["connection=", "file=", "plan=", "suite="],
-        ["logout"] = ["connection=", "all"],
+        ["logout"] = ["connection=", "all", "remove"],
         ["connections"] = [],
         ["trace"] = ["connection=", "detail="],
         ["pr"] = ["connection=", "project=", "repo=", "list=", "detail="],

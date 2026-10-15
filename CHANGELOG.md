@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.2 — unreleased
+
+- `adolens logout --connection <name> --remove` removes the whole connection: the PAT, the settings entry and its
+  metadata cache (a new default is picked when one connection is left).
+- `adolens update` without anything to change says it changes work items and points to `adolens upgrade --install`
+  for updating ADO Lens itself.
+
 ## 0.5.1 — 2026-10-15
 
 - An icon: the program, the installer, Settings → Apps, the Start menu and the Claude Desktop extension.

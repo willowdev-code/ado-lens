@@ -23,6 +23,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                             --org <name|url>  --project <name>  --team <name>  --connection <name>
                             --pat-stdin (read the PAT from standard input)  --default (make it the default connection)
           logout          remove the stored PAT of a connection        --connection <name> | --all
+                            --remove: also the connection itself and its metadata cache
           connections     list the connections
           config          show or change settings
                             --connection <name> --project <name> --team <name>   (defaults of a connection)
@@ -196,6 +197,23 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         Console.WriteLine(CredentialStore.Delete(name)
             ? $"removed {CredentialStore.TargetFor(name)} from Windows Credential Manager"
             : $"no stored PAT for connection '{name}'");
+        if (!cl.Flag("remove")) return 0;
+
+        // --remove: the whole connection - settings entry and its metadata cache, not only the PAT.
+        var key = settings.Connections.Keys.FirstOrDefault(k => k.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (key is null) { Console.WriteLine($"no connection '{name}' in the settings"); return 0; }
+        settings.Connections.Remove(key);
+        if (string.Equals(settings.DefaultConnection, key, StringComparison.OrdinalIgnoreCase))
+            settings.DefaultConnection = settings.Connections.Count == 1 ? settings.Connections.Keys.First() : null;
+        settings.Save(SettingsPath);
+        Console.WriteLine($"removed connection '{key}' from {SettingsPath}" +
+                          (settings.DefaultConnection is { } d ? $"; default connection: {d}" : settings.Connections.Count > 1 ? "; set a default with 'adolens config --default-connection <name>'" : ""));
+        var meta = Path.Combine(Settings.DataDir, "meta");
+        foreach (var f in Directory.Exists(meta) ? Directory.GetFiles(meta, key + ".db*") : [])
+        {
+            try { File.Delete(f); }
+            catch (IOException) { Console.WriteLine($"note: {f} is in use (an open Claude session) - delete it later"); }
+        }
         return 0;
     }
 
@@ -443,6 +461,14 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Tags = cl.Opt("tags"), Fields = FieldOptions(),
         };
         var ids = cl.Opt("ids") ?? (cl.Positional.Count > 0 ? string.Join(';', cl.Positional) : null);
+        var wiql = cl.Peek("wiql");
+        if (ids is null && wiql is null && r.IsEmpty && cl.Peek("comment") is null)
+        {
+            // "update" alone is easily taken for updating the program.
+            Console.Error.WriteLine("update changes work items: adolens update <ids> --state <s> | --field \"Name=Value\" | --comment <text>…");
+            Console.Error.WriteLine("to update ADO Lens itself: adolens upgrade --install");
+            return 2;
+        }
         Print(await WorkQueries.UpdateAsync(lens, cl.Opt("connection"), ids, cl.Opt("wiql"), r, cl.Opt("comment"), cl.Opt("confirm"), lens.Settings.ConfirmBulkAbove));
         return 0;
     }
