@@ -57,6 +57,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           search <text>    work items, wiki and code in one search   --scope work;wiki;code  --top 10
           file <path>      a file ($/… TFVC, Git path with --repo, or a file name)  --version <v>  --part <X++ method>
                             --history (who changed it, when, for which work items)  --detail full
+          review <change>  checks before testing: work item linked, labels in every language, X++ messages from labels,
+                            no TODO;  --item <id>: every change of a work item and its tasks
           attachments <id> files of a work item; --file <name|number> reads one (Word, Excel, text); --add <path> attaches
           label "<text>"   a D365 message as seen (values for %1 are fine) or @File:Id: label, languages, where used
           health           backlog hygiene of the team    --team <t>
@@ -814,6 +816,15 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         var lens = NewLens();
         Print(cl.Opt("add") is { } add ? await Attachments.AddAsync(lens, cl.Opt("connection"), id, add, cl.Opt("comment"))
             : await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail")));
+        return 0;
+    }
+
+    public async Task<int> ReviewAsync()
+    {
+        var arg = cl.Positional.Count > 0 ? string.Join(' ', cl.Positional) : null;
+        var item = Int(cl.Opt("item"));
+        if (arg is null && item is null) { Console.Error.WriteLine("usage: adolens review <523 | \"PR 482\" | sha --repo <r>>  or  adolens review --item <work item id>"); return 2; }
+        Print(await Review.ReviewAsync(NewLens(), cl.Opt("connection"), item is null ? arg : null, item, cl.Opt("repo")));
         return 0;
     }
 

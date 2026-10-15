@@ -47,4 +47,31 @@ public class LabelTests
         Assert.Equal(": validateWrite; Label of Amount", Labels.Places(xml, "@Demo:Missing"));
         Assert.Equal("", Labels.Places(xml, "@Demo:Other"));
     }
+
+    [Fact]
+    public void Review_sees_new_lines_per_method()
+    {
+        const string before = """
+            <AxClass><Name>Demo</Name><SourceCode><Methods>
+              <Method><Name>run</Name><Source><![CDATA[void run()
+            {
+                info("@Demo:Done");
+            }]]></Source></Method>
+            </Methods></SourceCode></AxClass>
+            """;
+        const string after = """
+            <AxClass><Name>Demo</Name><SourceCode><Methods>
+              <Method><Name>run</Name><Source><![CDATA[void run()
+            {
+                info("@Demo:Done");
+                warning("Nothing to post"); // TODO label
+            }]]></Source></Method>
+              <Method><Name>check</Name><Source><![CDATA[boolean check() { return checkFailed("@Demo:Missing"); }]]></Source></Method>
+            </Methods></SourceCode></AxClass>
+            """;
+        var added = Review.AddedLines(before, after);
+        Assert.Contains(added, x => x.Method == "run" && x.Line.Contains("Nothing to post"));
+        Assert.Contains(added, x => x.Method == "check");
+        Assert.DoesNotContain(added, x => x.Line.Contains("@Demo:Done"));
+    }
 }

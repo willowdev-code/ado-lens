@@ -247,6 +247,16 @@ public static class TraceTools
         => McpTools.Run("ado_changes", new { change, repo, file, detail, connection },
             () => TraceQueries.ChangesAsync(lens, connection, change, repo, file, detail, ct));
 
+    [McpServerTool(Name = "ado_review", ReadOnly = true, Idempotent = true)]
+    [Description("Checks a change (523, PR 482, commit + repo) or all changes of a work item (id) before testing: work item linked, labels in every language, X++ messages from labels, no TODO.")]
+    public static Task<string> ReviewTool(Lens lens,
+        string? change = null,
+        int? id = null,
+        string? repo = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_review", new { change, id, repo, connection }, () => Review.ReviewAsync(lens, connection, change, id, repo, ct));
+
     [McpServerTool(Name = "ado_label", ReadOnly = true, Idempotent = true)]
     [Description("A D365 message or label: paste the text as seen (values in place of %1 are fine) or @File:Id - the label, its text in every language (MISSING flagged), and the objects and X++ methods, fields or controls using it.")]
     public static Task<string> Label(Lens lens, string text,

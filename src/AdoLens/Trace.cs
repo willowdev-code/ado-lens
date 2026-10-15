@@ -370,6 +370,14 @@ public static partial class TraceQueries
     public static async Task<string> ChangesAsync(Lens lens, string? connection, string change, string? repo, string? file, string? detail, CancellationToken ct = default)
     {
         var session = lens.For(connection);
+        var (c, versions) = await ResolveAsync(session, change, repo, ct);
+        return await ChangesTextAsync(c, versions, file, detail);
+    }
+
+    /// <summary>A changeset, pull request or commit, and how to read the two versions of each of its files.</summary>
+    internal static async Task<(CodeChange Change, Func<FileChange, Task<(string? Before, string? After)>> Versions)> ResolveAsync(
+        Session session, string change, string? repo, CancellationToken ct)
+    {
         var code = session.Code;
         var text = change.Trim();
         CodeChange c;
@@ -396,7 +404,12 @@ public static partial class TraceQueries
                                    f.ChangeType.Contains("delete") ? null : await code.GitFileAsync(r.Id, f.Path, c.Id, ct));
         }
         else throw new ArgumentException("change is a changeset (523, C523), a pull request (PR 482) or a commit sha with repo");
+        return (c, versions);
+    }
 
+    static async Task<string> ChangesTextAsync(CodeChange c, Func<FileChange, Task<(string? Before, string? After)>> versions, string? file, string? detail)
+    {
+        var ct = CancellationToken.None;
         var sb = new StringBuilder();
         var head = c.Kind == "pr"
             ? $"{c.Label} {c.State}: {c.TargetBranch} <- {c.Branch}, \"{c.Message}\", {c.Author}"

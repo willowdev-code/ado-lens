@@ -90,6 +90,8 @@ try
             return await cli.WikiWriteAsync();
         case "search":
             return await cli.SearchAsync();
+        case "review":
+            return await cli.ReviewAsync();
         case "attachments":
             return await cli.AttachmentsAsync();
         case "label":
