@@ -36,6 +36,7 @@ public class BoardTests : IDisposable
                   {"id":"s2","name":"Sprint 2","path":"Demo\\Sprint 2","attributes":{"startDate":"2026-10-05T00:00:00Z","finishDate":"2026-10-16T00:00:00Z","timeFrame":"current"}},
                   {"id":"s3","name":"Sprint 3","path":"Demo\\Sprint 3","attributes":{"startDate":"2026-10-19T00:00:00Z","finishDate":"2026-10-30T00:00:00Z","timeFrame":"future"}}]}
                 """)
+            .On(team + "teamsettings/iterations/s1/workitems", """{"workItemRelations":[{"rel":null,"source":null,"target":{"id":4}}]}""")
             .On(team + "teamsettings/iterations/s2/workitems", """
                 {"workItemRelations":[
                   {"rel":null,"source":null,"target":{"id":1}},
@@ -183,5 +184,13 @@ public class BoardTests : IDisposable
         var week = new HashSet<DayOfWeek> { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday };
         Assert.Equal(10, Boards.WorkingDays(new(2026, 10, 5), new(2026, 10, 16), week, []));
         Assert.Equal(9, Boards.WorkingDays(new(2026, 10, 5), new(2026, 10, 16), week, [(new(2026, 10, 7), new(2026, 10, 7))]));
+    }
+
+    [Fact]
+    public async Task Metrics_compare_finished_sprints()
+    {
+        ((JsonObject)items.Items[4]["fields"]!)["System.State"] = "Done";
+        var text = (await BoardQueries.MetricsAsync(lens, null, null, null, 6, Today)).Replace("\r", "");
+        Assert.StartsWith("flow of Demo Team (Demo)\nsprint | done items | done effort\nSprint 1 | 1 | 0\naverage: 1 items, 0 effort per sprint", text);
     }
 }

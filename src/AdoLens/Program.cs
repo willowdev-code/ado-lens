@@ -90,6 +90,8 @@ try
             return await cli.WikiWriteAsync();
         case "search":
             return await cli.SearchAsync();
+        case "attachments":
+            return await cli.AttachmentsAsync();
         case "label":
             return await cli.LabelAsync();
         case "file":
@@ -98,6 +100,8 @@ try
             return await cli.TestsAsync();
         case "test-create":
             return await cli.TestCreateAsync();
+        case "metrics":
+            return await cli.MetricsAsync();
         case "health":
             return await cli.HealthAsync();
         case "release-notes":

@@ -57,6 +57,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           search <text>    work items, wiki and code in one search   --scope work;wiki;code  --top 10
           file <path>      a file ($/… TFVC, Git path with --repo, or a file name)  --version <v>  --part <X++ method>
                             --history (who changed it, when, for which work items)  --detail full
+          attachments <id> files of a work item; --file <name|number> reads one (Word, Excel, text); --add <path> attaches
           label "<text>"   a D365 message as seen (values for %1 are fine) or @File:Id: label, languages, where used
           health           backlog hygiene of the team    --team <t>
           release-notes [current|previous|<sprint>]   or --since 14d [--until yyyy-MM-dd]   markdown for the wiki
@@ -807,6 +808,15 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         return 0;
     }
 
+    public async Task<int> AttachmentsAsync()
+    {
+        if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens attachments <work item id> [--file <name or number>] [--add <path> --comment <text>]"); return 2; }
+        var lens = NewLens();
+        Print(cl.Opt("add") is { } add ? await Attachments.AddAsync(lens, cl.Opt("connection"), id, add, cl.Opt("comment"))
+            : await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail")));
+        return 0;
+    }
+
     public async Task<int> LabelAsync()
     {
         if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens label \"<message as seen on screen>\" | @File:Id  [--branch Main]"); return 2; }
@@ -835,6 +845,12 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens test-create <work item id> --file <cases.md> [--plan <p> --suite <s>]"); return 2; }
         var cases = cl.Opt("file") is { } file ? await File.ReadAllTextAsync(file) : await Console.In.ReadToEndAsync();
         Print(await TestCases.CreateAsync(NewLens(), cl.Opt("connection"), id, cases, cl.Opt("plan"), cl.Opt("suite")));
+        return 0;
+    }
+
+    public async Task<int> MetricsAsync()
+    {
+        Print(await BoardQueries.MetricsAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("team"), Int(cl.Opt("sprints")) ?? 6));
         return 0;
     }
 

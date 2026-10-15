@@ -190,6 +190,16 @@ public static class BoardTools
     public static Task<string> Health(Lens lens, string? team = null, string? project = null, string? connection = null, CancellationToken ct = default)
         => McpTools.Run("ado_health", new { team, project, connection }, () => BoardQueries.HealthAsync(lens, connection, project, team, null, ct));
 
+    [McpServerTool(Name = "ado_metrics", ReadOnly = true, Idempotent = true)]
+    [Description("Team flow: done items and estimate per finished sprint (velocity), cycle and lead time (median, 85%), what is in progress longest.")]
+    public static Task<string> Metrics(Lens lens,
+        [Description("Finished sprints to compare (default 6).")] int sprints = 6,
+        string? team = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_metrics", new { sprints, team, project, connection }, () => BoardQueries.MetricsAsync(lens, connection, project, team, sprints, null, ct));
+
     [McpServerTool(Name = "ado_release_notes", ReadOnly = true, Idempotent = true)]
     [Description("Release notes in markdown: requirements and bugs finished in a sprint (default current) or between dates, grouped by feature.")]
     public static Task<string> ReleaseNotes(Lens lens,
@@ -464,6 +474,31 @@ public static class WorkTools
         CancellationToken ct = default)
         => McpTools.Run("ado_link", new { id, targets, type, remove, connection },
             () => WorkQueries.LinkAsync(lens, connection, id, targets, type, remove, ct));
+
+    [McpServerTool(Name = "ado_create_tree")]
+    [Description("Creates a tree of work items from an indented list, one per line '- Type: Title | description @person', children indented under their parent; preview first, then confirm=<token>.")]
+    public static Task<string> CreateTree(Lens lens, string items,
+        [Description("Existing work item the top items go under.")] int? parent = null,
+        [Description("Iteration path, 'current' or 'next' for all.")] string? iteration = null,
+        string? area = null,
+        string? confirm = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_create_tree", new { parent, iteration, area, confirm, project, connection },
+            () => WorkTree.CreateAsync(lens, connection, project, parent, items, iteration, area, confirm, ct));
+
+    [McpServerTool(Name = "ado_attachments")]
+    [Description("Files attached to a work item: the list; file=<name or number> its text (Word, Excel, text files); add=<local path> attaches a file.")]
+    public static Task<string> AttachmentsTool(Lens lens, int id,
+        string? file = null,
+        [Description("Local file to attach.")] string? add = null,
+        string? comment = null,
+        [Description("full: the whole text.")] string? detail = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_attachments", new { id, file, add, connection },
+            () => add is not null ? Attachments.AddAsync(lens, connection, id, add, comment, ct) : Attachments.ReadAsync(lens, connection, id, file, detail, ct));
 
     [McpServerTool(Name = "ado_search", ReadOnly = true, Idempotent = true)]
     [Description("One search over work items, wiki pages and code of the project, grouped - the start for \"how does X work\".")]
