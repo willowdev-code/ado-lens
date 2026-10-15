@@ -25,7 +25,7 @@ public class LabelTests
     [Fact]
     public void Label_files_are_parsed_without_comments()
     {
-        var map = Labels.Parse("﻿First=One %1\n ;comment for First\nSecond=Two=2\n\nBad line\n");
+        var map = Labels.Parse("\uFEFFFirst=One %1\n ;comment for First\nSecond=Two=2\n\nBad line\n");
         Assert.Equal("One %1", map["first"]);
         Assert.Equal("Two=2", map["Second"]);
         Assert.Equal(2, map.Count);

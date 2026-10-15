@@ -118,7 +118,7 @@ public static class Attachments
                 case ".xlsx" or ".xlsm":
                     return Excel(bytes);
                 case ".txt" or ".md" or ".csv" or ".json" or ".xml" or ".log" or ".sql" or ".cs" or ".xpp" or ".yml" or ".yaml" or ".html" or ".htm":
-                    return Encoding.UTF8.GetString(bytes).TrimStart('﻿');
+                    return Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
             }
         }
         catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException) { return null; }

@@ -51,7 +51,7 @@ public class AttachmentTests
     [Fact]
     public void Text_files_are_read_and_binary_ones_are_not()
     {
-        Assert.Equal("a;b", Attachments.Extract("x.csv", Encoding.UTF8.GetBytes("﻿a;b")));
+        Assert.Equal("a;b", Attachments.Extract("x.csv", Encoding.UTF8.GetBytes("\uFEFFa;b")));
         Assert.Null(Attachments.Extract("shot.png", [0x89, 0x50, 0x4E, 0x47, 0, 0, 0]));
         Assert.Null(Attachments.Extract("broken.docx", [1, 2, 3]));
     }

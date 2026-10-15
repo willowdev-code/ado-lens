@@ -47,7 +47,7 @@ public static partial class Labels
         {
             if (raw.Length == 0 || raw[0] == ' ' || raw[0] == ';') continue;
             var eq = raw.IndexOf('=');
-            if (eq > 0) map[raw[..eq].Trim().TrimStart('﻿')] = raw[(eq + 1)..];
+            if (eq > 0) map[raw[..eq].Trim().TrimStart('\uFEFF')] = raw[(eq + 1)..];
         }
         return map;
     }
