@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.1 — unreleased
+## 0.5.1 — 2026-10-15
 
 - An icon: the program, the installer, Settings → Apps, the Start menu and the Claude Desktop extension.
 - Start menu folder "ADO Lens": settings (`adolens setup`), status, skills for Claude Desktop, uninstall.
