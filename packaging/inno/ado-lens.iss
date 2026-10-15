@@ -54,8 +54,6 @@ Name: "pl"; MessagesFile: "compiler:Languages\Polish.isl"
 [Files]
 Source: "{#Source}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 Source: "{#DesktopSkills}\*.zip"; DestDir: "{app}\skills-for-claude-desktop"; Flags: ignoreversion skipifsourcedoesntexist
-; Claude Code reads skills from %USERPROFILE%\.claude\skills (only when Claude Code is there); removed on uninstall.
-Source: "{#Source}\skills\*"; DestDir: "{%USERPROFILE}\.claude\skills"; Flags: recursesubdirs ignoreversion; Check: HasClaudeCode
 
 [Icons]
 ; Start menu: settings and status open in a console that stays open (adolens commands work there too).
@@ -226,6 +224,7 @@ begin
       (MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES);
     if RemoveUserData then
       Exec(ExpandConstant('{app}\bin\adolens.exe'), 'logout --all', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    RemoveCodeSkills;
   end
   else if CurUninstallStep = usPostUninstall then
   begin
@@ -237,6 +236,69 @@ end;
 function HasClaudeCode: Boolean;
 begin
   Result := DirExists(ExpandConstant('{%USERPROFILE}\.claude'));
+end;
+
+{ The mode saved in the settings (po when unknown). }
+function SavedMode: String;
+var
+  Text: AnsiString;
+  S: String;
+begin
+  Result := 'po';
+  if not LoadStringFromFile(ExpandConstant('{localappdata}\ado-lens\adolens.json'), Text) then Exit;
+  S := Lowercase(String(Text));
+  if Pos('"mode": "dev"', S) > 0 then Result := 'dev'
+  else if Pos('"mode": "full"', S) > 0 then Result := 'full';
+end;
+
+{ Claude Code loads the description of every installed skill in each session, so only the skills of the mode go
+  there: po-* for a Product Owner, dev-* for a developer, all for everything. Claude Desktop gets ZIPs of all. }
+procedure InstallCodeSkills(Mode: String);
+var
+  F: TFindRec;
+  Src, Dst, Name: String;
+begin
+  if not HasClaudeCode then Exit;
+  Src := ExpandConstant('{app}\skills');
+  if not FindFirst(Src + '\*', F) then Exit;
+  try
+    repeat
+      Name := F.Name;
+      if (F.Attributes and FILE_ATTRIBUTE_DIRECTORY <> 0) and (Name <> '.') and (Name <> '..') then
+      begin
+        Dst := ExpandConstant('{%USERPROFILE}\.claude\skills\') + Name;
+        if (Mode = 'full') or ((Mode = 'dev') and (Copy(Name, 1, 4) = 'dev-')) or ((Mode = 'po') and (Copy(Name, 1, 3) = 'po-')) then
+        begin
+          ForceDirectories(Dst);
+          FileCopy(Src + '\' + Name + '\SKILL.md', Dst + '\SKILL.md', False);
+        end
+        else if FileExists(Dst + '\SKILL.md') then DelTree(Dst, True, True, True);
+      end;
+    until not FindNext(F);
+  finally
+    FindClose(F);
+  end;
+end;
+
+{ Uninstall: the skills of this program in Claude Code. }
+procedure RemoveCodeSkills;
+var
+  F: TFindRec;
+  Src, Dst: String;
+begin
+  Src := ExpandConstant('{app}\skills');
+  if not FindFirst(Src + '\*', F) then Exit;
+  try
+    repeat
+      if (F.Attributes and FILE_ATTRIBUTE_DIRECTORY <> 0) and (F.Name <> '.') and (F.Name <> '..') then
+      begin
+        Dst := ExpandConstant('{%USERPROFILE}\.claude\skills\') + F.Name;
+        if FileExists(Dst + '\SKILL.md') then DelTree(Dst, True, True, True);
+      end;
+    until not FindNext(F);
+  finally
+    FindClose(F);
+  end;
 end;
 
 function SettingsFile: String;
@@ -534,7 +596,9 @@ begin
       Mode := 'po';
     end;
     RunAdoLens(Exe, 'config --mode ' + Mode, Output);
-  end;
+  end
+  else Mode := SavedMode;
+  InstallCodeSkills(Mode);
   { 7: Claude Desktop is running and would write its old configuration back. }
   Code := RunAdoLens(Exe, 'register', Output);
   while (Code = 7) and not WizardSilent do

@@ -90,6 +90,9 @@ try
             return await cli.WikiWriteAsync();
         case "search":
             return await cli.SearchAsync();
+        case "skills":
+            Console.WriteLine(Skills.Sync(Settings.Load(Settings.DefaultPath).Mode));
+            return 0;
         case "review":
             return await cli.ReviewAsync();
         case "attachments":

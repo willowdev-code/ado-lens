@@ -17,12 +17,13 @@ names only in brackets.
    - **needs attention** — the items from the attention list, each with what to do about it (who to ask, what to
      decide),
    - **in progress / not started** only when asked for details.
-3. `ado_board summary` when they ask about the board or WIP limits; `ado_my_day` for "what is new for me".
+3. `ado_board summary` when they ask about the board or WIP limits; `ado_my_day` for "what is new for me";
+   `ado_metrics` for "are we getting faster", velocity, cycle time and what is stuck longest.
 
 ## Sprint review, delivered work, release notes
 
-1. Find the items: the sprint's done items (`ado_sprint detail=full`), or `ado_query` with a WIQL for a date range
-   (state category Completed, changed in the range), using field names from `ado_fields`.
+1. `ado_release_notes` (the sprint, or `since`/`until` for a date range) gives the finished requirements and bugs
+   grouped by feature; rewrite the titles in user language.
 2. For the most important items, `ado_trace id=<id> detail=summary` tells where each one is (DEV / UAT / PROD).
 3. Write the notes grouped by what users notice (new, changed, fixed), one line each, no internal jargon:
    "Orders above the credit limit are now blocked at confirmation (#4821)". Add where it is available.

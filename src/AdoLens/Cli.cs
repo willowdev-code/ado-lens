@@ -58,6 +58,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           search <text>    work items, wiki and code in one search   --scope work;wiki;code  --top 10
           file <path>      a file ($/… TFVC, Git path with --repo, or a file name)  --version <v>  --part <X++ method>
                             --history (who changed it, when, for which work items)  --detail full
+          skills           puts the skills of the mode into Claude Code (po-*, dev-*, all for full), removes the others
           review <change>  checks before testing: work item linked, labels in every language, X++ messages from labels,
                             no TODO;  --item <id>: every change of a work item and its tasks
           attachments <id> files of a work item; --file <name|number> reads one (Word, Excel, text); --add <path> attaches
@@ -271,7 +272,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                 settings.DefaultConnection = settings.Connections.Keys.First(k => k.Equals(d, StringComparison.OrdinalIgnoreCase));
                 changed = true;
             }
-            if (cl.Opt("mode") is { } m) { settings.Mode = Settings.NormalizeMode(m); changed = true; }
+            if (cl.Opt("mode") is { } m) { settings.Mode = Settings.NormalizeMode(m); changed = true; Console.WriteLine(Skills.Sync(settings.Mode)); }
             if (cl.Opt("usage-log") is { } u)
             {
                 settings.UsageLog = bool.TryParse(u, out var b) ? b : throw new ArgumentException("--usage-log takes true or false");
@@ -616,6 +617,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             settings.Mode = (string.IsNullOrWhiteSpace(answer) ? current : answer.Trim()) switch { "2" => "dev", "3" => "full", _ => "po" };
         }
         settings.Save(path);
+        Console.WriteLine(Skills.Sync(settings.Mode));
 
         // 2. Where code goes, per connection.
         var lens = NewLens();
@@ -732,6 +734,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     settings.Mode = (string.IsNullOrWhiteSpace(m) ? current : m.Trim()) switch { "2" => "dev", "3" => "full", _ => "po" };
                     settings.Save(SettingsPath);
                     Console.WriteLine(Ui.T($"  mode: {settings.Mode} - new Claude sessions use it", $"  tryb: {settings.Mode} - obowiązuje w nowych sesjach Claude'a"));
+                    Console.WriteLine("  " + Skills.Sync(settings.Mode));
                     break;
                 case "2":
                     var name = PickConnection(settings);
