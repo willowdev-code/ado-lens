@@ -1,7 +1,28 @@
 # Changelog
 
-## 0.5.2 — unreleased
+## 0.6.0 — unreleased
 
+Screenshots and documents for Claude, D365 labels, checks before testing, ready commands, a settings menu.
+
+- `ado_attachments`: the files of a work item and the screenshots pasted into its text or comments; images are shown
+  to Claude, Word, Excel and text files are read as text; `add` attaches a local file.
+- `ado_label`: a D365 message pasted as seen (values in place of any %1 %2 …) or a label id → the label, its text in
+  every language (missing ones flagged) and where it is used (object and X++ method, field or control).
+- `ado_review`: checks of a change or of every change of a work item before testing - work item linked, labels in
+  every language, X++ messages from labels, no TODO left.
+- `ado_create_tree`: a tree of work items from an indented list, previewed, one undo for all of it.
+- `ado_metrics`: velocity per sprint, cycle and lead time, what is in progress longest.
+- `ado_changes file=a;b;c`: several diffs in one call.
+- Prompts (ready commands in Claude Desktop "+" and Claude Code "/"): verify, explain, story, sprint, refine, test, wiki,
+  label, dev_start, dev_pr, dev_build, dev_why - each runs its skill, no skill upload needed.
+- Skills `po-refine`, `po-test`, `po-wiki`, `dev-start`, `dev-pr`, `dev-build`, `dev-why`; `po-verify`, `po-explain`
+  and `po-sprint` use the new tools. Claude Code gets only the skills of the mode (`adolens skills` after a change).
+- Settings menu (`adolens setup`, Start menu "ADO Lens - settings"): mode, environments (change, add, remove, for you
+  or the team), add or remove a connection, status, language.
+- Installer: an environments page (stages and branches found, names suggested, saved for you or the team) and a
+  language choice (Polish or English) kept for the settings.
+- `ado_trace` leaves out release stages outside the environment map that have not deployed for half a year.
+- The settings file keeps "UAT + SCM" and Polish names readable.
 - `adolens logout --connection <name> --remove` removes the whole connection: the PAT, the settings entry and its
   metadata cache (a new default is picked when one connection is left).
 - `adolens update` without anything to change says it changes work items and points to `adolens upgrade --install`
