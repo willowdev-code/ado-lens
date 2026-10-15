@@ -42,7 +42,8 @@ WizardStyle=modern
 UninstallDisplayName=ADO Lens
 UninstallDisplayIcon={app}\bin\adolens.exe
 LicenseFile={#Source}\LICENSE
-ShowLanguageDialog=auto
+; Users choose: Polish or English (the choice is kept for the settings console too).
+ShowLanguageDialog=yes
 CloseApplications=no
 VersionInfoVersion={#Version}
 
@@ -74,7 +75,7 @@ Filename: "{app}\bin\adolens.exe"; Parameters: "unregister"; Flags: runhidden wa
 
 [Run]
 Filename: "{app}\skills-for-claude-desktop"; Description: "{cm:OpenSkills}"; Flags: postinstall shellexec skipifsilent unchecked
-Filename: "https://github.com/willowdev-code/ado-lens#readme"; Description: "{cm:OpenReadme}"; Flags: postinstall shellexec skipifsilent unchecked
+Filename: "{cm:ReadmeUrl}"; Description: "{cm:OpenReadme}"; Flags: postinstall shellexec skipifsilent unchecked
 
 [CustomMessages]
 en.EnvTitle=Environments
@@ -88,6 +89,7 @@ en.EnvMine=Save for me only (this computer)
 en.EnvTeam=Save for the whole team (wiki page "ADO Lens" of the project)
 en.EnvSkip=Skip - Claude asks when needed
 en.EnvFailed=Saving the environments did not work:%n%n%1
+en.ReadmeUrl=https://github.com/willowdev-code/ado-lens#readme
 en.IconSettings=ADO Lens - settings
 en.IconStatus=ADO Lens - status
 en.IconSkills=ADO Lens - skills for Claude Desktop
@@ -103,6 +105,7 @@ pl.EnvMine=Zapisz tylko dla mnie (ten komputer)
 pl.EnvTeam=Zapisz dla całego zespołu (strona wiki "ADO Lens" w projekcie)
 pl.EnvSkip=Pomiń - Claude zapyta, gdy będzie trzeba
 pl.EnvFailed=Nie udało się zapisać środowisk:%n%n%1
+pl.ReadmeUrl=https://github.com/willowdev-code/ado-lens/blob/main/README.pl.md
 pl.IconSettings=ADO Lens - ustawienia
 pl.IconStatus=ADO Lens - status
 pl.IconSkills=ADO Lens - skille dla Claude Desktop
@@ -520,6 +523,8 @@ var
 begin
   if CurStep <> ssPostInstall then Exit;
   Exe := ExpandConstant('{app}\bin\adolens.exe');
+  { The language chosen in the installer is kept for the settings console. }
+  if not WizardSilent then RunAdoLens(Exe, 'config --language ' + ActiveLanguage, Output);
   if not HasConnection then
   begin
     case ModePage.SelectedValueIndex of

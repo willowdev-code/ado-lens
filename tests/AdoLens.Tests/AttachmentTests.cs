@@ -55,4 +55,12 @@ public class AttachmentTests
         Assert.Null(Attachments.Extract("shot.png", [0x89, 0x50, 0x4E, 0x47, 0, 0, 0]));
         Assert.Null(Attachments.Extract("broken.docx", [1, 2, 3]));
     }
+
+    [Fact]
+    public void Images_are_recognized_by_their_first_bytes()
+    {
+        Assert.Equal("image/png", Attachments.ImageMime([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0]));
+        Assert.Equal("image/jpeg", Attachments.ImageMime([0xFF, 0xD8, 0xFF, 0xE0]));
+        Assert.Null(Attachments.ImageMime(Encoding.UTF8.GetBytes("plain text here")));
+    }
 }

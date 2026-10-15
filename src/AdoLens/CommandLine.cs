@@ -23,7 +23,7 @@ public sealed partial class CommandLine
         ["pr"] = ["connection=", "project=", "repo=", "list=", "detail="],
         ["pipeline"] = ["connection=", "project=", "definition=", "branch=", "top=", "detail="],
         ["changes"] = ["connection=", "repo=", "file=", "detail="],
-        ["config"] = ["env=", "remove-env=", "connection=", "default-connection=", "project=", "team=", "mode=", "usage-log=", "add-toolset=", "remove-toolset=", "confirm-above=", "show-tokens="],
+        ["config"] = ["env=", "remove-env=", "connection=", "default-connection=", "project=", "team=", "mode=", "usage-log=", "add-toolset=", "remove-toolset=", "confirm-above=", "show-tokens=", "language="],
         ["item"] = ["connection=", "include=", "detail="],
         ["query"] = ["connection=", "project=", "wiql=", "query=", "top="],
         ["create"] = ["connection=", "project=", "type=", "title=", "description=", "criteria=", "assign=", "parent=", "iteration=", "area=", "tags=", "state=", "field=", "template="],

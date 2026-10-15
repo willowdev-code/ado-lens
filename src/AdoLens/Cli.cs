@@ -29,6 +29,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                             --connection <name> --project <name> --team <name>   (defaults of a connection)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
                             --show-tokens true|false  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
+                            --language pl|en|auto (settings console and installer texts)
           status          configuration, connection check, metadata and Claude registrations
                             --connection <name>  --offline  --quiet
           register        add / update the 'ado-lens' MCP server in Claude Desktop and Claude Code
@@ -285,6 +286,17 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             while (cl.Opt("remove-toolset") is { } rem)
             {
                 settings.ExtraToolsets.Remove(Toolsets.Normalize(rem));
+                changed = true;
+            }
+            if (cl.Opt("language") is { } lang)
+            {
+                settings.Language = lang.Trim().ToLowerInvariant() switch
+                {
+                    "pl" or "polski" or "polish" => "pl",
+                    "en" or "english" or "angielski" => "en",
+                    "" or "auto" => null,
+                    _ => throw new ArgumentException("--language takes pl, en or auto (the language of Windows)"),
+                };
                 changed = true;
             }
             if (cl.Opt("show-tokens") is { } st)
@@ -708,6 +720,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Console.WriteLine(Ui.T("  3. Add a connection (another organization or company)", "  3. Dodaj połączenie (inna organizacja lub firma)"));
             Console.WriteLine(Ui.T("  4. Remove a connection", "  4. Usuń połączenie"));
             Console.WriteLine(Ui.T("  5. Status (is everything working)", "  5. Status (czy wszystko działa)"));
+            Console.WriteLine(Ui.T("  6. Language: Polish / English", "  6. Język: polski / angielski"));
             var choice = Prompt(Ui.T("Choice (Enter = done): ", "Wybór (Enter = koniec): "));
             switch (choice?.Trim())
             {
@@ -739,6 +752,12 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     break;
                 case "5":
                     await StatusAsync();
+                    break;
+                case "6":
+                    var l = Prompt("  1. polski  2. English  3. auto (Windows): ");
+                    settings.Language = l?.Trim() switch { "1" => "pl", "2" => "en", "3" => null, _ => settings.Language };
+                    settings.Save(SettingsPath);
+                    Ui.Polish = settings.Language == "pl" || settings.Language is null && Ui.Polish;
                     break;
             }
         }
@@ -814,8 +833,16 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     {
         if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens attachments <work item id> [--file <name or number>] [--add <path> --comment <text>]"); return 2; }
         var lens = NewLens();
-        Print(cl.Opt("add") is { } add ? await Attachments.AddAsync(lens, cl.Opt("connection"), id, add, cl.Opt("comment"))
-            : await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail")));
+        if (cl.Opt("add") is { } add) { Print(await Attachments.AddAsync(lens, cl.Opt("connection"), id, add, cl.Opt("comment"))); return 0; }
+        var (text, image) = await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail"));
+        Print(text);
+        if (image is { } i)
+        {
+            // In a terminal an image is saved and opened instead.
+            var path = Path.Combine(Path.GetTempPath(), $"adolens-{id}-{Guid.NewGuid():N}"[..24] + (i.Mime == "image/jpeg" ? ".jpg" : "." + i.Mime[6..]));
+            await File.WriteAllBytesAsync(path, i.Bytes);
+            Console.WriteLine($"saved: {path}");
+        }
         return 0;
     }
 

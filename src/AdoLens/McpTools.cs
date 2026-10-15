@@ -499,16 +499,27 @@ public static class WorkTools
             () => WorkTree.CreateAsync(lens, connection, project, parent, items, iteration, area, confirm, ct));
 
     [McpServerTool(Name = "ado_attachments")]
-    [Description("Files attached to a work item: the list; file=<name or number> its text (Word, Excel, text files); add=<local path> attaches a file.")]
-    public static Task<string> AttachmentsTool(Lens lens, int id,
+    [Description("Files of a work item and screenshots pasted into its text or comments: the list; file=<name or number> shows an image or the text of a document (Word, Excel, text); add=<local path> attaches a file.")]
+    public static async Task<IEnumerable<ModelContextProtocol.Protocol.ContentBlock>> AttachmentsTool(Lens lens, int id,
         string? file = null,
         [Description("Local file to attach.")] string? add = null,
         string? comment = null,
         [Description("full: the whole text.")] string? detail = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_attachments", new { id, file, add, connection },
-            () => add is not null ? Attachments.AddAsync(lens, connection, id, add, comment, ct) : Attachments.ReadAsync(lens, connection, id, file, detail, ct));
+    {
+        (byte[] Bytes, string Mime)? image = null;
+        var text = await McpTools.Run("ado_attachments", new { id, file, add, connection }, async () =>
+        {
+            if (add is not null) return await Attachments.AddAsync(lens, connection, id, add, comment, ct);
+            var (t, img) = await Attachments.ReadAsync(lens, connection, id, file, detail, ct);
+            image = img;
+            return t;
+        });
+        var blocks = new List<ModelContextProtocol.Protocol.ContentBlock> { new ModelContextProtocol.Protocol.TextContentBlock { Text = text } };
+        if (image is { } i) blocks.Add(ModelContextProtocol.Protocol.ImageContentBlock.FromBytes(i.Bytes, i.Mime));
+        return blocks;
+    }
 
     [McpServerTool(Name = "ado_search", ReadOnly = true, Idempotent = true)]
     [Description("One search over work items, wiki pages and code of the project, grouped - the start for \"how does X work\".")]

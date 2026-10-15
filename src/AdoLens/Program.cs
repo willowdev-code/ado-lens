@@ -158,7 +158,8 @@ async Task<int> RunServerAsync()
             o.ServerInstructions = McpTools.Instructions(lens.Settings);
         })
         .WithStdioServerTransport()
-        .WithActiveTools(lens.Settings);
+        .WithActiveTools(lens.Settings)
+        .WithPrompts([typeof(Prompts)]);
     await builder.Build().RunAsync();
     return 0;
 }

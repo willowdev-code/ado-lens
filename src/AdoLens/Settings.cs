@@ -40,6 +40,9 @@ public sealed partial class Settings
     /// <summary>Ends every answer with its estimated size, e.g. "[~230 tokens]" (a few tokens each, so off by default).</summary>
     public bool ShowTokens { get; set; }
 
+    /// <summary>Language of the settings console and installer texts: "pl", "en", or null for the language of Windows.</summary>
+    public string? Language { get; set; }
+
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
