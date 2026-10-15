@@ -1,3 +1,5 @@
+<img src="packaging/icon/icon.png" alt="ADO Lens" width="96" align="right">
+
 # ADO Lens for Azure DevOps — serwer MCP dla Claude'a
 
 [![CI](https://github.com/willowdev-code/ado-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/willowdev-code/ado-lens/actions/workflows/ci.yml)
@@ -48,7 +50,11 @@ administratora. Pyta o link do Azure DevOps i PAT (sprawdzane, zanim cokolwiek s
 Owner / programista / wszystko), instaluje skille i rejestruje ADO Lens w Claudzie; aktualizacja pomija pytania. Dopóki
 program nie jest podpisany, Windows SmartScreen może przy pliku pobranym przeglądarką pokazać „System Windows ochronił
 ten komputer”: *Więcej informacji → Uruchom mimo to* (albo użyj instalacji jedną linijką powyżej, która tego unika).
-Odinstalowanie: *Ustawienia → Aplikacje*.
+
+Po instalacji w menu Start jest folder **ADO Lens**: *ustawienia* (tryb, środowiska, kolejne połączenie — `adolens setup`
+w konsoli), *status* (czy wszystko działa) i skille dla Claude Desktop; `adolens` działa w każdym nowym terminalu.
+Odinstalowanie: *Ustawienia → Aplikacje → ADO Lens* (albo z menu Start) — usuwa program, jego rejestracje w Claudzie
+i skille, i pyta, czy usunąć też zapisane PAT-y i ustawienia (domyślnie zostają).
 
 **Tylko Claude Desktop (rozszerzenie).** `ado-lens-X.Y.Z.mcpb` z **Releases**: otwórz go w Claude Desktop (albo
 przeciągnij do *Settings → Extensions*) i wpisz link do projektu oraz PAT, który Claude Desktop trzyma w bezpiecznym
@@ -105,7 +111,7 @@ w sesji; wystarczy powiedzieć „zaktualizuj ADO Lens”, a `ado_upgrade` pobie
 instalator w osobnym oknie. Z terminala: `adolens upgrade` pokazuje, co nowego, `adolens upgrade --install` instaluje
 (`--pre` uwzględnia wydania testowe). Ustawienia, PAT-y i metadane zostają; Claude może być otwarty.
 
-Deinstalacja: `uninstall.ps1` w folderze instalacji (usuwa rejestracje i skille tej instalacji w Claude, pyta o zapisane
+Deinstalacja (instalacja z ZIP-a i jedną linijką): `uninstall.ps1` w folderze instalacji (usuwa rejestracje i skille tej instalacji w Claude, pyta o zapisane
 PAT-y i dane lokalne).
 
 ### PAT

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1 — unreleased
+
+- An icon: the program, the installer, Settings → Apps, the Start menu and the Claude Desktop extension.
+- Start menu folder "ADO Lens": settings (`adolens setup`), status, skills for Claude Desktop, uninstall.
+- The installer puts the program folder on the user's PATH: `adolens` works in any new terminal.
+- Uninstall asks whether to remove the stored PATs and the settings and cache too (default: keep them); it also takes
+  the program off the PATH. `adolens logout --all` removes every stored PAT.
+
 ## 0.5.0 — 2026-10-15
 
 Tests, templates, and two more ways to install.

@@ -12,6 +12,8 @@
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TieredPGO>true</TieredPGO>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Drawn by packaging/icon/make-icon.ps1; shown in Explorer, Settings -> Apps and the Start menu. -->
+    <ApplicationIcon>..\..\packaging\icon\adolens.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup>

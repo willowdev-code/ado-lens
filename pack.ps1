@@ -92,6 +92,7 @@ if (-not $NoZip) {
     [IO.File]::WriteAllText((Join-Path $mcpbStage 'manifest.json'), $manifest, (New-Object Text.UTF8Encoding $false))
     Copy-Item (Join-Path $stage 'bin') $mcpbStage -Recurse
     Copy-Item (Join-Path $stage 'LICENSE') $mcpbStage
+    Copy-Item (Join-Path $PSScriptRoot 'packaging\icon\icon.png') $mcpbStage
     $mcpb = Join-Path $OutDir "ado-lens-$version.mcpb"
     New-Zip $mcpbStage $mcpb $false
     Write-Checksum $mcpb 'mcpb'
