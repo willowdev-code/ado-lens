@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 — unreleased
+## 0.6.0 — 2026-10-15
 
 Screenshots and documents for Claude, D365 labels, checks before testing, ready commands, a settings menu.
 
