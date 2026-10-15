@@ -49,6 +49,9 @@ public sealed partial class Settings
     /// <summary>Language of the settings console and installer texts: "pl", "en", or null for the language of Windows.</summary>
     public string? Language { get; set; }
 
+    /// <summary>Where files are saved (save=true); null: Downloads\ADO Lens.</summary>
+    public string? DownloadDir { get; set; }
+
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,

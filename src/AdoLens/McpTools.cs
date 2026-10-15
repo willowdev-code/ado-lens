@@ -499,25 +499,28 @@ public static class WorkTools
             () => WorkTree.CreateAsync(lens, connection, project, parent, items, iteration, area, confirm, ct));
 
     [McpServerTool(Name = "ado_attachments")]
-    [Description("Files of a work item and screenshots pasted into its text or comments: the list; file=<name or number> shows an image or the text of a document (Word, Excel, Outlook e-mail, text); add=<local path> attaches a file.")]
+    [Description("Files of a work item and screenshots pasted into it: the list; file=<name or number> gives a document's text (PDF, Word, Excel, PowerPoint, e-mail, ZIP list, text) or shows images and scanned pages; save=true streams it to disk (any size) and returns the path; add=<local path> attaches a file.")]
     public static async Task<IEnumerable<ModelContextProtocol.Protocol.ContentBlock>> AttachmentsTool(Lens lens, int id,
         string? file = null,
+        [Description("PDF pages: 3 or 2-5.")] string? pages = null,
+        [Description("A file inside a ZIP.")] string? part = null,
+        bool save = false,
         [Description("Local file to attach.")] string? add = null,
         string? comment = null,
         [Description("full: the whole text.")] string? detail = null,
         string? connection = null,
         CancellationToken ct = default)
     {
-        (byte[] Bytes, string Mime)? image = null;
-        var text = await McpTools.Run("ado_attachments", new { id, file, add, connection }, async () =>
+        List<(byte[] Bytes, string Mime)> images = [];
+        var text = await McpTools.Run("ado_attachments", new { id, file, pages, part, save, add, connection }, async () =>
         {
             if (add is not null) return await Attachments.AddAsync(lens, connection, id, add, comment, ct);
-            var (t, img) = await Attachments.ReadAsync(lens, connection, id, file, detail, ct);
-            image = img;
+            var (t, imgs) = await Attachments.ReadAsync(lens, connection, id, file, detail, pages, part, save, ct);
+            images = imgs;
             return t;
         });
         var blocks = new List<ModelContextProtocol.Protocol.ContentBlock> { new ModelContextProtocol.Protocol.TextContentBlock { Text = text } };
-        if (image is { } i) blocks.Add(ModelContextProtocol.Protocol.ImageContentBlock.FromBytes(i.Bytes, i.Mime));
+        blocks.AddRange(images.Select(i => ModelContextProtocol.Protocol.ImageContentBlock.FromBytes(i.Bytes, i.Mime)));
         return blocks;
     }
 

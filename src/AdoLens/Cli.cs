@@ -30,6 +30,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
                             --show-tokens true|false  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
                             --language pl|en|auto (settings console and installer texts)
+                            --download-dir <folder>|default (where save=true puts files; default Downloads\ADO Lens)
                             --connection <c> --label-languages "en-US, pl"|all  (languages review and label require)
           status          configuration, connection check, metadata and Claude registrations
                             --connection <name>  --offline  --quiet
@@ -295,6 +296,11 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             while (cl.Opt("remove-toolset") is { } rem)
             {
                 settings.ExtraToolsets.Remove(Toolsets.Normalize(rem));
+                changed = true;
+            }
+            if (cl.Opt("download-dir") is { } dd)
+            {
+                settings.DownloadDir = string.IsNullOrWhiteSpace(dd) || dd.Trim().Equals("default", StringComparison.OrdinalIgnoreCase) ? null : dd.Trim();
                 changed = true;
             }
             if (cl.Opt("language") is { } lang)
@@ -732,6 +738,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Console.WriteLine(Ui.T("  5. Status (is everything working)", "  5. Status (czy wszystko działa)"));
             Console.WriteLine(Ui.T("  6. Language: Polish / English", "  6. Język: polski / angielski"));
             Console.WriteLine(Ui.T("  7. Required label languages (checks of D365 changes)", "  7. Wymagane języki etykiet (kontrola zmian D365)"));
+            Console.WriteLine(Ui.T($"  8. Download folder: {Downloads.BaseDir(settings)}", $"  8. Folder pobierania: {Downloads.BaseDir(settings)}"));
             var choice = Prompt(Ui.T("Choice (Enter = done): ", "Wybór (Enter = koniec): "));
             switch (choice?.Trim())
             {
@@ -770,6 +777,16 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     settings.Language = l?.Trim() switch { "1" => "pl", "2" => "en", "3" => null, _ => settings.Language };
                     settings.Save(SettingsPath);
                     Ui.Polish = settings.Language == "pl" || settings.Language is null && Ui.Polish;
+                    break;
+                case "8":
+                    var folder = Prompt(Ui.T("  folder for saved files ('default' = Downloads\\ADO Lens, Enter = keep): ",
+                                             "  folder na pobrane pliki ('default' = Pobrane\\ADO Lens, Enter = bez zmian): "));
+                    if (!string.IsNullOrWhiteSpace(folder))
+                    {
+                        settings.DownloadDir = folder.Trim().Equals("default", StringComparison.OrdinalIgnoreCase) ? null : folder.Trim().Trim('"');
+                        settings.Save(SettingsPath);
+                        Console.WriteLine($"  {Downloads.BaseDir(settings)}");
+                    }
                     break;
                 case "7":
                     var cn = PickConnection(settings);
@@ -866,14 +883,16 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens attachments <work item id> [--file <name or number>] [--add <path> --comment <text>]"); return 2; }
         var lens = NewLens();
         if (cl.Opt("add") is { } add) { Print(await Attachments.AddAsync(lens, cl.Opt("connection"), id, add, cl.Opt("comment"))); return 0; }
-        var (text, image) = await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail"));
+        if (cl.Opt("to") is { } to) lens.Settings.DownloadDir = to;
+        var (text, images) = await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail"), cl.Opt("pages"), cl.Opt("part"),
+            cl.Flag("save") || cl.Peek("to") is not null);
         Print(text);
-        if (image is { } i)
+        foreach (var i in images)
         {
-            // In a terminal an image is saved and opened instead.
+            // A terminal cannot show images: they are written to the temporary folder.
             var path = Path.Combine(Path.GetTempPath(), $"adolens-{id}-{Guid.NewGuid():N}"[..24] + (i.Mime == "image/jpeg" ? ".jpg" : "." + i.Mime[6..]));
             await File.WriteAllBytesAsync(path, i.Bytes);
-            Console.WriteLine($"saved: {path}");
+            Console.WriteLine($"image: {path}");
         }
         return 0;
     }

@@ -1,11 +1,9 @@
-using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
-using System.Xml.Linq;
 
 namespace AdoLens;
 
-/// <summary>Files attached to work items: the list, their text (Word, Excel, plain text), and adding one.</summary>
+/// <summary>Files attached to work items: the list, their content for the model, saving them, adding one.</summary>
 public static class Attachments
 {
     const long MaxDownload = 20 * 1024 * 1024;
@@ -13,13 +11,6 @@ public static class Attachments
     const string Rel = "AttachedFile";
 
     sealed record Attached(string Name, string Url, long? Size, string? Comment);
-
-    const long MaxImage = 4 * 1024 * 1024;
-
-    static readonly Dictionary<string, string> ImageTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [".png"] = "image/png", [".jpg"] = "image/jpeg", [".jpeg"] = "image/jpeg", [".gif"] = "image/gif", [".webp"] = "image/webp",
-    };
 
     static List<Attached> List(JsonElement wi) =>
         Json.Arr(wi, "relations").Where(r => Json.Str(r, "rel") == Rel).Select(r =>
@@ -64,37 +55,46 @@ public static class Attachments
     static string Size(long? bytes) => bytes is not { } b ? "" : b < 1024 ? $" ({b} B)" : b < 1024 * 1024 ? $" ({b / 1024} KB)" : $" ({b / 1024.0 / 1024:0.#} MB)";
 
     /// <summary>
-    /// Without <paramref name="file"/>: the attachments of the item and the images pasted into it; with it (name or
-    /// number): the text of a document, or an image (returned as image bytes for the client to show to the model).
+    /// Without <paramref name="file"/>: the attachments of the item and the images pasted into it. With it (name or
+    /// number): its content for the model - text of a document (PDF, Word, Excel, PowerPoint, e-mail, ZIP list, text),
+    /// or images (pictures, scanned PDF pages); with <paramref name="save"/> the file is streamed to disk instead and
+    /// only its path comes back. Files too large or not readable get a link and the hint to save them.
     /// </summary>
-    public static async Task<(string Text, (byte[] Bytes, string Mime)? Image)> ReadAsync(Lens lens, string? connection, int id, string? file, string? detail,
-        CancellationToken ct = default)
+    public static async Task<(string Text, List<(byte[] Bytes, string Mime)> Images)> ReadAsync(Lens lens, string? connection, int id, string? file,
+        string? detail, string? pages = null, string? part = null, bool save = false, CancellationToken ct = default)
     {
         var session = lens.For(connection);
         var items = await session.Work.GetAsync([id], relations: true, ct: ct);
-        if (items.Count == 0) return ($"no work item #{id} visible with this PAT", null);
+        if (items.Count == 0) return ($"no work item #{id} visible with this PAT", []);
         var list = List(items[0]).Concat(await InlineImagesAsync(session, items[0], ct)).ToList();
         var head = WorkItemFormat.Header(items[0]);
-        if (list.Count == 0) return ($"{head}: no attachments and no pasted images", null);
+        if (list.Count == 0) return ($"{head}: no attachments and no pasted images", []);
         if (string.IsNullOrWhiteSpace(file))
             return ($"{head}: {list.Count} file(s)\n" + string.Join('\n', list.Select((a, i) => $"{i + 1}. {a.Name}{Size(a.Size)}{(a.Comment is { Length: > 0 } c ? $" - {c}" : "")}")) +
-                    "\nfile=<name or number> reads one: documents as text (Word, Excel, e-mail, text), images are shown.", null);
+                    "\nfile=<name or number> reads one (documents as text, images and scans shown); save=true saves it to disk (any size).", []);
 
         var pick = int.TryParse(file, out var n) && n >= 1 && n <= list.Count ? list[n - 1]
             : list.FirstOrDefault(a => a.Name.Equals(file.Trim(), StringComparison.OrdinalIgnoreCase))
               ?? list.FirstOrDefault(a => a.Name.Contains(file.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (pick is null) return ($"no file '{file}' on #{id}; files: {string.Join(", ", list.Select(a => a.Name))}", null);
-        var bytes = await session.Client.GetBytesAsync(pick.Url + (pick.Url.Contains('?') ? "&" : "?") + "download=true", MaxDownload, ct);
-        if (ImageTypes.TryGetValue(Path.GetExtension(pick.Name), out var mime) || ImageMime(bytes) is { } sniffed && (mime = sniffed) is not null)
-        {
-            if (bytes.Length > MaxImage) return ($"{pick.Name}{Size(bytes.Length)}: the image is too large to show (over {MaxImage / 1024 / 1024} MB)", null);
-            return ($"{pick.Name}{Size(bytes.Length)} from {head}{(pick.Comment is { Length: > 0 } where ? $" ({where})" : "")} - image attached", (bytes, mime));
-        }
-        var text = Extract(pick.Name, bytes);
-        if (text is null) return ($"{pick.Name}{Size(bytes.Length)}: this kind of file cannot be read as text (open it from the work item)", null);
-        var full = detail == "full";
-        return ($"{pick.Name}{Size(bytes.Length)} from {head}\n\n" +
-                (full || text.Length <= MaxText ? text : text[..MaxText] + $"\n\n… {text.Length - MaxText} more characters (detail=full)"), null);
+        if (pick is null) return ($"no file '{file}' on #{id}; files: {string.Join(", ", list.Select(a => a.Name))}", []);
+        var download = pick.Url + (pick.Url.Contains('?') ? "&" : "?") + "download=true";
+        if (save)
+            return (await Downloads.SaveAsync(session.Client, download, Downloads.BaseDir(lens.Settings), id.ToString(System.Globalization.CultureInfo.InvariantCulture), pick.Name, ct), []);
+
+        string Link(string why) => $"{pick.Name}{Size(pick.Size)}: {why}.\nsave=true saves it to disk (streamed, any size); in a browser signed in to Azure DevOps: {pick.Url}";
+        if (pick.Size > MaxDownload) return (Link($"larger than {MaxDownload / 1024 / 1024} MB, too large to read here"), []);
+        byte[] bytes;
+        try { bytes = await session.Client.GetBytesAsync(download, MaxDownload, ct); }
+        catch (AdoApiException ex) when (ex.Message.Contains("larger than", StringComparison.Ordinal)) { return (Link(ex.Message), []); }
+
+        var content = Documents.Read(pick.Name, bytes, pages, part);
+        if (content.Text is null && content.Images.Count == 0) return (Link(content.Note ?? "nothing readable as text"), []);
+        var sb = new StringBuilder($"{pick.Name} ({Documents.Size(bytes.Length)}, {content.Kind}) from {head}");
+        if (pick.Comment is { Length: > 0 } where) sb.Append($" ({where})");
+        if (content.Note is not null) sb.Append($"\n{content.Note}");
+        if (content.Images.Count > 0) sb.Append($"\n{content.Images.Count} image(s) attached");
+        if (content.Text is not null) sb.Append("\n\n").Append(Documents.Fit(content.Text, MaxText, detail == "full"));
+        return (sb.ToString(), content.Images);
     }
 
     /// <summary>An image recognized by its first bytes (pasted images may have no usable file name).</summary>
@@ -105,90 +105,8 @@ public static class Attachments
         : b.Length > 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P' ? "image/webp"
         : null;
 
-    /// <summary>The text of a file: Word and Excel (Office Open XML), or anything that is plain text.</summary>
-    internal static string? Extract(string name, byte[] bytes)
-    {
-        var ext = Path.GetExtension(name).ToLowerInvariant();
-        try
-        {
-            switch (ext)
-            {
-                case ".docx" or ".docm":
-                    return Word(bytes);
-                case ".xlsx" or ".xlsm":
-                    return Excel(bytes);
-                case ".msg":
-                    return OutlookMsg.Read(bytes);
-                case ".txt" or ".md" or ".csv" or ".json" or ".xml" or ".log" or ".sql" or ".cs" or ".xpp" or ".yml" or ".yaml" or ".html" or ".htm":
-                    return Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
-            }
-        }
-        catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException) { return null; }
-        // Unknown extension: text when it has no zero bytes in the start.
-        return bytes.Take(4096).Contains((byte)0) ? null : Encoding.UTF8.GetString(bytes);
-    }
-
-    static XDocument? Part(ZipArchive zip, string path) =>
-        zip.GetEntry(path) is { } e ? XDocument.Load(e.Open()) : null;
-
-    /// <summary>Paragraphs as lines, headings as markdown, tables as "a | b" rows.</summary>
-    static string Word(byte[] bytes)
-    {
-        using var zip = new ZipArchive(new MemoryStream(bytes));
-        var doc = Part(zip, "word/document.xml") ?? throw new InvalidDataException();
-        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-        var sb = new StringBuilder();
-        var body = doc.Root?.Element(w + "body");
-        if (body is null) return "";
-        foreach (var block in body.Elements())
-        {
-            if (block.Name == w + "p") sb.AppendLine(Paragraph(block, w));
-            else if (block.Name == w + "tbl")
-            {
-                foreach (var row in block.Elements(w + "tr"))
-                    sb.AppendLine("| " + string.Join(" | ", row.Elements(w + "tc").Select(c => string.Join(" ", c.Elements(w + "p").Select(p => Paragraph(p, w))).Trim())) + " |");
-                sb.AppendLine();
-            }
-        }
-        // Collapse runs of empty lines.
-        return System.Text.RegularExpressions.Regex.Replace(sb.ToString(), @"\n{3,}", "\n\n").Trim();
-    }
-
-    static string Paragraph(XElement p, XNamespace w)
-    {
-        var text = string.Concat(p.Descendants().Select(e => e.Name == w + "t" ? e.Value : e.Name == w + "tab" ? "\t" : e.Name == w + "br" ? "\n" : ""));
-        var style = p.Element(w + "pPr")?.Element(w + "pStyle")?.Attribute(w + "val")?.Value ?? "";
-        var level = style.StartsWith("Heading", StringComparison.OrdinalIgnoreCase) && int.TryParse(style[7..], out var l) ? l
-            : style.StartsWith("Nagwek", StringComparison.OrdinalIgnoreCase) && int.TryParse(style[6..], out var l2) ? l2 : 0;
-        if (level > 0 && text.Length > 0) return new string('#', Math.Min(level, 6)) + " " + text;
-        if (p.Element(w + "pPr")?.Element(w + "numPr") is not null && text.Length > 0) return "- " + text;
-        return text;
-    }
-
-    /// <summary>Each sheet as rows of "a | b | c" (shared strings resolved).</summary>
-    static string Excel(byte[] bytes)
-    {
-        using var zip = new ZipArchive(new MemoryStream(bytes));
-        XNamespace x = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-        var shared = Part(zip, "xl/sharedStrings.xml")?.Root?.Elements(x + "si").Select(si => string.Concat(si.Descendants(x + "t").Select(t => t.Value))).ToList() ?? [];
-        var sb = new StringBuilder();
-        foreach (var entry in zip.Entries.Where(e => e.FullName.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase)).OrderBy(e => e.FullName.Length).ThenBy(e => e.FullName))
-        {
-            sb.AppendLine($"## {Path.GetFileNameWithoutExtension(entry.FullName)}");
-            var sheet = XDocument.Load(entry.Open());
-            foreach (var row in sheet.Descendants(x + "row").Take(500))
-            {
-                var cells = row.Elements(x + "c").Select(c =>
-                {
-                    var v = c.Element(x + "v")?.Value ?? string.Concat(c.Descendants(x + "t").Select(t => t.Value));
-                    return (string?)c.Attribute("t") == "s" && int.TryParse(v, out var i) && i < shared.Count ? shared[i] : v;
-                }).ToList();
-                if (cells.Any(c => c.Length > 0)) sb.AppendLine("| " + string.Join(" | ", cells) + " |");
-            }
-            sb.AppendLine();
-        }
-        return sb.ToString().Trim();
-    }
+    /// <summary>The text of a file, or null when it has none (images, binaries).</summary>
+    internal static string? Extract(string name, byte[] bytes) => Documents.Read(name, bytes).Text;
 
     /// <summary>Attaches a local file to a work item.</summary>
     public static async Task<string> AddAsync(Lens lens, string? connection, int id, string path, string? comment, CancellationToken ct = default)
