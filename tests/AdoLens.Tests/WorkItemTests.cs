@@ -157,7 +157,7 @@ public class WorkItemTests : IDisposable
         demo.CustomerRequired = true;
         var missing = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             WorkQueries.CreateAsync(lens, null, null, "product backlog item", new WriteRequest { Title = "Export" }));
-        Assert.Contains("needs: Customer (Alpha | Beta)", missing.Message);
+        Assert.Contains("needs: Customer [Custom.Customer] (Alpha | Beta)", missing.Message);
 
         var wrong = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             WorkQueries.CreateAsync(lens, null, null, "Product Backlog Item", new WriteRequest { Title = "Export", Fields = new() { ["Customer"] = "Gamma" } }));
