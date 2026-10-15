@@ -77,10 +77,32 @@ Filename: "{app}\skills-for-claude-desktop"; Description: "{cm:OpenSkills}"; Fla
 Filename: "https://github.com/willowdev-code/ado-lens#readme"; Description: "{cm:OpenReadme}"; Flags: postinstall shellexec skipifsilent unchecked
 
 [CustomMessages]
+en.EnvTitle=Environments
+en.EnvSub=Where code goes before it reaches production
+en.EnvText=ADO Lens found these release stages and branches. Name each environment the way your team says it (for example UAT (sbx03)); leave a field empty to skip it.
+en.EnvDetecting=Looking for release stages and branches...
+en.EnvNone=No release stages or long-lived branches were found. Claude will ask about environments when it needs them.
+en.EnvExisting=Environments are already set: %1 (%2).
+en.EnvLater=Later: Start menu > ADO Lens - settings > Environments (change, add, remove).
+en.EnvMine=Save for me only (this computer)
+en.EnvTeam=Save for the whole team (wiki page "ADO Lens" of the project)
+en.EnvSkip=Skip - Claude asks when needed
+en.EnvFailed=Saving the environments did not work:%n%n%1
 en.IconSettings=ADO Lens - settings
 en.IconStatus=ADO Lens - status
 en.IconSkills=ADO Lens - skills for Claude Desktop
 en.RemoveData=Also remove the stored personal access tokens (Windows Credential Manager) and the settings and cache of ADO Lens?%n%nChoose No to keep them for a later installation.
+pl.EnvTitle=Środowiska
+pl.EnvSub=Gdzie trafia kod, zanim dojdzie na produkcję
+pl.EnvText=ADO Lens znalazł te etapy release'ów i gałęzie. Nazwij każde środowisko tak, jak mówi o nim zespół (np. UAT (sbx03)); puste pole = pomiń.
+pl.EnvDetecting=Szukam etapów release'ów i gałęzi...
+pl.EnvNone=Nie znaleziono etapów release'ów ani gałęzi. Claude zapyta o środowiska, gdy będą potrzebne.
+pl.EnvExisting=Środowiska są już ustawione: %1 (%2).
+pl.EnvLater=Później: menu Start > ADO Lens - ustawienia > Środowiska (zmiana, dodanie, usunięcie).
+pl.EnvMine=Zapisz tylko dla mnie (ten komputer)
+pl.EnvTeam=Zapisz dla całego zespołu (strona wiki "ADO Lens" w projekcie)
+pl.EnvSkip=Pomiń - Claude zapyta, gdy będzie trzeba
+pl.EnvFailed=Nie udało się zapisać środowisk:%n%n%1
 pl.IconSettings=ADO Lens - ustawienia
 pl.IconStatus=ADO Lens - status
 pl.IconSkills=ADO Lens - skille dla Claude Desktop
@@ -140,6 +162,13 @@ var
   PatPage: TInputQueryWizardPage;
   ModePage: TInputOptionWizardPage;
   HasConnection: Boolean;
+  EnvPage: TWizardPage;
+  EnvInfo, EnvLater: TNewStaticText;
+  EnvKeys: TArrayOfString;
+  EnvLabels: array of TNewStaticText;
+  EnvEdits: array of TNewEdit;
+  EnvMine, EnvTeam, EnvSkip: TNewRadioButton;
+  EnvDetected: Boolean;
 
 function SetEnvironmentVariable(lpName: String; lpValue: String): Boolean;
   external 'SetEnvironmentVariableW@kernel32.dll stdcall';
@@ -278,11 +307,149 @@ begin
   ModePage.Add(CustomMessage('ModeDev'));
   ModePage.Add(CustomMessage('ModeFull'));
   ModePage.SelectedValueIndex := 0;
+
+  EnvPage := CreateCustomPage(ModePage.ID, CustomMessage('EnvTitle'), CustomMessage('EnvSub'));
+  EnvInfo := TNewStaticText.Create(EnvPage);
+  EnvInfo.Parent := EnvPage.Surface;
+  EnvInfo.AutoSize := False;
+  EnvInfo.WordWrap := True;
+  EnvInfo.Width := EnvPage.SurfaceWidth;
+  EnvInfo.Height := ScaleY(40);
+  EnvInfo.Caption := CustomMessage('EnvDetecting');
+  EnvMine := TNewRadioButton.Create(EnvPage);
+  EnvTeam := TNewRadioButton.Create(EnvPage);
+  EnvSkip := TNewRadioButton.Create(EnvPage);
+  EnvMine.Parent := EnvPage.Surface;
+  EnvTeam.Parent := EnvPage.Surface;
+  EnvSkip.Parent := EnvPage.Surface;
+  EnvMine.Caption := CustomMessage('EnvMine');
+  EnvTeam.Caption := CustomMessage('EnvTeam');
+  EnvSkip.Caption := CustomMessage('EnvSkip');
+  EnvMine.Width := EnvPage.SurfaceWidth;
+  EnvTeam.Width := EnvPage.SurfaceWidth;
+  EnvSkip.Width := EnvPage.SurfaceWidth;
+  EnvMine.Checked := True;
+  EnvMine.Visible := False;
+  EnvTeam.Visible := False;
+  EnvSkip.Visible := False;
+  EnvLater := TNewStaticText.Create(EnvPage);
+  EnvLater.Parent := EnvPage.Surface;
+  EnvLater.AutoSize := False;
+  EnvLater.WordWrap := True;
+  EnvLater.Width := EnvPage.SurfaceWidth;
+  EnvLater.Height := ScaleY(30);
+  EnvLater.Caption := CustomMessage('EnvLater');
+  EnvLater.Top := EnvPage.SurfaceHeight - EnvLater.Height;
+end;
+
+{ Fills the environment page from "adolens setup --detect": the map already in use, or one row per stage or branch
+  found with a suggested name. }
+procedure DetectEnvironments;
+var
+  Exe, OutFile, Line, Key, Guess: String;
+  Lines: TArrayOfString;
+  I, P, N, Top: Integer;
+  Code: Integer;
+begin
+  EnvDetected := True;
+  Exe := ExpandConstant('{tmp}\adolens.exe');
+  OutFile := ExpandConstant('{tmp}\adolens-envs.txt');
+  DeleteFile(OutFile);
+  Exec(Exe, 'setup --detect --out "' + OutFile + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  if not LoadStringsFromFile(OutFile, Lines) then SetArrayLength(Lines, 0);
+  N := 0;
+  SetArrayLength(EnvKeys, 0);
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Line := Lines[I];
+    if Copy(Line, 1, 9) = 'existing' + #9 then
+    begin
+      Delete(Line, 1, 9);
+      P := Pos(#9, Line);
+      EnvInfo.Caption := FmtMessage(CustomMessage('EnvExisting'), [Copy(Line, 1, P - 1), Copy(Line, P + 1, Length(Line))]);
+      Exit;
+    end;
+    if (Copy(Line, 1, 4) = 'row' + #9) and (N < 8) then
+    begin
+      Delete(Line, 1, 4);
+      P := Pos(#9, Line);
+      if P > 0 then
+      begin
+        Key := Copy(Line, 1, P - 1);
+        Guess := Copy(Line, P + 1, Length(Line));
+      end
+      else
+      begin
+        Key := Line;
+        Guess := '';
+      end;
+      N := N + 1;
+      SetArrayLength(EnvKeys, N);
+      SetArrayLength(EnvLabels, N);
+      SetArrayLength(EnvEdits, N);
+      EnvKeys[N - 1] := Key;
+      Top := EnvInfo.Top + EnvInfo.Height + ScaleY(4) + (N - 1) * ScaleY(26);
+      EnvLabels[N - 1] := TNewStaticText.Create(EnvPage);
+      EnvLabels[N - 1].Parent := EnvPage.Surface;
+      EnvLabels[N - 1].Caption := Key;
+      EnvLabels[N - 1].Top := Top + ScaleY(3);
+      EnvLabels[N - 1].Width := EnvPage.SurfaceWidth div 2 - ScaleX(8);
+      EnvEdits[N - 1] := TNewEdit.Create(EnvPage);
+      EnvEdits[N - 1].Parent := EnvPage.Surface;
+      EnvEdits[N - 1].Left := EnvPage.SurfaceWidth div 2;
+      EnvEdits[N - 1].Top := Top;
+      EnvEdits[N - 1].Width := EnvPage.SurfaceWidth div 2;
+      EnvEdits[N - 1].Text := Guess;
+    end;
+  end;
+  if N = 0 then
+  begin
+    EnvInfo.Caption := CustomMessage('EnvNone');
+    Exit;
+  end;
+  EnvInfo.Caption := CustomMessage('EnvText');
+  Top := EnvInfo.Top + EnvInfo.Height + ScaleY(10) + N * ScaleY(26);
+  EnvMine.Top := Top;
+  EnvTeam.Top := Top + ScaleY(20);
+  EnvSkip.Top := Top + ScaleY(40);
+  EnvMine.Visible := True;
+  EnvTeam.Visible := True;
+  EnvSkip.Visible := True;
+end;
+
+{ Saves the names typed on the environment page; returns False to stay on the page when it failed. }
+function SaveEnvironments: Boolean;
+var
+  Env, Name, Scope, Output: String;
+  I, Code: Integer;
+begin
+  Result := True;
+  if EnvSkip.Checked or (GetArrayLength(EnvKeys) = 0) then Exit;
+  Env := '';
+  for I := 0 to GetArrayLength(EnvKeys) - 1 do
+  begin
+    Name := Trim(EnvEdits[I].Text);
+    StringChangeEx(Name, '"', '', True);
+    StringChangeEx(Name, ';', ',', True);
+    if Name <> '' then
+    begin
+      if Env <> '' then Env := Env + '; ';
+      Env := Env + EnvKeys[I] + '=' + Name;
+    end;
+  end;
+  if Env = '' then Exit;
+  if EnvTeam.Checked then Scope := 'team' else Scope := 'local';
+  Code := RunAdoLens(ExpandConstant('{tmp}\adolens.exe'), 'setup --env "' + Env + '" --scope ' + Scope, Output);
+  if Code <> 0 then
+  begin
+    MsgBox(FmtMessage(CustomMessage('EnvFailed'), [Output]), mbError, MB_OK);
+    Result := False;
+  end;
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
-  Result := HasConnection and ((PageID = ConnPage.ID) or (PageID = PatPage.ID) or (PageID = ModePage.ID));
+  Result := HasConnection and ((PageID = ConnPage.ID) or (PageID = PatPage.ID) or (PageID = ModePage.ID) or (PageID = EnvPage.ID));
 end;
 
 { The token is checked before anything is installed: adolens.exe runs from the temporary folder, signs in and keeps
@@ -293,7 +460,9 @@ var
   Code: Integer;
 begin
   Result := True;
-  if CurPageID = ConnPage.ID then
+  if CurPageID = EnvPage.ID then
+    Result := SaveEnvironments
+  else if CurPageID = ConnPage.ID then
   begin
     if Trim(ConnPage.Values[0]) = '' then
     begin
@@ -373,6 +542,16 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if (CurPageID = EnvPage.ID) and not EnvDetected then
+  begin
+    WizardForm.NextButton.Enabled := False;
+    WizardForm.Repaint;
+    try
+      DetectEnvironments;
+    finally
+      WizardForm.NextButton.Enabled := True;
+    end;
+  end;
   if CurPageID = wpFinished then
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 + CustomMessage('Registered');
 end;

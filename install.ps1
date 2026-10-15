@@ -120,7 +120,7 @@ Head '4/6 Who uses it and where code goes'
 $canAsk = [Environment]::UserInteractive -and $Host.Name -ne 'Default Host' -and
     -not ([Environment]::GetCommandLineArgs() | Where-Object { $_ -like '-NonI*' })
 if ($canAsk) {
-    $setupArgs = @('setup')
+    $setupArgs = @('setup', '--wizard')
     if ($Mode) { $setupArgs += @('--mode', $Mode) }
     & $exe @setupArgs
 }
