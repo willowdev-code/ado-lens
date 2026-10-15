@@ -80,8 +80,8 @@ public class LabelTests
     {
         var all = new Config("c", "contoso", "pat", "Demo", null, "test");
         var some = all with { LabelLanguages = ["en-US", "PL"] };
-        Assert.True(all.LabelLanguageRequired("ro-RO"));
+        Assert.True(all.LabelLanguageRequired("de-DE"));
         Assert.True(some.LabelLanguageRequired("pl"));
-        Assert.False(some.LabelLanguageRequired("ro-RO"));
+        Assert.False(some.LabelLanguageRequired("de-DE"));
     }
 }
