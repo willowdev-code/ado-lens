@@ -23,11 +23,14 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                             --org <name|url>  --project <name>  --team <name>  --connection <name>
                             --pat-stdin (read the PAT from standard input)  --default (make it the default connection)
           logout          remove the stored PAT of a connection        --connection <name> | --all
+                            --remove: also the connection itself and its metadata cache
           connections     list the connections
           config          show or change settings
                             --connection <name> --project <name> --team <name>   (defaults of a connection)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
                             --show-tokens true|false  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
+                            --language pl|en|auto (settings console and installer texts)
+                            --connection <c> --label-languages "en-US, pl"|all  (languages review and label require)
           status          configuration, connection check, metadata and Claude registrations
                             --connection <name>  --offline  --quiet
           register        add / update the 'ado-lens' MCP server in Claude Desktop and Claude Code
@@ -56,6 +59,11 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           search <text>    work items, wiki and code in one search   --scope work;wiki;code  --top 10
           file <path>      a file ($/… TFVC, Git path with --repo, or a file name)  --version <v>  --part <X++ method>
                             --history (who changed it, when, for which work items)  --detail full
+          skills           puts the skills of the mode into Claude Code (po-*, dev-*, all for full), removes the others
+          review <change>  checks before testing: work item linked, labels in every language, X++ messages from labels,
+                            no TODO;  --item <id>: every change of a work item and its tasks
+          attachments <id> files of a work item; --file <name|number> reads one (Word, Excel, text); --add <path> attaches
+          label "<text>"   a D365 message as seen (values for %1 are fine) or @File:Id: label, languages, where used
           health           backlog hygiene of the team    --team <t>
           release-notes [current|previous|<sprint>]   or --since 14d [--until yyyy-MM-dd]   markdown for the wiki
           undo             revert the last change made by ADO Lens (preview, then --confirm <token>)   --list
@@ -64,7 +72,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           api <path>      raw JSON of a GET request (development)
           stats           MCP calls of the last days: answer sizes, times, empty answers   --days 7 --top 10
                             --live: show every call as Claude makes it (tool, tokens, ms), until Ctrl+C
-          setup           interactive: who uses it (mode) and where code goes (environments; for you or the team wiki)
+          setup           settings menu: mode, environments (change or add, for you or the team wiki), add or remove a
+                            connection, status;  --wizard: the first-run questions in a row (used by the installer)
           upgrade         is there a newer ADO Lens   --install (download, check SHA-256, run its installer)  --pre
           version         print the version
 
@@ -196,7 +205,29 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         Console.WriteLine(CredentialStore.Delete(name)
             ? $"removed {CredentialStore.TargetFor(name)} from Windows Credential Manager"
             : $"no stored PAT for connection '{name}'");
+        if (cl.Flag("remove")) RemoveConnection(name, patRemoved: true);
         return 0;
+    }
+
+    /// <summary>The whole connection: PAT, settings entry and its metadata cache.</summary>
+    void RemoveConnection(string name, bool patRemoved = false)
+    {
+        if (!patRemoved && CredentialStore.Delete(name)) Console.WriteLine($"removed {CredentialStore.TargetFor(name)} from Windows Credential Manager");
+        var settings = Settings.Load(SettingsPath);
+        var key = settings.Connections.Keys.FirstOrDefault(k => k.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (key is null) { Console.WriteLine($"no connection '{name}' in the settings"); return; }
+        settings.Connections.Remove(key);
+        if (string.Equals(settings.DefaultConnection, key, StringComparison.OrdinalIgnoreCase))
+            settings.DefaultConnection = settings.Connections.Count == 1 ? settings.Connections.Keys.First() : null;
+        settings.Save(SettingsPath);
+        Console.WriteLine($"removed connection '{key}' from {SettingsPath}" +
+                          (settings.DefaultConnection is { } d ? $"; default connection: {d}" : settings.Connections.Count > 1 ? "; set a default with 'adolens config --default-connection <name>'" : ""));
+        var meta = Path.Combine(Settings.DataDir, "meta");
+        foreach (var f in Directory.Exists(meta) ? Directory.GetFiles(meta, key + ".db*") : [])
+        {
+            try { File.Delete(f); }
+            catch (IOException) { Console.WriteLine($"note: {f} is in use (an open Claude session) - delete it later"); }
+        }
     }
 
     public int Connections()
@@ -208,7 +239,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             var pat = CredentialStore.Read(name) is not null ? "PAT stored" : "no stored PAT";
             Console.WriteLine($"{(name.Equals(settings.DefaultConnection, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {name,-16} " +
                               $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}  team {c.Team ?? "-"}  ({pat})" +
-                              (c.Environments.Count > 0 ? $"\n  {"",-16} environments: {string.Join(", ", c.Environments.Select(e => $"{e.Key} = {e.Value}"))}" : ""));
+                              (c.Environments.Count > 0 ? $"\n  {"",-16} environments: {string.Join(", ", c.Environments.Select(e => $"{e.Key} = {e.Value}"))}" : "") +
+                (c.LabelLanguages.Count > 0 ? $"\n  {"",-16} label languages: {string.Join(", ", c.LabelLanguages)}" : ""));
         }
         return 0;
     }
@@ -233,16 +265,22 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     changed = true;
                 }
                 while (cl.Opt("remove-env") is { } r) { conn.Environments.Remove(r.Trim()); changed = true; }
+                if (cl.Opt("label-languages") is { } ll)
+                {
+                    conn.LabelLanguages = SplitLanguages(ll);
+                    changed = true;
+                }
             }
-            else if (cl.Peek("project") is not null || cl.Peek("team") is not null || cl.Peek("env") is not null || cl.Peek("remove-env") is not null)
-                throw new ArgumentException("--project / --team / --env need --connection <name>");
+            else if (cl.Peek("project") is not null || cl.Peek("team") is not null || cl.Peek("env") is not null || cl.Peek("remove-env") is not null
+                     || cl.Peek("label-languages") is not null)
+                throw new ArgumentException("--project / --team / --env / --label-languages need --connection <name>");
             if (cl.Opt("default-connection") is { } d)
             {
                 if (!settings.Connections.ContainsKey(d)) throw new ArgumentException($"no connection named '{d}'");
                 settings.DefaultConnection = settings.Connections.Keys.First(k => k.Equals(d, StringComparison.OrdinalIgnoreCase));
                 changed = true;
             }
-            if (cl.Opt("mode") is { } m) { settings.Mode = Settings.NormalizeMode(m); changed = true; }
+            if (cl.Opt("mode") is { } m) { settings.Mode = Settings.NormalizeMode(m); changed = true; Console.WriteLine(Skills.Sync(settings.Mode)); }
             if (cl.Opt("usage-log") is { } u)
             {
                 settings.UsageLog = bool.TryParse(u, out var b) ? b : throw new ArgumentException("--usage-log takes true or false");
@@ -257,6 +295,17 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             while (cl.Opt("remove-toolset") is { } rem)
             {
                 settings.ExtraToolsets.Remove(Toolsets.Normalize(rem));
+                changed = true;
+            }
+            if (cl.Opt("language") is { } lang)
+            {
+                settings.Language = lang.Trim().ToLowerInvariant() switch
+                {
+                    "pl" or "polski" or "polish" => "pl",
+                    "en" or "english" or "angielski" => "en",
+                    "" or "auto" => null,
+                    _ => throw new ArgumentException("--language takes pl, en or auto (the language of Windows)"),
+                };
                 changed = true;
             }
             if (cl.Opt("show-tokens") is { } st)
@@ -443,6 +492,14 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Tags = cl.Opt("tags"), Fields = FieldOptions(),
         };
         var ids = cl.Opt("ids") ?? (cl.Positional.Count > 0 ? string.Join(';', cl.Positional) : null);
+        var wiql = cl.Peek("wiql");
+        if (ids is null && wiql is null && r.IsEmpty && cl.Peek("comment") is null)
+        {
+            // "update" alone is easily taken for updating the program.
+            Console.Error.WriteLine("update changes work items: adolens update <ids> --state <s> | --field \"Name=Value\" | --comment <text>…");
+            Console.Error.WriteLine("to update ADO Lens itself: adolens upgrade --install");
+            return 2;
+        }
         Print(await WorkQueries.UpdateAsync(lens, cl.Opt("connection"), ids, cl.Opt("wiql"), r, cl.Opt("comment"), cl.Opt("confirm"), lens.Settings.ConfirmBulkAbove));
         return 0;
     }
@@ -502,8 +559,43 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     /// The interactive setup after the connection: who uses it (mode) and where code goes (environments), saved for this
     /// user or for the whole team on the wiki. Every question has a default, Enter accepts it.
     /// </summary>
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern uint GetACP();
+
+    /// <summary>
+    /// For the installer wizard, on the default (or given) connection and its project:
+    /// --detect [--out file]: "existing&lt;TAB&gt;&lt;flow&gt;&lt;TAB&gt;&lt;source&gt;" when a map is in use, else "row&lt;TAB&gt;key&lt;TAB&gt;guess" per
+    /// stage or branch found (written in the system ANSI code page, which the wizard reads);
+    /// --env "key=name; …" [--scope local|team]: saves the map without questions.
+    /// </summary>
+    async Task<int> SetupUnattendedAsync()
+    {
+        var lens = NewLens();
+        var session = lens.For(cl.Opt("connection"));
+        var project = session.Project(null);
+        if (cl.Flag("detect"))
+        {
+            var lines = new List<string>();
+            var (effective, source) = await EnvironmentFlow.EffectiveAsync(session, project, default);
+            if (effective.Count > 0) lines.Add($"existing\t{string.Join(" -> ", effective.Values)}\t{source}");
+            else lines.AddRange((await EnvironmentFlow.DetectAsync(session, project, default)).Select(d => $"row\t{d.Key}\t{d.Guess}"));
+            if (cl.Opt("out") is { } file)
+            {
+                System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+                File.WriteAllLines(file, lines, System.Text.Encoding.GetEncoding((int)GetACP()));
+            }
+            else lines.ForEach(Console.WriteLine);
+            return 0;
+        }
+        var env = cl.Opt("env")!;
+        var scope = cl.Opt("scope") ?? "local";
+        Print(await Queries.SettingsAsync(lens, session.Config.Connection, project, env, scope));
+        return 0;
+    }
+
     public async Task<int> SetupAsync()
     {
+        if (cl.Flag("detect") || cl.Peek("env") is not null) return await SetupUnattendedAsync();
         var path = SettingsPath;
         var settings = Settings.Load(path);
         if (settings.Connections.Count == 0)
@@ -514,6 +606,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             settings = Settings.Load(path);
         }
         var interactive = !Console.IsInputRedirected;
+        // Run again later (Start menu "ADO Lens - settings"): a menu to change one thing at a time.
+        if (interactive && !cl.Flag("wizard") && cl.Peek("mode") is null) return await SetupMenuAsync();
 
         // 1. Who uses it.
         if (cl.Opt("mode") is { } m) settings.Mode = Settings.NormalizeMode(m);
@@ -531,6 +625,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             settings.Mode = (string.IsNullOrWhiteSpace(answer) ? current : answer.Trim()) switch { "2" => "dev", "3" => "full", _ => "po" };
         }
         settings.Save(path);
+        Console.WriteLine(Skills.Sync(settings.Mode));
 
         // 2. Where code goes, per connection.
         var lens = NewLens();
@@ -541,55 +636,173 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             catch (InvalidOperationException ex) { Console.WriteLine($"{name}: {ex.Message}"); continue; }
             if (session.Config.Project is not { } project) continue;
             Console.WriteLine();
-            var (effective, source) = await EnvironmentFlow.EffectiveAsync(session, project, default);
-            if (effective.Count > 0)
-            {
-                Console.WriteLine(Ui.T($"{name} / {project}: code goes {string.Join(" -> ", effective.Values)} ({source}).",
-                                       $"{name} / {project}: kod trafia kolejno na {string.Join(" -> ", effective.Values)} ({source})."));
-                continue;
-            }
-            var detected = await EnvironmentFlow.DetectAsync(session, project, default);
-            if (detected.Count == 0 || !interactive)
-            {
-                Console.WriteLine(Ui.T($"{name} / {project}: environments not set - Claude will ask about them when needed.",
-                                       $"{name} / {project}: środowiska nieustawione - Claude zapyta o nie, gdy będą potrzebne."));
-                continue;
-            }
-            Console.WriteLine(Ui.T($"{name} / {project}: where does code go before it reaches production?",
-                                   $"{name} / {project}: przez jakie środowiska przechodzi kod, zanim trafi na produkcję?"));
-            Console.WriteLine(Ui.T("Give each a name people use (e.g. UAT (sbx03)); Enter keeps the suggestion, '-' skips it.",
-                                   "Nadaj każdemu nazwę, której używacie (np. UAT (sbx03)); Enter zostawia propozycję, '-' pomija."));
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (key, guess) in detected)
-            {
-                var label = Prompt($"  {key}{(guess is null ? "" : $" [{guess}]")}: ");
-                if (label == "-") continue;
-                var value = string.IsNullOrWhiteSpace(label) ? guess : label.Trim();
-                if (value is not null) map[key] = value;
-            }
-            if (map.Count == 0) continue;
-            var forTeam = (Prompt(Ui.T("Save for the whole team on the project's wiki page \"ADO Lens\"? [y/N]: ",
-                                       "Zapisać dla całego zespołu na stronie wiki projektu \"ADO Lens\"? [t/N]: ")) ?? "")
-                .Trim().ToLowerInvariant() is "y" or "yes" or "t" or "tak";
-            if (forTeam)
-            {
-                try
-                {
-                    var url = await session.Team.SaveAsync(project, map, default);
-                    Console.WriteLine(Ui.T($"saved on the wiki: {url}", $"zapisane na wiki: {url}"));
-                    continue;
-                }
-                catch (AdoApiException ex)
-                {
-                    Console.WriteLine(Ui.T($"could not write the wiki page ({ex.Message}) - saving for you only",
-                                           $"nie udało się zapisać strony wiki ({ex.Message}) - zapisuję tylko dla ciebie"));
-                }
-            }
-            settings.Connections[name].Environments = map;
-            settings.Save(path);
-            Console.WriteLine(Ui.T("saved in your settings", "zapisane w twoich ustawieniach"));
+            await EnvironmentsAsync(name, session, project, interactive, change: false);
         }
         return 0;
+    }
+
+    static bool Yes(string? answer) => (answer ?? "").Trim().ToLowerInvariant() is "y" or "yes" or "t" or "tak";
+
+    /// <summary>
+    /// Asks for the environment names of a connection's project. With <paramref name="change"/> an existing map is
+    /// edited (its names offered, new stages and branches added at the end); otherwise an existing map is only shown.
+    /// </summary>
+    async Task EnvironmentsAsync(string name, Session session, string project, bool interactive, bool change)
+    {
+        var (effective, source) = await EnvironmentFlow.EffectiveAsync(session, project, default);
+        if (effective.Count > 0)
+            Console.WriteLine(Ui.T($"{name} / {project}: code goes {string.Join(" -> ", effective.Values)} ({source}).",
+                                   $"{name} / {project}: kod trafia kolejno na {string.Join(" -> ", effective.Values)} ({source})."));
+        if (effective.Count > 0 && !change) return;
+        var detected = await EnvironmentFlow.DetectAsync(session, project, default);
+        // Rows: the current map in its order, then what was found and is not in it yet.
+        var rows = effective.Select(e => (e.Key, Guess: (string?)e.Value))
+            .Concat(detected.Where(d => !effective.ContainsKey(d.Key))).ToList();
+        if (rows.Count == 0 || !interactive)
+        {
+            Console.WriteLine(Ui.T($"{name} / {project}: no release stages or long-lived branches found - Claude will ask when needed.",
+                                   $"{name} / {project}: nie znaleziono etapów release'ów ani gałęzi - Claude zapyta, gdy będzie trzeba."));
+            return;
+        }
+        Console.WriteLine(Ui.T($"{name} / {project}: where does code go before it reaches production?",
+                               $"{name} / {project}: przez jakie środowiska przechodzi kod, zanim trafi na produkcję?"));
+        Console.WriteLine(Ui.T("Name each as people say it (e.g. UAT (sbx03)); Enter keeps [the name], '-' leaves it out.",
+                               "Nadaj każdemu nazwę, której używacie (np. UAT (sbx03)); Enter zostawia [nazwę], '-' pomija."));
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, guess) in rows)
+        {
+            var label = Prompt($"  {key}{(guess is null ? "" : $" [{guess}]")}: ");
+            if (label == "-") continue;
+            var value = string.IsNullOrWhiteSpace(label) ? guess : label.Trim();
+            if (value is not null) map[key] = value;
+        }
+        // Something the search did not find (a release stage that has not run yet, a branch in another project).
+        while (Prompt(Ui.T("  another one (branch or Release/Stage=name, Enter = done): ", "  kolejne (gałąź albo Release/Etap=nazwa, Enter = koniec): ")) is { Length: > 0 } extra)
+        {
+            var eq = extra.IndexOf('=');
+            if (eq > 0) map[extra[..eq].Trim()] = extra[(eq + 1)..].Trim();
+            else Console.WriteLine(Ui.T("    write it as key=name, e.g. release=PROD", "    zapisz jako klucz=nazwa, np. release=PROD"));
+        }
+        if (map.Count == 0) return;
+        var teamNow = source.StartsWith("team", StringComparison.Ordinal);
+        var forTeam = Yes(Prompt(Ui.T($"Save for the whole team on the project's wiki page \"ADO Lens\"? [{(teamNow ? "Y/n" : "y/N")}]: ",
+                                      $"Zapisać dla całego zespołu na stronie wiki projektu \"ADO Lens\"? [{(teamNow ? "T/n" : "t/N")}]: ")) is { Length: > 0 } a ? a : teamNow ? "y" : "n");
+        if (forTeam)
+        {
+            try
+            {
+                var url = await session.Team.SaveAsync(project, map, default);
+                Console.WriteLine(Ui.T($"saved on the wiki: {url}", $"zapisane na wiki: {url}"));
+                // A local map would hide the team's one: drop it.
+                if (session.Config.Environments.Count > 0)
+                {
+                    var s = Settings.Load(SettingsPath);
+                    s.Connections[name].Environments = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    s.Save(SettingsPath);
+                    Console.WriteLine(Ui.T("your own map was removed, the team's is used now", "twoja własna mapa została usunięta, teraz obowiązuje zespołowa"));
+                }
+                return;
+            }
+            catch (AdoApiException ex)
+            {
+                Console.WriteLine(Ui.T($"could not write the wiki page ({ex.Message}) - saving for you only",
+                                       $"nie udało się zapisać strony wiki ({ex.Message}) - zapisuję tylko dla ciebie"));
+            }
+        }
+        var settings = Settings.Load(SettingsPath);
+        settings.Connections[name].Environments = map;
+        settings.Save(SettingsPath);
+        Console.WriteLine(Ui.T("saved in your settings", "zapisane w twoich ustawieniach"));
+    }
+
+    /// <summary>The settings menu: one thing at a time, until Enter.</summary>
+    async Task<int> SetupMenuAsync()
+    {
+        while (true)
+        {
+            var settings = Settings.Load(SettingsPath);
+            Console.WriteLine();
+            Console.WriteLine(Ui.T($"ADO Lens {version} - settings", $"ADO Lens {version} - ustawienia"));
+            Console.WriteLine(Ui.T($"  mode: {settings.Mode}; connections: {string.Join(", ", settings.Connections.Keys.Select(k => k == settings.DefaultConnection ? k + " (default)" : k))}",
+                                   $"  tryb: {settings.Mode}; połączenia: {string.Join(", ", settings.Connections.Keys.Select(k => k == settings.DefaultConnection ? k + " (domyślne)" : k))}"));
+            Console.WriteLine(Ui.T("  1. Who uses it (mode)", "  1. Kto używa (tryb)"));
+            Console.WriteLine(Ui.T("  2. Environments (where code goes) - change or add", "  2. Środowiska (gdzie trafia kod) - zmiana lub dodanie"));
+            Console.WriteLine(Ui.T("  3. Add a connection (another organization or company)", "  3. Dodaj połączenie (inna organizacja lub firma)"));
+            Console.WriteLine(Ui.T("  4. Remove a connection", "  4. Usuń połączenie"));
+            Console.WriteLine(Ui.T("  5. Status (is everything working)", "  5. Status (czy wszystko działa)"));
+            Console.WriteLine(Ui.T("  6. Language: Polish / English", "  6. Język: polski / angielski"));
+            Console.WriteLine(Ui.T("  7. Required label languages (checks of D365 changes)", "  7. Wymagane języki etykiet (kontrola zmian D365)"));
+            var choice = Prompt(Ui.T("Choice (Enter = done): ", "Wybór (Enter = koniec): "));
+            switch (choice?.Trim())
+            {
+                case null or "": return 0;
+                case "1":
+                    var current = settings.Mode switch { "dev" => "2", "full" => "3", _ => "1" };
+                    Console.WriteLine(Ui.T("  1. Product Owner  2. Developer  3. Everything", "  1. Product Owner  2. Programista  3. Wszystko"));
+                    var m = Prompt(Ui.T($"  mode [{current}]: ", $"  tryb [{current}]: "));
+                    settings.Mode = (string.IsNullOrWhiteSpace(m) ? current : m.Trim()) switch { "2" => "dev", "3" => "full", _ => "po" };
+                    settings.Save(SettingsPath);
+                    Console.WriteLine(Ui.T($"  mode: {settings.Mode} - new Claude sessions use it", $"  tryb: {settings.Mode} - obowiązuje w nowych sesjach Claude'a"));
+                    Console.WriteLine("  " + Skills.Sync(settings.Mode));
+                    break;
+                case "2":
+                    var name = PickConnection(settings);
+                    if (name is null) break;
+                    Session session;
+                    try { session = NewLens().For(name); }
+                    catch (InvalidOperationException ex) { Console.WriteLine("  " + ex.Message); break; }
+                    if (session.Config.Project is not { } project) { Console.WriteLine(Ui.T("  this connection has no default project", "  to połączenie nie ma domyślnego projektu")); break; }
+                    await EnvironmentsAsync(name, session, project, interactive: true, change: true);
+                    break;
+                case "3":
+                    await LoginAsync();
+                    break;
+                case "4":
+                    var remove = PickConnection(settings);
+                    if (remove is not null && Yes(Prompt(Ui.T($"  remove '{remove}' with its PAT? [y/N]: ", $"  usunąć '{remove}' razem z PAT-em? [t/N]: "))))
+                        RemoveConnection(remove);
+                    break;
+                case "5":
+                    await StatusAsync();
+                    break;
+                case "6":
+                    var l = Prompt("  1. polski  2. English  3. auto (Windows): ");
+                    settings.Language = l?.Trim() switch { "1" => "pl", "2" => "en", "3" => null, _ => settings.Language };
+                    settings.Save(SettingsPath);
+                    Ui.Polish = settings.Language == "pl" || settings.Language is null && Ui.Polish;
+                    break;
+                case "7":
+                    var cn = PickConnection(settings);
+                    if (cn is null) break;
+                    var now = settings.Connections[cn].LabelLanguages;
+                    Console.WriteLine(Ui.T($"  now: {(now.Count == 0 ? "all languages of the label files" : string.Join(", ", now))}",
+                                           $"  teraz: {(now.Count == 0 ? "wszystkie języki plików etykiet" : string.Join(", ", now))}"));
+                    var langs = Prompt(Ui.T("  languages every label must have, e.g. en-US, pl ('all' = every one, Enter = keep): ",
+                                            "  języki, które musi mieć każda etykieta, np. en-US, pl ('all' = wszystkie, Enter = bez zmian): "));
+                    if (!string.IsNullOrWhiteSpace(langs))
+                    {
+                        settings.Connections[cn].LabelLanguages = SplitLanguages(langs);
+                        settings.Save(SettingsPath);
+                        Console.WriteLine(Ui.T("  saved", "  zapisane"));
+                    }
+                    break;
+            }
+        }
+    }
+
+    /// <summary>"en-US, pl" → [en-US, pl]; "all" or empty → [] (every language required).</summary>
+    static List<string> SplitLanguages(string text) =>
+        text.Trim().Equals("all", StringComparison.OrdinalIgnoreCase) ? []
+            : text.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    string? PickConnection(Settings settings)
+    {
+        var names = settings.Connections.Keys.ToList();
+        if (names.Count == 0) { Console.WriteLine(Ui.T("  no connections yet - choose 3", "  brak połączeń - wybierz 3")); return null; }
+        if (names.Count == 1) return names[0];
+        for (var i = 0; i < names.Count; i++) Console.WriteLine($"    {i + 1}. {names[i]}");
+        var a = Prompt(Ui.T("  connection [1]: ", "  połączenie [1]: "));
+        return int.TryParse(string.IsNullOrWhiteSpace(a) ? "1" : a, out var n) && n >= 1 && n <= names.Count ? names[n - 1] : null;
     }
 
     public async Task<int> TraceAsync()
@@ -648,6 +861,39 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         return 0;
     }
 
+    public async Task<int> AttachmentsAsync()
+    {
+        if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens attachments <work item id> [--file <name or number>] [--add <path> --comment <text>]"); return 2; }
+        var lens = NewLens();
+        if (cl.Opt("add") is { } add) { Print(await Attachments.AddAsync(lens, cl.Opt("connection"), id, add, cl.Opt("comment"))); return 0; }
+        var (text, image) = await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail"));
+        Print(text);
+        if (image is { } i)
+        {
+            // In a terminal an image is saved and opened instead.
+            var path = Path.Combine(Path.GetTempPath(), $"adolens-{id}-{Guid.NewGuid():N}"[..24] + (i.Mime == "image/jpeg" ? ".jpg" : "." + i.Mime[6..]));
+            await File.WriteAllBytesAsync(path, i.Bytes);
+            Console.WriteLine($"saved: {path}");
+        }
+        return 0;
+    }
+
+    public async Task<int> ReviewAsync()
+    {
+        var arg = cl.Positional.Count > 0 ? string.Join(' ', cl.Positional) : null;
+        var item = Int(cl.Opt("item"));
+        if (arg is null && item is null) { Console.Error.WriteLine("usage: adolens review <523 | \"PR 482\" | sha --repo <r>>  or  adolens review --item <work item id>"); return 2; }
+        Print(await Review.ReviewAsync(NewLens(), cl.Opt("connection"), item is null ? arg : null, item, cl.Opt("repo")));
+        return 0;
+    }
+
+    public async Task<int> LabelAsync()
+    {
+        if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens label \"<message as seen on screen>\" | @File:Id  [--branch Main]"); return 2; }
+        Print(await Labels.FindAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), string.Join(' ', cl.Positional), cl.Opt("branch")));
+        return 0;
+    }
+
     public async Task<int> FileAsync()
     {
         if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens file <path or file name> [--repo <r>] [--version <v>] [--part <method>] [--history]"); return 2; }
@@ -669,6 +915,12 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens test-create <work item id> --file <cases.md> [--plan <p> --suite <s>]"); return 2; }
         var cases = cl.Opt("file") is { } file ? await File.ReadAllTextAsync(file) : await Console.In.ReadToEndAsync();
         Print(await TestCases.CreateAsync(NewLens(), cl.Opt("connection"), id, cases, cl.Opt("plan"), cl.Opt("suite")));
+        return 0;
+    }
+
+    public async Task<int> MetricsAsync()
+    {
+        Print(await BoardQueries.MetricsAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), cl.Opt("team"), Int(cl.Opt("sprints")) ?? 6));
         return 0;
     }
 

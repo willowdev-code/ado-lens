@@ -190,6 +190,16 @@ public static class BoardTools
     public static Task<string> Health(Lens lens, string? team = null, string? project = null, string? connection = null, CancellationToken ct = default)
         => McpTools.Run("ado_health", new { team, project, connection }, () => BoardQueries.HealthAsync(lens, connection, project, team, null, ct));
 
+    [McpServerTool(Name = "ado_metrics", ReadOnly = true, Idempotent = true)]
+    [Description("Team flow: done items and estimate per finished sprint (velocity), cycle and lead time (median, 85%), what is in progress longest.")]
+    public static Task<string> Metrics(Lens lens,
+        [Description("Finished sprints to compare (default 6).")] int sprints = 6,
+        string? team = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_metrics", new { sprints, team, project, connection }, () => BoardQueries.MetricsAsync(lens, connection, project, team, sprints, null, ct));
+
     [McpServerTool(Name = "ado_release_notes", ReadOnly = true, Idempotent = true)]
     [Description("Release notes in markdown: requirements and bugs finished in a sprint (default current) or between dates, grouped by feature.")]
     public static Task<string> ReleaseNotes(Lens lens,
@@ -230,12 +240,31 @@ public static class TraceTools
     public static Task<string> Changes(Lens lens,
         [Description("523, C523, PR 482, or a commit sha.")] string change,
         [Description("Repository name, for commits.")] string? repo = null,
-        [Description("File name or end of its path.")] string? file = null,
+        [Description("File name or end of its path; several: a;b;c.")] string? file = null,
         [Description("summary | normal | full.")] string? detail = null,
         string? connection = null,
         CancellationToken ct = default)
         => McpTools.Run("ado_changes", new { change, repo, file, detail, connection },
             () => TraceQueries.ChangesAsync(lens, connection, change, repo, file, detail, ct));
+
+    [McpServerTool(Name = "ado_review", ReadOnly = true, Idempotent = true)]
+    [Description("Checks a change (523, PR 482, commit + repo) or all changes of a work item (id) before testing: work item linked, labels in every language, X++ messages from labels, no TODO.")]
+    public static Task<string> ReviewTool(Lens lens,
+        string? change = null,
+        int? id = null,
+        string? repo = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_review", new { change, id, repo, connection }, () => Review.ReviewAsync(lens, connection, change, id, repo, ct));
+
+    [McpServerTool(Name = "ado_label", ReadOnly = true, Idempotent = true)]
+    [Description("A D365 message or label: paste the text as seen (values in place of %1 are fine) or @File:Id - the label, its text in every language (MISSING flagged), and the objects and X++ methods, fields or controls using it.")]
+    public static Task<string> Label(Lens lens, string text,
+        [Description("Branch, e.g. Main (default: Main or master).")] string? branch = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_label", new { text, branch, project, connection }, () => Labels.FindAsync(lens, connection, project, text, branch, ct));
 
     [McpServerTool(Name = "ado_file", ReadOnly = true, Idempotent = true)]
     [Description("A file from the repository (TFVC $/… path, Git path with repo, or just a file name), X++ objects as their methods (part=method shows one); history=true: who changed it, when, for which work items.")]
@@ -455,6 +484,42 @@ public static class WorkTools
         CancellationToken ct = default)
         => McpTools.Run("ado_link", new { id, targets, type, remove, connection },
             () => WorkQueries.LinkAsync(lens, connection, id, targets, type, remove, ct));
+
+    [McpServerTool(Name = "ado_create_tree")]
+    [Description("Creates a tree of work items from an indented list, one per line '- Type: Title | description @person', children indented under their parent; preview first, then confirm=<token>.")]
+    public static Task<string> CreateTree(Lens lens, string items,
+        [Description("Existing work item the top items go under.")] int? parent = null,
+        [Description("Iteration path, 'current' or 'next' for all.")] string? iteration = null,
+        string? area = null,
+        string? confirm = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_create_tree", new { parent, iteration, area, confirm, project, connection },
+            () => WorkTree.CreateAsync(lens, connection, project, parent, items, iteration, area, confirm, ct));
+
+    [McpServerTool(Name = "ado_attachments")]
+    [Description("Files of a work item and screenshots pasted into its text or comments: the list; file=<name or number> shows an image or the text of a document (Word, Excel, Outlook e-mail, text); add=<local path> attaches a file.")]
+    public static async Task<IEnumerable<ModelContextProtocol.Protocol.ContentBlock>> AttachmentsTool(Lens lens, int id,
+        string? file = null,
+        [Description("Local file to attach.")] string? add = null,
+        string? comment = null,
+        [Description("full: the whole text.")] string? detail = null,
+        string? connection = null,
+        CancellationToken ct = default)
+    {
+        (byte[] Bytes, string Mime)? image = null;
+        var text = await McpTools.Run("ado_attachments", new { id, file, add, connection }, async () =>
+        {
+            if (add is not null) return await Attachments.AddAsync(lens, connection, id, add, comment, ct);
+            var (t, img) = await Attachments.ReadAsync(lens, connection, id, file, detail, ct);
+            image = img;
+            return t;
+        });
+        var blocks = new List<ModelContextProtocol.Protocol.ContentBlock> { new ModelContextProtocol.Protocol.TextContentBlock { Text = text } };
+        if (image is { } i) blocks.Add(ModelContextProtocol.Protocol.ImageContentBlock.FromBytes(i.Bytes, i.Mime));
+        return blocks;
+    }
 
     [McpServerTool(Name = "ado_search", ReadOnly = true, Idempotent = true)]
     [Description("One search over work items, wiki pages and code of the project, grouped - the start for \"how does X work\".")]

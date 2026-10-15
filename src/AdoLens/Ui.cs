@@ -11,7 +11,19 @@ public static class Ui
     [DllImport("kernel32.dll")]
     static extern ushort GetUserDefaultUILanguage();
 
-    public static bool Polish { get; set; } = OperatingSystem.IsWindows() && (GetUserDefaultUILanguage() & 0x3FF) == 0x15;
+    /// <summary>The language chosen in the settings (the installer saves it), else the language of Windows.</summary>
+    public static bool Polish { get; set; } = Chosen() switch
+    {
+        "pl" => true,
+        "en" => false,
+        _ => OperatingSystem.IsWindows() && (GetUserDefaultUILanguage() & 0x3FF) == 0x15,
+    };
+
+    static string? Chosen()
+    {
+        try { return Settings.Load(Settings.DefaultPath).Language; }
+        catch (Exception) { return null; }
+    }
 
     public static string T(string english, string polish) => Polish ? polish : english;
 }

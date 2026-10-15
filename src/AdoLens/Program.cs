@@ -90,12 +90,23 @@ try
             return await cli.WikiWriteAsync();
         case "search":
             return await cli.SearchAsync();
+        case "skills":
+            Console.WriteLine(Skills.Sync(Settings.Load(Settings.DefaultPath).Mode));
+            return 0;
+        case "review":
+            return await cli.ReviewAsync();
+        case "attachments":
+            return await cli.AttachmentsAsync();
+        case "label":
+            return await cli.LabelAsync();
         case "file":
             return await cli.FileAsync();
         case "tests":
             return await cli.TestsAsync();
         case "test-create":
             return await cli.TestCreateAsync();
+        case "metrics":
+            return await cli.MetricsAsync();
         case "health":
             return await cli.HealthAsync();
         case "release-notes":
@@ -150,7 +161,8 @@ async Task<int> RunServerAsync()
             o.ServerInstructions = McpTools.Instructions(lens.Settings);
         })
         .WithStdioServerTransport()
-        .WithActiveTools(lens.Settings);
+        .WithActiveTools(lens.Settings)
+        .WithPrompts([typeof(Prompts)]);
     await builder.Build().RunAsync();
     return 0;
 }

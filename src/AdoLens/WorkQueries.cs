@@ -74,7 +74,12 @@ public static partial class WorkQueries
         return sb.ToString().TrimEnd();
     }
 
-    public static async Task<string> CreateAsync(Lens lens, string? connection, string? project, string type, WriteRequest r, CancellationToken ct = default)
+    public static async Task<string> CreateAsync(Lens lens, string? connection, string? project, string type, WriteRequest r, CancellationToken ct = default) =>
+        (await CreateItemAsync(lens, connection, project, type, r, null, ct)).Text;
+
+    /// <summary>Creates one work item; <paramref name="batch"/> groups several creates for one undo.</summary>
+    internal static async Task<(int Id, string Text)> CreateItemAsync(Lens lens, string? connection, string? project, string type, WriteRequest r,
+        string? batch, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(r.Title)) throw new ArgumentException("title is required");
         var session = lens.For(connection);
@@ -125,9 +130,9 @@ public static partial class WorkQueries
         }
         var ops = await session.Work.BuildOpsAsync(s, t, r, null, notes, ct);
         var created = await session.Work.CreateAsync(s.Project.Name, t.Name, ops, ct);
-        Audit.Write(lens, session.Config.Connection, [new AuditEntry { Batch = Audit.NewBatch(), Tool = "ado_create", Kind = "create",
+        Audit.Write(lens, session.Config.Connection, [new AuditEntry { Batch = batch ?? Audit.NewBatch(), Tool = batch is null ? "ado_create" : "ado_create_tree", Kind = "create",
             Id = WorkItems.Id(created), Project = s.Project.Name, Title = WorkItems.Field(created, "System.Title") }]);
-        return Written("created", created, s, session.Work, notes);
+        return (WorkItems.Id(created), Written("created", created, s, session.Work, notes));
     }
 
     static string Written(string verb, JsonElement wi, Snapshot? s, WorkItems work, List<string> notes)

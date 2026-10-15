@@ -234,6 +234,9 @@ public static partial class TraceQueries
 
         foreach (var d in deployments.OrderBy(d => Order(d.Branch, d.Definition, d.Stage)).ThenBy(d => d.Definition).ThenBy(d => d.Stage))
         {
+            // With an environment map, a stage outside it that has not deployed for half a year is an old pipeline.
+            if (env.Count > 0 && EnvKey(d.Branch, d.Definition, d.Stage) is null && (d.When is not { } last || last < DateTime.UtcNow.AddDays(-183)))
+                continue;
             var label = $"- {Label(d.Branch, d.Definition, d.Stage)}: ";
             var deployed = $"{Date(d.When)} (build {d.BuildNumber})";
             if (d.Branch?.StartsWith("$/", StringComparison.Ordinal) == true)
@@ -367,6 +370,14 @@ public static partial class TraceQueries
     public static async Task<string> ChangesAsync(Lens lens, string? connection, string change, string? repo, string? file, string? detail, CancellationToken ct = default)
     {
         var session = lens.For(connection);
+        var (c, versions) = await ResolveAsync(session, change, repo, ct);
+        return await ChangesTextAsync(c, versions, file, detail);
+    }
+
+    /// <summary>A changeset, pull request or commit, and how to read the two versions of each of its files.</summary>
+    internal static async Task<(CodeChange Change, Func<FileChange, Task<(string? Before, string? After)>> Versions)> ResolveAsync(
+        Session session, string change, string? repo, CancellationToken ct)
+    {
         var code = session.Code;
         var text = change.Trim();
         CodeChange c;
@@ -393,7 +404,12 @@ public static partial class TraceQueries
                                    f.ChangeType.Contains("delete") ? null : await code.GitFileAsync(r.Id, f.Path, c.Id, ct));
         }
         else throw new ArgumentException("change is a changeset (523, C523), a pull request (PR 482) or a commit sha with repo");
+        return (c, versions);
+    }
 
+    static async Task<string> ChangesTextAsync(CodeChange c, Func<FileChange, Task<(string? Before, string? After)>> versions, string? file, string? detail)
+    {
+        var ct = CancellationToken.None;
         var sb = new StringBuilder();
         var head = c.Kind == "pr"
             ? $"{c.Label} {c.State}: {c.TargetBranch} <- {c.Branch}, \"{c.Message}\", {c.Author}"
@@ -402,17 +418,27 @@ public static partial class TraceQueries
 
         if (file is not null)
         {
-            var matches = c.Files.Where(f => f.Path.EndsWith(file.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)).ToList();
-            if (matches.Count == 0) matches = c.Files.Where(f => f.Path.Contains(file, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (matches.Count == 0) return sb.Append($"no changed file matches '{file}'; files: {string.Join(", ", c.Files.Select(f => f.Path[(f.Path.LastIndexOf('/') + 1)..]).Take(30))}").ToString();
-            if (matches.Count > 1) return sb.Append($"'{file}' matches {matches.Count} files: {string.Join("; ", matches.Select(f => f.Path).Take(15))} - give more of the path").ToString();
-            var f = matches[0];
-            var (before, after) = await versions(f);
-            sb.AppendLine($"{f.Path} ({f.ChangeType})");
-            if (before is null && after is null) return sb.Append("content not readable (binary file or no access)").ToString();
-            var max = detail == "full" ? 5000 : 400;
-            sb.Append(AotDiff.IsAot(f.Path) ? AotDiff.Detail(before, after, max)
-                : Diff.Unified(before ?? "", after ?? "", 3, max) ?? "no change in the text");
+            // Several files at once ("a;b;c"): one call instead of one per file, each diff a little shorter.
+            var names = file.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var max = detail == "full" ? 5000 : Math.Max(150, 400 / Math.Max(1, names.Length) * 2);
+            var picked = new List<FileChange>();
+            foreach (var name in names)
+            {
+                var matches = c.Files.Where(f => f.Path.EndsWith(name.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)).ToList();
+                if (matches.Count == 0) matches = c.Files.Where(f => f.Path.Contains(name, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (matches.Count == 0) sb.AppendLine($"no changed file matches '{name}'; files: {string.Join(", ", c.Files.Select(f => f.Path[(f.Path.LastIndexOf('/') + 1)..]).Take(30))}");
+                else if (matches.Count > 1) sb.AppendLine($"'{name}' matches {matches.Count} files: {string.Join("; ", matches.Select(f => f.Path).Take(15))} - give more of the path");
+                else if (!picked.Contains(matches[0])) picked.Add(matches[0]);
+            }
+            var diffs = await Task.WhenAll(picked.Select(async f =>
+            {
+                var (before, after) = await versions(f);
+                var body = before is null && after is null ? "content not readable (binary file or no access)"
+                    : AotDiff.IsAot(f.Path) ? AotDiff.Detail(before, after, max)
+                    : Diff.Unified(before ?? "", after ?? "", 3, max) ?? "no change in the text";
+                return $"{f.Path} ({f.ChangeType})\n{body.TrimEnd()}";
+            }));
+            sb.AppendJoin("\n\n", diffs);
             return sb.ToString().TrimEnd();
         }
 

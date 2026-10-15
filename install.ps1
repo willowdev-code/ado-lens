@@ -120,7 +120,7 @@ Head '4/6 Who uses it and where code goes'
 $canAsk = [Environment]::UserInteractive -and $Host.Name -ne 'Default Host' -and
     -not ([Environment]::GetCommandLineArgs() | Where-Object { $_ -like '-NonI*' })
 if ($canAsk) {
-    $setupArgs = @('setup')
+    $setupArgs = @('setup', '--wizard')
     if ($Mode) { $setupArgs += @('--mode', $Mode) }
     & $exe @setupArgs
 }
@@ -132,23 +132,17 @@ Head '5/6 Skills for Claude'
 # Settings -> Capabilities -> Skills, so the ZIPs are prepared next to the program.
 $skillSrc = Join-Path $InstallDir 'skills'
 if (Test-Path $skillSrc) {
-    $codeSkills = Join-Path $env:USERPROFILE '.claude\skills'
     $desktopZips = Join-Path $InstallDir 'skills-for-claude-desktop'
     New-Item -ItemType Directory -Force -Path $desktopZips | Out-Null
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     foreach ($skill in Get-ChildItem $skillSrc -Directory) {
-        if (Test-Path (Join-Path $env:USERPROFILE '.claude')) {
-            $dst = Join-Path $codeSkills $skill.Name
-            New-Item -ItemType Directory -Force -Path $dst | Out-Null
-            Copy-Item (Join-Path $skill.FullName '*') $dst -Recurse -Force
-        }
         $zip = Join-Path $desktopZips "$($skill.Name).zip"
         if (Test-Path $zip) { Remove-Item $zip -Force }
         [IO.Compression.ZipFile]::CreateFromDirectory($skill.FullName, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
     }
-    $names = (Get-ChildItem $skillSrc -Directory | ForEach-Object Name) -join ', '
-    if (Test-Path (Join-Path $env:USERPROFILE '.claude')) { Say "Claude Code: $names installed in $codeSkills" }
-    Say "Claude Desktop: upload the ZIPs from $desktopZips in Settings -> Capabilities -> Skills"
+    # Claude Code loads every installed skill in each session: only the skills of the mode go there.
+    Say (& $exe skills | Out-String).Trim()
+    Say "Claude Desktop: upload the ZIPs you want from $desktopZips in Settings -> Capabilities -> Skills"
 }
 else { Say 'no skills in this package' }
 

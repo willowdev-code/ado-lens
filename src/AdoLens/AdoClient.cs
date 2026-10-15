@@ -86,6 +86,41 @@ public sealed class AdoClient(HttpClient http, string organization)
         }
     }
 
+    /// <summary>A file (work item attachment), at most <paramref name="maxBytes"/>.</summary>
+    public async Task<byte[]> GetBytesAsync(string url, long maxBytes, CancellationToken ct = default)
+    {
+        url = WithApiVersion(url);
+        if (Uri.TryCreate(url, UriKind.Absolute, out var abs) && !IsAzureDevOpsHost(abs))
+            throw new AdoApiException($"refusing to send the PAT to {abs.Host}: only Azure DevOps hosts are allowed");
+        for (var attempt = 1; ; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
+            using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (attempt < MaxAttempts && RetryDelay(res) is { } delay)
+            {
+                await Delay(delay, ct);
+                continue;
+            }
+            if (!res.IsSuccessStatusCode || res.Content.Headers.ContentType?.MediaType == "text/html") await EnsureSuccessAsync(res, ct);
+            if (res.Content.Headers.ContentLength > maxBytes) throw new AdoApiException($"the file is larger than {maxBytes / 1024 / 1024} MB");
+            return await res.Content.ReadAsByteArrayAsync(ct);
+        }
+    }
+
+    /// <summary>Uploads a file as a work item attachment; returns its URL.</summary>
+    public async Task<string> UploadAttachmentAsync(string project, string fileName, byte[] content, CancellationToken ct = default)
+    {
+        var url = WithApiVersion($"{AdoClient.Scope(project)}_apis/wit/attachments?fileName={Uri.EscapeDataString(fileName)}");
+        using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new ByteArrayContent(content) };
+        req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        using var res = await http.SendAsync(req, ct);
+        await EnsureSuccessAsync(res, ct);
+        using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
+        return Json.Str(doc.RootElement, "url") ?? throw new AdoApiException("the attachment upload returned no URL");
+    }
+
     public Task<JsonElement> PostAsync(string url, object body, CancellationToken ct = default) =>
         SendAsync(HttpMethod.Post, url, body, "application/json", ct);
 

@@ -12,9 +12,11 @@ Technical names (objects, methods, files) only in brackets, or when asked for "d
 
 1. `ado_search text=<feature in the user's words>` — work items, wiki pages and code at once. Try a second wording
    (a synonym, the English or the local term) when the first finds little.
+   A message from the screen ("why do I see …"): `ado_label text=<message as seen>` finds where it comes from.
 2. Read the strongest sources, stop when the question is answered:
    - wiki pages: `ado_wiki path=<page>`,
-   - work items: `ado_work_item ids=<ids>` — the requirement and its acceptance criteria say what was intended,
+   - work items: `ado_work_item ids=<ids>` — the requirement and its acceptance criteria say what was intended;
+     specifications and screenshots attached to them: `ado_attachments`,
    - code: `ado_file path=<file or name>` (X++ objects show their methods; `part=<method>` one method) — the code says
      what really happens.
 3. "Why is it like this": `ado_file path=<file> history=true` — who changed it, when and for which work items; read the
