@@ -57,6 +57,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           search <text>    work items, wiki and code in one search   --scope work;wiki;code  --top 10
           file <path>      a file ($/… TFVC, Git path with --repo, or a file name)  --version <v>  --part <X++ method>
                             --history (who changed it, when, for which work items)  --detail full
+          label "<text>"   a D365 message as seen (values for %1 are fine) or @File:Id: label, languages, where used
           health           backlog hygiene of the team    --team <t>
           release-notes [current|previous|<sprint>]   or --since 14d [--until yyyy-MM-dd]   markdown for the wiki
           undo             revert the last change made by ADO Lens (preview, then --confirm <token>)   --list
@@ -671,6 +672,13 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     {
         if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens search <text> [--scope work;wiki;code] [--top 10]"); return 2; }
         Print(await Knowledge.SearchAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), string.Join(' ', cl.Positional), cl.Opt("scope"), Int(cl.Opt("top")) ?? 10));
+        return 0;
+    }
+
+    public async Task<int> LabelAsync()
+    {
+        if (cl.Positional.Count == 0) { Console.Error.WriteLine("usage: adolens label \"<message as seen on screen>\" | @File:Id  [--branch Main]"); return 2; }
+        Print(await Labels.FindAsync(NewLens(), cl.Opt("connection"), cl.Opt("project"), string.Join(' ', cl.Positional), cl.Opt("branch")));
         return 0;
     }
 

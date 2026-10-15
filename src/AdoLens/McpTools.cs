@@ -230,12 +230,21 @@ public static class TraceTools
     public static Task<string> Changes(Lens lens,
         [Description("523, C523, PR 482, or a commit sha.")] string change,
         [Description("Repository name, for commits.")] string? repo = null,
-        [Description("File name or end of its path.")] string? file = null,
+        [Description("File name or end of its path; several: a;b;c.")] string? file = null,
         [Description("summary | normal | full.")] string? detail = null,
         string? connection = null,
         CancellationToken ct = default)
         => McpTools.Run("ado_changes", new { change, repo, file, detail, connection },
             () => TraceQueries.ChangesAsync(lens, connection, change, repo, file, detail, ct));
+
+    [McpServerTool(Name = "ado_label", ReadOnly = true, Idempotent = true)]
+    [Description("A D365 message or label: paste the text as seen (values in place of %1 are fine) or @File:Id - the label, its text in every language (MISSING flagged), and the objects and X++ methods, fields or controls using it.")]
+    public static Task<string> Label(Lens lens, string text,
+        [Description("Branch, e.g. Main (default: Main or master).")] string? branch = null,
+        string? project = null,
+        string? connection = null,
+        CancellationToken ct = default)
+        => McpTools.Run("ado_label", new { text, branch, project, connection }, () => Labels.FindAsync(lens, connection, project, text, branch, ct));
 
     [McpServerTool(Name = "ado_file", ReadOnly = true, Idempotent = true)]
     [Description("A file from the repository (TFVC $/… path, Git path with repo, or just a file name), X++ objects as their methods (part=method shows one); history=true: who changed it, when, for which work items.")]

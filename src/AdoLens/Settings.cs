@@ -44,6 +44,8 @@ public sealed partial class Settings
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // People read and edit this file: "UAT + SCM" and Polish names stay as typed, not +.
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     /// <summary>%LOCALAPPDATA%\ado-lens (ADOLENS_DATA_DIR overrides it): settings, metadata, usage log.</summary>

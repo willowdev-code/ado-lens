@@ -109,9 +109,9 @@ public static partial class Knowledge
         return sb.ToString().TrimEnd();
     }
 
-    sealed record CodeHit(string Repo, string Path, string? Branch, int Matches, bool Tfvc);
+    internal sealed record CodeHit(string Repo, string Path, string? Branch, int Matches, bool Tfvc);
 
-    static async Task<(List<CodeHit> Hits, int Total)> CodeHitsAsync(AdoClient client, string project, string text, int top, string? repo, CancellationToken ct)
+    internal static async Task<(List<CodeHit> Hits, int Total)> CodeHitsAsync(AdoClient client, string project, string text, int top, string? repo, CancellationToken ct)
     {
         var more = repo is null ? null : new Dictionary<string, string[]> { ["Repository"] = [repo] };
         var root = await client.PostAsync(client.ServiceUrl("almsearch") + $"{Uri.EscapeDataString(project)}/_apis/search/codesearchresults", SearchBody(text, top, project, more), ct);
@@ -212,7 +212,7 @@ public static partial class Knowledge
         return Show(where, file.Path, text, part, detail == "full");
     }
 
-    static async Task<string?> Content(AdoClient client, string url, CancellationToken ct)
+    internal static async Task<string?> Content(AdoClient client, string url, CancellationToken ct)
     {
         try { return Json.Str(await client.GetAsync(url, ct), "content"); }
         catch (AdoApiException ex) when (ex.Status is HttpStatusCode.NotFound or HttpStatusCode.BadRequest) { return null; }
