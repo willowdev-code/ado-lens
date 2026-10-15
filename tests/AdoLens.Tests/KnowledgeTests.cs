@@ -230,4 +230,19 @@ public class KnowledgeTests : IDisposable
         Assert.Contains("carried over", (string)items.Items[4]["fields"]!["System.Tags"]!);
         Assert.Equal("deleted recipe close-sprint", Recipes.Delete(lens, "close-sprint"));
     }
+
+    [Fact]
+    public async Task A_large_attachment_gets_a_link_and_is_not_downloaded()
+    {
+        ((JsonArray)items.Items[1]["relations"]!).Add(JsonNode.Parse("""
+            {"rel":"AttachedFile","url":"https://dev.azure.com/contoso/_apis/wit/attachments/big","attributes":{"name":"trace.etl","resourceSize":52428800}}
+            """));
+        var (list, _) = await Attachments.ReadAsync(lens, null, 1, null, null);
+        Assert.Contains("1. trace.etl (50 MB)", list);
+        var (text, images) = await Attachments.ReadAsync(lens, null, 1, "trace.etl", null);
+        Assert.Contains("larger than 20 MB", text);
+        Assert.Contains("save=true saves it to disk", text);
+        Assert.Contains("https://dev.azure.com/contoso/_apis/wit/attachments/big", text);
+        Assert.Empty(images);
+    }
 }

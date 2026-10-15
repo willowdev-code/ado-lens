@@ -333,9 +333,13 @@ public static class PrTools
 public static class PipelineTools
 {
     [McpServerTool(Name = "ado_pipeline", ReadOnly = true, Idempotent = true)]
-    [Description("Builds: recent runs (optionally of one pipeline or branch); with build: why it failed - failed steps, errors and the error lines of the log.")]
+    [Description("Builds: recent runs (optionally of one pipeline or branch); with build: why it failed - failed steps, errors and the error lines of the log; artifacts=true lists its artifacts, artifact=<name> its files (part=<file> reads one, save=true saves it to disk).")]
     public static Task<string> Pipeline(Lens lens,
         int? build = null,
+        bool artifacts = false,
+        string? artifact = null,
+        string? part = null,
+        bool save = false,
         [Description("Pipeline name or id.")] string? definition = null,
         string? branch = null,
         int top = 10,
@@ -343,8 +347,11 @@ public static class PipelineTools
         string? project = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_pipeline", new { build, definition, branch, top, detail, project, connection },
-            () => build is { } b ? PipelineQueries.BuildAsync(lens, connection, project, b, detail, ct) : PipelineQueries.ListAsync(lens, connection, project, definition, branch, top, ct));
+        => McpTools.Run("ado_pipeline", new { build, artifacts, artifact, part, save, definition, branch, top, detail, project, connection },
+            () => build is { } b
+                ? artifacts || artifact is not null ? PipelineQueries.ArtifactsAsync(lens, connection, project, b, artifact, part, save, ct)
+                  : PipelineQueries.BuildAsync(lens, connection, project, b, detail, ct)
+                : PipelineQueries.ListAsync(lens, connection, project, definition, branch, top, ct));
 
     [McpServerTool(Name = "ado_pipeline_run")]
     [Description("Queues a run of a pipeline, optionally on a branch.")]

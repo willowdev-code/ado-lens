@@ -16,7 +16,8 @@ public static class Downloads
     /// <summary>A file name that stays a file name: no folders, no characters Windows refuses, not empty, not too long.</summary>
     public static string SafeName(string? name)
     {
-        var n = Path.GetFileName((name ?? "").Replace('/', '\\'));
+        // ":" first: "a:b.txt" is a name with a colon, not drive "a:".
+        var n = Path.GetFileName((name ?? "").Replace(':', '_').Replace('/', '\\'));
         foreach (var c in Path.GetInvalidFileNameChars()) n = n.Replace(c, '_');
         n = n.Trim().Trim('.');
         if (n.Length == 0) n = "file";

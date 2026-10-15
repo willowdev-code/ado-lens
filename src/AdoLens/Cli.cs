@@ -54,6 +54,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           changes <523 | C523 | "PR 482" | sha --repo <r>>   files, X++ methods; --file <name> for a diff
           pr [<id>]        PRs waiting for my review and mine (--list active: all); with id: reviewers, checks, threads
           pipeline [<build id>]   recent builds (--definition <name> --branch <b> --top 10); with id: why it failed
+                            --artifacts (list) | --artifact <name> [--part <file>] [--save [--to <folder>]]
           wiki [<page path>]  --search <text>  --depth 2  --detail full  --wiki <name>
           wiki-write <page path>  --file <page.md> (or standard input)  --mode create|append|prepend|replace
                             --version <v> (for replace, from 'wiki <path>')  --comment <text>
@@ -63,7 +64,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           skills           puts the skills of the mode into Claude Code (po-*, dev-*, all for full), removes the others
           review <change>  checks before testing: work item linked, labels in every language, X++ messages from labels,
                             no TODO;  --item <id>: every change of a work item and its tasks
-          attachments <id> files of a work item; --file <name|number> reads one (Word, Excel, text); --add <path> attaches
+          attachments <id> files of a work item; --file <name|number> reads one (PDF, Word, Excel, PowerPoint, e-mail,
+                            ZIP, text; --pages 2-5, --part <file in a ZIP>); --save [--to <folder>] saves it; --add <path>
           label "<text>"   a D365 message as seen (values for %1 are fine) or @File:Id: label, languages, where used
           health           backlog hygiene of the team    --team <t>
           release-notes [current|previous|<sprint>]   or --since 14d [--until yyyy-MM-dd]   markdown for the wiki
@@ -848,8 +850,12 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public async Task<int> PipelineAsync()
     {
         var lens = NewLens();
+        if (cl.Opt("to") is { } to) lens.Settings.DownloadDir = to;
+        var save = cl.Flag("save") || cl.Peek("to") is not null;
         Print(Int(cl.Positional.FirstOrDefault()) is { } build
-            ? await PipelineQueries.BuildAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("detail"))
+            ? cl.Flag("artifacts") || cl.Peek("artifact") is not null
+                ? await PipelineQueries.ArtifactsAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("artifact"), cl.Opt("part"), save)
+                : await PipelineQueries.BuildAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("detail"))
             : await PipelineQueries.ListAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("definition"), cl.Opt("branch"), Int(cl.Opt("top")) ?? 10));
         return 0;
     }
