@@ -30,6 +30,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
                             --show-tokens true|false  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
                             --language pl|en|auto (settings console and installer texts)
+                            --download-dir <folder>|default (where save=true puts files; default Downloads\ADO Lens)
                             --connection <c> --label-languages "en-US, pl"|all  (languages review and label require)
           status          configuration, connection check, metadata and Claude registrations
                             --connection <name>  --offline  --quiet
@@ -53,6 +54,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           changes <523 | C523 | "PR 482" | sha --repo <r>>   files, X++ methods; --file <name> for a diff
           pr [<id>]        PRs waiting for my review and mine (--list active: all); with id: reviewers, checks, threads
           pipeline [<build id>]   recent builds (--definition <name> --branch <b> --top 10); with id: why it failed
+                            --artifacts (list) | --artifact <name> [--part <file>] [--save [--to <folder>]]
           wiki [<page path>]  --search <text>  --depth 2  --detail full  --wiki <name>
           wiki-write <page path>  --file <page.md> (or standard input)  --mode create|append|prepend|replace
                             --version <v> (for replace, from 'wiki <path>')  --comment <text>
@@ -62,7 +64,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           skills           puts the skills of the mode into Claude Code (po-*, dev-*, all for full), removes the others
           review <change>  checks before testing: work item linked, labels in every language, X++ messages from labels,
                             no TODO;  --item <id>: every change of a work item and its tasks
-          attachments <id> files of a work item; --file <name|number> reads one (Word, Excel, text); --add <path> attaches
+          attachments <id> files of a work item; --file <name|number> reads one (PDF, Word, Excel, PowerPoint, e-mail,
+                            ZIP, text; --pages 2-5, --part <file in a ZIP>); --save [--to <folder>] saves it; --add <path>
           label "<text>"   a D365 message as seen (values for %1 are fine) or @File:Id: label, languages, where used
           health           backlog hygiene of the team    --team <t>
           release-notes [current|previous|<sprint>]   or --since 14d [--until yyyy-MM-dd]   markdown for the wiki
@@ -295,6 +298,11 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             while (cl.Opt("remove-toolset") is { } rem)
             {
                 settings.ExtraToolsets.Remove(Toolsets.Normalize(rem));
+                changed = true;
+            }
+            if (cl.Opt("download-dir") is { } dd)
+            {
+                settings.DownloadDir = string.IsNullOrWhiteSpace(dd) || dd.Trim().Equals("default", StringComparison.OrdinalIgnoreCase) ? null : dd.Trim();
                 changed = true;
             }
             if (cl.Opt("language") is { } lang)
@@ -732,6 +740,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Console.WriteLine(Ui.T("  5. Status (is everything working)", "  5. Status (czy wszystko działa)"));
             Console.WriteLine(Ui.T("  6. Language: Polish / English", "  6. Język: polski / angielski"));
             Console.WriteLine(Ui.T("  7. Required label languages (checks of D365 changes)", "  7. Wymagane języki etykiet (kontrola zmian D365)"));
+            Console.WriteLine(Ui.T($"  8. Download folder: {Downloads.BaseDir(settings)}", $"  8. Folder pobierania: {Downloads.BaseDir(settings)}"));
             var choice = Prompt(Ui.T("Choice (Enter = done): ", "Wybór (Enter = koniec): "));
             switch (choice?.Trim())
             {
@@ -770,6 +779,16 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     settings.Language = l?.Trim() switch { "1" => "pl", "2" => "en", "3" => null, _ => settings.Language };
                     settings.Save(SettingsPath);
                     Ui.Polish = settings.Language == "pl" || settings.Language is null && Ui.Polish;
+                    break;
+                case "8":
+                    var folder = Prompt(Ui.T("  folder for saved files ('default' = Downloads\\ADO Lens, Enter = keep): ",
+                                             "  folder na pobrane pliki ('default' = Pobrane\\ADO Lens, Enter = bez zmian): "));
+                    if (!string.IsNullOrWhiteSpace(folder))
+                    {
+                        settings.DownloadDir = folder.Trim().Equals("default", StringComparison.OrdinalIgnoreCase) ? null : folder.Trim().Trim('"');
+                        settings.Save(SettingsPath);
+                        Console.WriteLine($"  {Downloads.BaseDir(settings)}");
+                    }
                     break;
                 case "7":
                     var cn = PickConnection(settings);
@@ -831,8 +850,12 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public async Task<int> PipelineAsync()
     {
         var lens = NewLens();
+        if (cl.Opt("to") is { } to) lens.Settings.DownloadDir = to;
+        var save = cl.Flag("save") || cl.Peek("to") is not null;
         Print(Int(cl.Positional.FirstOrDefault()) is { } build
-            ? await PipelineQueries.BuildAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("detail"))
+            ? cl.Flag("artifacts") || cl.Peek("artifact") is not null
+                ? await PipelineQueries.ArtifactsAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("artifact"), cl.Opt("part"), save)
+                : await PipelineQueries.BuildAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("detail"))
             : await PipelineQueries.ListAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("definition"), cl.Opt("branch"), Int(cl.Opt("top")) ?? 10));
         return 0;
     }
@@ -866,14 +889,16 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens attachments <work item id> [--file <name or number>] [--add <path> --comment <text>]"); return 2; }
         var lens = NewLens();
         if (cl.Opt("add") is { } add) { Print(await Attachments.AddAsync(lens, cl.Opt("connection"), id, add, cl.Opt("comment"))); return 0; }
-        var (text, image) = await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail"));
+        if (cl.Opt("to") is { } to) lens.Settings.DownloadDir = to;
+        var (text, images) = await Attachments.ReadAsync(lens, cl.Opt("connection"), id, cl.Opt("file"), cl.Opt("detail"), cl.Opt("pages"), cl.Opt("part"),
+            cl.Flag("save") || cl.Peek("to") is not null);
         Print(text);
-        if (image is { } i)
+        foreach (var i in images)
         {
-            // In a terminal an image is saved and opened instead.
+            // A terminal cannot show images: they are written to the temporary folder.
             var path = Path.Combine(Path.GetTempPath(), $"adolens-{id}-{Guid.NewGuid():N}"[..24] + (i.Mime == "image/jpeg" ? ".jpg" : "." + i.Mime[6..]));
             await File.WriteAllBytesAsync(path, i.Bytes);
-            Console.WriteLine($"saved: {path}");
+            Console.WriteLine($"image: {path}");
         }
         return 0;
     }

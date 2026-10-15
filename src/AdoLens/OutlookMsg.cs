@@ -112,6 +112,18 @@ public static class OutlookMsg
         }
     }
 
+    /// <summary>Whether a compound file is an Outlook item (it has the message property streams at the top).</summary>
+    public static bool IsMessage(byte[] bytes)
+    {
+        try
+        {
+            var cfb = new Cfb(bytes);
+            return cfb.Entries.Count > 0 && cfb.Children(cfb.Entries[0]).Any(e => e.Name.StartsWith("__substg1.0_", StringComparison.OrdinalIgnoreCase)
+                                                                                   || e.Name == "__properties_version1.0");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or IndexOutOfRangeException) { return false; }
+    }
+
     /// <summary>The e-mail as text, or null when the file is not an Outlook message.</summary>
     public static string? Read(byte[] bytes)
     {

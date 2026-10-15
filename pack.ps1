@@ -43,7 +43,7 @@ Write-Host 'publishing (self-contained)...' -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
 Remove-Item (Join-Path $stage 'bin\*.pdb') -Force -ErrorAction SilentlyContinue
-foreach ($f in 'install.ps1', 'uninstall.ps1', 'README.md', 'README.pl.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE') {
+foreach ($f in 'install.ps1', 'uninstall.ps1', 'README.md', 'README.pl.md', 'CHANGELOG.md', 'SECURITY.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md') {
     Copy-Item (Join-Path $PSScriptRoot $f) $stage -Force
 }
 # Skills for Claude (SKILL.md per folder), installed next to the server.
@@ -92,6 +92,7 @@ if (-not $NoZip) {
     [IO.File]::WriteAllText((Join-Path $mcpbStage 'manifest.json'), $manifest, (New-Object Text.UTF8Encoding $false))
     Copy-Item (Join-Path $stage 'bin') $mcpbStage -Recurse
     Copy-Item (Join-Path $stage 'LICENSE') $mcpbStage
+    Copy-Item (Join-Path $stage 'THIRD-PARTY-NOTICES.md') $mcpbStage
     Copy-Item (Join-Path $PSScriptRoot 'packaging\icon\icon.png') $mcpbStage
     $mcpb = Join-Path $OutDir "ado-lens-$version.mcpb"
     New-Zip $mcpbStage $mcpb $false

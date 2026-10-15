@@ -133,7 +133,10 @@ public static partial class Labels
             sb.AppendLine($"{label} ({root})");
             // Every language of the label file: the text, or that it is missing.
             var folder = file.Path[..file.Path.IndexOf("/LabelResources/", StringComparison.OrdinalIgnoreCase)] + "/LabelResources";
-            foreach (var lf in await LanguagesAsync(client, folder, file, ct))
+            var languageFiles = await LanguagesAsync(client, folder, file, ct);
+            foreach (var lang in session.Config.LabelLanguages.Where(l => !languageFiles.Any(x => x.Language.Equals(l, StringComparison.OrdinalIgnoreCase))))
+                sb.AppendLine($"  {lang}: NO LABEL FILE (required, but {file.FileId} has no {lang} file)");
+            foreach (var lf in languageFiles)
             {
                 var content = await ReadAsync(client, lf, ct);
                 var value = content is null ? null : Parse(content).GetValueOrDefault(id);

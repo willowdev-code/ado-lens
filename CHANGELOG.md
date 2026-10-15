@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.0 — 2026-10-15
+
+Files from Azure DevOps: read what can be read, save the rest.
+
+- `ado_attachments` reads PDF (text page by page, `pages=2-5`; scanned pages shown as images), PowerPoint, saved e-mails
+  (.eml) and ZIP files (the list, `part=` one file inside), next to Word, Excel, Outlook e-mails and text.
+- The kind of a file comes from its bytes, not its name: binaries (traces, packages) are never sent as text.
+- Long documents come as an outline and the start, with their size in tokens; `detail=full` for all.
+- `save=true` streams a file to disk at any size; only its path, size and SHA-256 go to Claude. Files over 20 MB or not
+  readable get a link and the hint to save them, instead of an error.
+- Build artifacts: `ado_pipeline build=<id> artifacts=true` lists them, `artifact=<name>` shows the files in one
+  (`part=` reads a file), `save=true` saves it.
+- Download folder: `adolens config --download-dir <folder>` or the settings menu (default Downloads\ADO Lens).
+- A required label language with no label file in the model is reported by `ado_review` and `ado_label`.
+- THIRD-PARTY-NOTICES.md lists the bundled libraries and their licenses (PdfPig: Apache 2.0); shipped in every package.
+
 ## 0.6.0 — 2026-10-15
 
 Screenshots and documents for Claude, D365 labels, checks before testing, ready commands, a settings menu.

@@ -40,6 +40,9 @@ organization and a `Demo` project) is enough.
   Credential Manager still wins. Prefer the installer when Claude Code is used too.
 - **Other servers:** `adolens status` reports other MCP entries in the Claude configuration that keep a PAT in plain
   text (for example an older Azure DevOps server). It never changes them; remove the PAT there yourself.
+- **Saved files:** `save=true` streams a file from Azure DevOps into the download folder (default `Downloads\ADO Lens`,
+  `adolens config --download-dir`). The file name is cleaned so it cannot point outside that folder, an existing file is
+  never overwritten, and saved files are never opened or run. Only the path, size and SHA-256 go to Claude.
 - **Network:** the server talks only to `https://dev.azure.com/<organization>` (and the `vsrm` / `vssps` hosts of the
   same organization) over HTTPS, with the PAT in the `Authorization` header. It opens no network ports.
 

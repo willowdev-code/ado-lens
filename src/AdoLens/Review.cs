@@ -117,6 +117,9 @@ public static partial class Review
             var folder = folders.GetValueOrDefault(fileId) ?? await FindFolderAsync(session, c, fileId, ct);
             if (folder is null) continue; // a label file of another model (Microsoft's): not checked
             var languages = await LanguageFilesAsync(session, c, folder, fileId, ct);
+            // A required language with no label file at all: every label is missing in it.
+            foreach (var lang in session.Config.LabelLanguages.Where(l => !languages.Any(x => x.Language.Equals(l, StringComparison.OrdinalIgnoreCase))))
+                missing.Add($"{lang}: no label file {fileId}.{lang}.label.txt in the model - none of its labels are translated");
             foreach (var (lang, path) in languages)
             {
                 if (!session.Config.LabelLanguageRequired(lang)) continue;

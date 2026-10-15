@@ -333,9 +333,13 @@ public static class PrTools
 public static class PipelineTools
 {
     [McpServerTool(Name = "ado_pipeline", ReadOnly = true, Idempotent = true)]
-    [Description("Builds: recent runs (optionally of one pipeline or branch); with build: why it failed - failed steps, errors and the error lines of the log.")]
+    [Description("Builds: recent runs (optionally of one pipeline or branch); with build: why it failed - failed steps, errors and the error lines of the log; artifacts=true lists its artifacts, artifact=<name> its files (part=<file> reads one, save=true saves it to disk).")]
     public static Task<string> Pipeline(Lens lens,
         int? build = null,
+        bool artifacts = false,
+        string? artifact = null,
+        string? part = null,
+        bool save = false,
         [Description("Pipeline name or id.")] string? definition = null,
         string? branch = null,
         int top = 10,
@@ -343,8 +347,11 @@ public static class PipelineTools
         string? project = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_pipeline", new { build, definition, branch, top, detail, project, connection },
-            () => build is { } b ? PipelineQueries.BuildAsync(lens, connection, project, b, detail, ct) : PipelineQueries.ListAsync(lens, connection, project, definition, branch, top, ct));
+        => McpTools.Run("ado_pipeline", new { build, artifacts, artifact, part, save, definition, branch, top, detail, project, connection },
+            () => build is { } b
+                ? artifacts || artifact is not null ? PipelineQueries.ArtifactsAsync(lens, connection, project, b, artifact, part, save, ct)
+                  : PipelineQueries.BuildAsync(lens, connection, project, b, detail, ct)
+                : PipelineQueries.ListAsync(lens, connection, project, definition, branch, top, ct));
 
     [McpServerTool(Name = "ado_pipeline_run")]
     [Description("Queues a run of a pipeline, optionally on a branch.")]
@@ -499,25 +506,28 @@ public static class WorkTools
             () => WorkTree.CreateAsync(lens, connection, project, parent, items, iteration, area, confirm, ct));
 
     [McpServerTool(Name = "ado_attachments")]
-    [Description("Files of a work item and screenshots pasted into its text or comments: the list; file=<name or number> shows an image or the text of a document (Word, Excel, Outlook e-mail, text); add=<local path> attaches a file.")]
+    [Description("Files of a work item and screenshots pasted into it: the list; file=<name or number> gives a document's text (PDF, Word, Excel, PowerPoint, e-mail, ZIP list, text) or shows images and scanned pages; save=true streams it to disk (any size) and returns the path; add=<local path> attaches a file.")]
     public static async Task<IEnumerable<ModelContextProtocol.Protocol.ContentBlock>> AttachmentsTool(Lens lens, int id,
         string? file = null,
+        [Description("PDF pages: 3 or 2-5.")] string? pages = null,
+        [Description("A file inside a ZIP.")] string? part = null,
+        bool save = false,
         [Description("Local file to attach.")] string? add = null,
         string? comment = null,
         [Description("full: the whole text.")] string? detail = null,
         string? connection = null,
         CancellationToken ct = default)
     {
-        (byte[] Bytes, string Mime)? image = null;
-        var text = await McpTools.Run("ado_attachments", new { id, file, add, connection }, async () =>
+        List<(byte[] Bytes, string Mime)> images = [];
+        var text = await McpTools.Run("ado_attachments", new { id, file, pages, part, save, add, connection }, async () =>
         {
             if (add is not null) return await Attachments.AddAsync(lens, connection, id, add, comment, ct);
-            var (t, img) = await Attachments.ReadAsync(lens, connection, id, file, detail, ct);
-            image = img;
+            var (t, imgs) = await Attachments.ReadAsync(lens, connection, id, file, detail, pages, part, save, ct);
+            images = imgs;
             return t;
         });
         var blocks = new List<ModelContextProtocol.Protocol.ContentBlock> { new ModelContextProtocol.Protocol.TextContentBlock { Text = text } };
-        if (image is { } i) blocks.Add(ModelContextProtocol.Protocol.ImageContentBlock.FromBytes(i.Bytes, i.Mime));
+        blocks.AddRange(images.Select(i => ModelContextProtocol.Protocol.ImageContentBlock.FromBytes(i.Bytes, i.Mime)));
         return blocks;
     }
 

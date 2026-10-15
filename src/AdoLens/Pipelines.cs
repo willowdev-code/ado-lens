@@ -74,6 +74,41 @@ public static partial class PipelineQueries
         return string.Join('\n', hits.Select(x => $"{x.i + 1}: {Formatting.Collapse(x.l, 300)}"));
     }
 
+    const long MaxArtifactRead = 20 * 1024 * 1024;
+
+    /// <summary>
+    /// The artifacts of a build (packages, logs, reports): the list; with <paramref name="artifact"/> the files in it,
+    /// <paramref name="part"/> one file read as text, <paramref name="save"/> the whole artifact streamed to disk.
+    /// </summary>
+    public static async Task<string> ArtifactsAsync(Lens lens, string? connection, string? project, int build, string? artifact, string? part, bool save,
+        CancellationToken ct = default)
+    {
+        var session = lens.For(connection);
+        var scope = AdoClient.Scope(session.Project(project));
+        var list = await session.Client.GetListAsync($"{scope}_apis/build/builds/{build}/artifacts", ct);
+        static long? SizeOf(JsonElement a) =>
+            long.TryParse(Json.Str(Json.Obj(Json.Obj(a, "resource"), "properties"), "artifactsize"), out var n) ? n : null;
+        if (list.Count == 0) return $"build {build} has no artifacts";
+        if (string.IsNullOrWhiteSpace(artifact))
+            return $"artifacts of build {build}:\n" + string.Join('\n', list.Select(a =>
+                       $"- {Json.Str(a, "name")} ({Json.Str(Json.Obj(a, "resource"), "type")}{(SizeOf(a) is { } s ? ", " + Documents.Size(s) : "")})")) +
+                   "\nartifact=<name> lists its files; part=<file> reads one; save=true saves the artifact (ZIP) to disk.";
+        var pick = list.FirstOrDefault(a => string.Equals(Json.Str(a, "name"), artifact.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (pick.ValueKind != JsonValueKind.Object) return $"no artifact '{artifact}' in build {build}; artifacts: {string.Join(", ", list.Select(a => Json.Str(a, "name")))}";
+        var name = Json.Str(pick, "name")!;
+        var url = Json.Str(Json.Obj(pick, "resource"), "downloadUrl");
+        if (url is null) return $"artifact {name} has no download link (type {Json.Str(Json.Obj(pick, "resource"), "type")}) - open the build in the browser";
+        if (save)
+            return await Downloads.SaveAsync(session.Client, url, Downloads.BaseDir(lens.Settings), $"build {build}", name + ".zip", ct);
+        if (SizeOf(pick) > MaxArtifactRead)
+            return $"{name} is {Documents.Size(SizeOf(pick)!.Value)} - too large to read here; save=true saves it to disk";
+        byte[] bytes;
+        try { bytes = await session.Client.GetBytesAsync(url, MaxArtifactRead, ct); }
+        catch (AdoApiException ex) when (ex.Message.Contains("larger than", StringComparison.Ordinal)) { return $"{name}: {ex.Message}; save=true saves it to disk"; }
+        var content = Documents.Read(name + ".zip", bytes, null, part);
+        return (content.Note is null ? "" : content.Note + "\n") + (content.Text is null ? "nothing readable as text; save=true saves it to disk" : Documents.Fit(content.Text, 12000, false));
+    }
+
     public static async Task<string> BuildAsync(Lens lens, string? connection, string? project, int id, string? detail, CancellationToken ct = default)
     {
         var session = lens.For(connection);

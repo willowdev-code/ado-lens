@@ -13,6 +13,9 @@ description: Diagnoses a failed build or release for a developer - the failing s
 3. Find the code: the object or file named in the error (`ado_file`, X++: `part=<method>`), and what changed since the
    last green build of the same pipeline (`ado_pipeline` lists them; `ado_changes` of the changes between).
 4. Who and what: `ado_file history=true` for the last change of that object and its work item.
+5. Logs, packages and traces kept as build artifacts: `ado_pipeline build=<id> artifacts=true`, then `artifact=<name>
+   part=<file>` to read one file, or `save=true` to put it on disk for another tool (a trace parser, a diff tool) -
+   only the path comes back, not the content.
 
 ## Answer
 

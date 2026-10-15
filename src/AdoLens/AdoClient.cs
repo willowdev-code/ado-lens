@@ -108,6 +108,31 @@ public sealed class AdoClient(HttpClient http, string organization)
         }
     }
 
+    /// <summary>Streams a file into <paramref name="target"/> without holding it in memory; returns the bytes written.</summary>
+    public async Task<long> DownloadToAsync(string url, Stream target, CancellationToken ct = default)
+    {
+        url = WithApiVersion(url);
+        if (Uri.TryCreate(url, UriKind.Absolute, out var abs) && !IsAzureDevOpsHost(abs))
+            throw new AdoApiException($"refusing to send the PAT to {abs.Host}: only Azure DevOps hosts are allowed");
+        for (var attempt = 1; ; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/zip"));
+            using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (attempt < MaxAttempts && RetryDelay(res) is { } delay)
+            {
+                await Delay(delay, ct);
+                continue;
+            }
+            if (!res.IsSuccessStatusCode || res.Content.Headers.ContentType?.MediaType == "text/html") await EnsureSuccessAsync(res, ct);
+            await using var source = await res.Content.ReadAsStreamAsync(ct);
+            var before = target.CanSeek ? target.Position : 0;
+            await source.CopyToAsync(target, 1 << 20, ct);
+            return target.CanSeek ? target.Position - before : res.Content.Headers.ContentLength ?? -1;
+        }
+    }
+
     /// <summary>Uploads a file as a work item attachment; returns its URL.</summary>
     public async Task<string> UploadAttachmentAsync(string project, string fileName, byte[] content, CancellationToken ct = default)
     {
