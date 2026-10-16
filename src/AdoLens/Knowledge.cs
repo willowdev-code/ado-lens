@@ -151,6 +151,18 @@ public static partial class Knowledge
     {
         path = path.Trim().Replace('\\', '/');
         if (path.StartsWith("$/", StringComparison.Ordinal)) return (new FileRef(true, path, null, null, project), null);
+        // The whole repository ("/") or a folder ("src/"): no file search, the repository is needed.
+        if (path == "/" || path.EndsWith('/'))
+        {
+            if (repo is not null)
+            {
+                var r = await session.Code.RepoAsync(repo, project, ct);
+                return (new FileRef(false, "/" + path.Trim('/'), r.Id, r.Name, r.Project ?? project), null);
+            }
+            var all = await session.Client.GetListAsync($"{AdoClient.Scope(project)}_apis/git/repositories", ct);
+            if (all.Count == 1) return (new FileRef(false, "/" + path.Trim('/'), Json.Str(all[0], "id"), Json.Str(all[0], "name"), project), null);
+            return (null, $"{path} is a folder: give repo=<name> ({string.Join(", ", all.Select(x => Json.Str(x, "name")).Take(30))})");
+        }
         if (repo is not null && path.Contains('/'))
         {
             var r = await session.Code.RepoAsync(repo, project, ct);
@@ -190,7 +202,12 @@ public static partial class Knowledge
         var name = session.Project(project);
         var (file, choices) = await ResolveAsync(session, name, path, repo, ct);
         if (file is null) return choices!;
+        // An environment name ("sbx03", "UAT") instead of a branch: the branch of the environment map.
+        if (version is not null && session.Config.Environments.FirstOrDefault(e => !e.Key.Contains('/') &&
+                (e.Value.Equals(version, StringComparison.OrdinalIgnoreCase) || e.Value.Contains(version, StringComparison.OrdinalIgnoreCase))) is { Key: { } branch })
+            version = branch;
         if (history) return await HistoryAsync(session, file, version, top, ct);
+        if (path.Trim() == "/" || path.TrimEnd().EndsWith('/')) return $"{path} is a folder: history=true lists its changes";
 
         string? text;
         string where;

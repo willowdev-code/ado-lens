@@ -158,7 +158,7 @@ public class PrPipelineTests : IDisposable
     public void Environments_are_saved_for_good_in_flow_order()
     {
         var answer = Queries.SettingsAnswer(lens, null, "dev=DEV (sbx01); staging=UAT (sbx03); master=PROD");
-        Assert.Contains("environments (in flow order): DEV (sbx01) [dev] -> UAT (sbx03) [staging] -> PROD [master]", answer);
+        Assert.Contains("environments (in flow order): DEV (sbx01) = branch dev -> UAT (sbx03) = branch staging -> PROD = branch master", answer);
         var saved = Settings.Load(lens.SettingsPath);
         Assert.Equal(["dev", "staging", "master"], saved.Connections["contoso"].Environments.Keys);
         Assert.Throws<ArgumentException>(() => Queries.SettingsAnswer(lens, null, "staging"));

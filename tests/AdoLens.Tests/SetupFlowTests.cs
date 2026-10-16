@@ -111,7 +111,7 @@ public class TeamSettingsTests : IDisposable
     public async Task The_team_map_is_saved_on_the_wiki_and_used_by_everyone_unless_overridden_locally()
     {
         var saved = await Queries.SettingsAsync(lens, null, null, "dev=DEV (sbx01); staging=UAT (sbx03); master=PROD", "team");
-        Assert.StartsWith("saved for the whole team on the wiki page \"/ADO Lens\" of Demo: DEV (sbx01) [dev] -> UAT (sbx03) [staging] -> PROD [master]", saved);
+        Assert.StartsWith("saved for the whole team on the wiki page \"/ADO Lens\" of Demo: DEV (sbx01) = branch dev -> UAT (sbx03) = branch staging -> PROD = branch master", saved);
         Assert.Null(puts.Single().IfMatch); // a new page
         Assert.Contains("| staging | UAT (sbx03) |", page);
 

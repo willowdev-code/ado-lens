@@ -206,25 +206,21 @@ public static partial class TraceQueries
         var anyIn = false;
         // Git: a stage has the work when any of its changes (a PR merge, a commit) is in what was deployed. Changes that
         // are not there yet are named, unless a later change from the same source branch already is (it carries them).
-        var containsCache = new Dictionary<(string, string, bool), bool?>();
-        async Task<bool?> Contains(string repo, string commit, string target, bool isBranch)
-        {
-            if (!containsCache.TryGetValue((commit, target, isBranch), out var r))
-                containsCache[(commit, target, isBranch)] = r = await code.ContainsAsync(repo, commit, target, isBranch, ct);
-            return r;
-        }
-        async Task<(List<CodeChange> In, List<CodeChange> NotYet, bool Known)> GitStatus(string repo, string target, bool isBranch)
+        // Each answer is one Azure DevOps call: asked once, all at the same time (a sequential walk timed out on items
+        // with several PRs and many release stages).
+        var containsCache = new System.Collections.Concurrent.ConcurrentDictionary<(string, string, bool), Task<bool?>>();
+        Task<bool?> Contains(string repo, string commit, string target, bool isBranch) =>
+            containsCache.GetOrAdd((commit, target, isBranch), _ => code.ContainsAsync(repo, commit, target, isBranch, ct));
+        async Task<(List<CodeChange> In, List<CodeChange> NotYet, bool Known)> GitStatus(string repo, string target, bool isBranch, DateTime? deployedAt)
         {
             var git = changes.Select(x => x.Change).Where(x => x.Kind != "changeset" && string.Equals(x.RepoId, repo, StringComparison.OrdinalIgnoreCase)).ToList();
-            var inside = new List<CodeChange>();
-            var known = false;
-            foreach (var g in git)
-            {
-                if (g.LandedCommit is not { } commit) continue;
-                var r = await Contains(repo, commit, target, isBranch);
-                known |= r is not null;
-                if (r == true) inside.Add(g);
-            }
+            // A deployment that finished before a change was merged cannot contain it: no need to ask.
+            var answers = await Task.WhenAll(git.Select(async g =>
+                g.LandedCommit is not { } commit ? (bool?)null
+                : deployedAt is { } at && g.Date is { } merged && at < merged ? false
+                : await Contains(repo, commit, target, isBranch)));
+            var inside = git.Where((g, i) => answers[i] == true).ToList();
+            var known = answers.Any(a => a is not null);
             var notYet = git.Where(g => !inside.Contains(g) && !IsPromotion(g)
                 && !inside.Any(i => i.Branch is not null && i.Branch == g.Branch && i.Date >= g.Date)).ToList();
             return (inside, notYet, known);
@@ -232,6 +228,7 @@ public static partial class TraceQueries
         static string Names(IEnumerable<CodeChange> list) =>
             string.Join(", ", list.Select(x => x.Kind == "pr" ? $"PR {x.Id} ({x.TargetBranch}, {x.Date?.ToLocalTime():MM-dd})" : $"commit {x.Id[..Math.Min(7, x.Id.Length)]}"));
 
+        var stageTasks = new List<Task<string?>>();
         foreach (var d in deployments.OrderBy(d => Order(d.Branch, d.Definition, d.Stage)).ThenBy(d => d.Definition).ThenBy(d => d.Stage))
         {
             // With an environment map, a stage outside it that has not deployed for half a year is an old pipeline.
@@ -246,21 +243,24 @@ public static partial class TraceQueries
                 if (onBranch.Count == 0) continue;
                 bool? contains = int.TryParse(d.SourceVersion, out var v) ? v >= onBranch.Max() : null;
                 anyIn |= contains == true;
-                where.Add(label + contains switch
+                stageTasks.Add(Task.FromResult<string?>(label + contains switch
                 {
                     true => $"YES - deployed {deployed}",
                     false => $"NOT YET - last deployment {deployed} does not contain it",
                     _ => $"unknown - last deployment {deployed}",
-                });
+                }));
             }
             else if (d.SourceVersion is { } deployedCommit && d.Repository is { } repo
                      && changes.Any(x => x.Change.Kind != "changeset" && string.Equals(x.Change.RepoId, repo, StringComparison.OrdinalIgnoreCase)))
             {
-                var (inside, notYet, _) = await GitStatus(repo, deployedCommit, false);
-                anyIn |= inside.Count > 0;
-                where.Add(label + (inside.Count > 0
-                    ? $"YES - deployed {deployed}: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
-                    : $"NOT YET - last deployment {deployed} has none of it"));
+                stageTasks.Add(Task.Run(async () =>
+                {
+                    var (inside, notYet, _) = await GitStatus(repo, deployedCommit, false, d.When);
+                    if (inside.Count > 0) anyIn = true;
+                    return (string?)(label + (inside.Count > 0
+                        ? $"YES - deployed {deployed}: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
+                        : $"NOT YET - last deployment {deployed} has none of it"));
+                }, ct));
             }
         }
         // Git branches named in the environment map, even without release pipelines: is the work merged there?
@@ -268,13 +268,18 @@ public static partial class TraceQueries
         foreach (var (branch, envLabel) in env.Where(e => !e.Key.Contains('/')))
             foreach (var group in changes.Select(x => x.Change).Where(x => x.Kind != "changeset" && x.RepoId is not null).GroupBy(x => x.RepoId!))
             {
-                var (inside, notYet, known) = await GitStatus(group.Key, branch, true);
-                if (!known) continue;
-                anyIn |= inside.Count > 0;
-                where.Add($"- {envLabel} branch {branch} ({group.First().Repo}): " + (inside.Count > 0
-                    ? $"merged: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
-                    : "NOT merged yet"));
+                var repoName = group.First().Repo;
+                stageTasks.Add(Task.Run(async () =>
+                {
+                    var (inside, notYet, known) = await GitStatus(group.Key, branch, true, null);
+                    if (!known) return null;
+                    if (inside.Count > 0) anyIn = true;
+                    return (string?)($"- {envLabel} = branch {branch} ({repoName}): " + (inside.Count > 0
+                        ? $"merged: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
+                        : "NOT merged yet"));
+                }, ct));
             }
+        where.AddRange((await Task.WhenAll(stageTasks)).Where(l => l is not null).Select(l => l!));
         if (where.Count > 0) sb.AppendLine("\nWHERE").AppendLine(string.Join('\n', where));
         else if (changes.Count > 0) sb.AppendLine("\nWHERE").AppendLine("no release stage deploys the branches of this change");
 
@@ -371,7 +376,7 @@ public static partial class TraceQueries
     {
         var session = lens.For(connection);
         var (c, versions) = await ResolveAsync(session, change, repo, ct);
-        return await ChangesTextAsync(c, versions, file, detail);
+        return await ChangesTextAsync(session, c, versions, file, detail);
     }
 
     /// <summary>A changeset, pull request or commit, and how to read the two versions of each of its files.</summary>
@@ -407,7 +412,28 @@ public static partial class TraceQueries
         return (c, versions);
     }
 
-    static async Task<string> ChangesTextAsync(CodeChange c, Func<FileChange, Task<(string? Before, string? After)>> versions, string? file, string? detail)
+    /// <summary>The work items linked to a change, with type, state and tags (a commit: the ids in its message).</summary>
+    internal static async Task<string?> WorkItemsOfAsync(Session session, CodeChange c, CancellationToken ct)
+    {
+        List<int> ids;
+        try
+        {
+            ids = c.Kind switch
+            {
+                "changeset" => (await session.Client.GetListAsync($"_apis/tfvc/changesets/{c.Id}/workItems", ct)).Select(w => w.TryGetProperty("id", out var i) ? i.GetInt32() : 0).ToList(),
+                "pr" => (await session.Client.GetListAsync($"_apis/git/repositories/{c.RepoId}/pullRequests/{c.Id}/workitems", ct)).Select(w => int.TryParse(Json.Str(w, "id"), out var i) ? i : 0).ToList(),
+                _ => System.Text.RegularExpressions.Regex.Matches(c.Message ?? "", @"#(\d{2,7})\b").Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).ToList(),
+            };
+        }
+        catch (AdoApiException) { return null; }
+        ids = ids.Where(i => i > 0).Distinct().ToList();
+        if (ids.Count == 0) return "work items: none linked";
+        var items = await session.Work.GetAsync(ids, relations: false, ["System.Id", "System.WorkItemType", "System.State", "System.Title", "System.Tags"], ct);
+        return "work items: " + string.Join("; ", items.Select(w => $"#{WorkItems.Id(w)} {WorkItems.Field(w, "System.WorkItemType")} {Formatting.Collapse(WorkItems.Field(w, "System.Title") ?? "", 50)} ({WorkItems.Field(w, "System.State")})" +
+            (WorkItems.Field(w, "System.Tags") is { Length: > 0 } t ? $" [tags: {t}]" : "")));
+    }
+
+    static async Task<string> ChangesTextAsync(Session session, CodeChange c, Func<FileChange, Task<(string? Before, string? After)>> versions, string? file, string? detail)
     {
         var ct = CancellationToken.None;
         var sb = new StringBuilder();
@@ -415,6 +441,7 @@ public static partial class TraceQueries
             ? $"{c.Label} {c.State}: {c.TargetBranch} <- {c.Branch}, \"{c.Message}\", {c.Author}"
             : $"{c.Label} {Date(c.Date)} {c.Author}: \"{Formatting.Collapse(c.Message ?? "", 200)}\"";
         sb.AppendLine(head);
+        if (file is null && await WorkItemsOfAsync(session, c, ct) is { } linked) sb.AppendLine(linked);
 
         if (file is not null)
         {

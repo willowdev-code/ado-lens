@@ -245,4 +245,13 @@ public class KnowledgeTests : IDisposable
         Assert.Contains("https://dev.azure.com/contoso/_apis/wit/attachments/big", text);
         Assert.Empty(images);
     }
+
+    [Fact]
+    public async Task The_history_of_a_whole_repository_or_folder()
+    {
+        var text = await Knowledge.FileAsync(lens, null, null, "/", "erp", null, null, true, 15, null);
+        Assert.Contains("history of erp: /: 2 changes", text);
+        Assert.Contains("PR 482: Credit limit check -> #1 Login page (New)", text);
+        Assert.Contains("is a folder", await Knowledge.FileAsync(lens, null, null, "/", "erp", null, null, false, 15, null));
+    }
 }
