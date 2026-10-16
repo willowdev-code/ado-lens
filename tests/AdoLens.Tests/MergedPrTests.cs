@@ -34,7 +34,7 @@ public class MergedPrTests : IDisposable
     {
         var all = await PullRequestQueries.MergedAsync(lens, null, null, "staging", null, null, 30);
         Assert.Contains("2 pull request(s) completed into staging in Demo", all);
-        Assert.Contains("- PR 12 2026-10-14 portal: Login form (Anna Nowak, from feature/login) -> #1 Login page (New)", all);
+        Assert.Contains("- PR 12 2026-10-14 portal: Login form (Anna Nowak, from feature/login) -> #1 Product Backlog Item Login page (New) [tags: UAT]", all);
         Assert.Contains("- PR 11 2026-09-01 portal: Old change (Ben Kowalski, from feature/old) - no work item", all);
         Assert.Contains(ado.Requests, r => r.Contains("searchCriteria.status=completed") && r.Contains("searchCriteria.targetRefName=refs/heads/staging"));
 

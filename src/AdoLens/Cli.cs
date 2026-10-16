@@ -56,6 +56,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                             --merged <branch> [--since 7d] [--repo <r>] [--top 30]: completed into a branch, with work items
           pipeline [<build id>]   recent builds (--definition <name> --branch <b> --top 10); with id: why it failed
                             --artifacts (list) | --artifact <name> [--part <file>] [--save [--to <folder>]]
+                            --deployments [--definition <release>] [--stage <name>]: release deployments with dates
           wiki [<page path>]  --search <text>  --depth 2  --detail full  --wiki <name>
           wiki-write <page path>  --file <page.md> (or standard input)  --mode create|append|prepend|replace
                             --version <v> (for replace, from 'wiki <path>')  --comment <text>
@@ -855,6 +856,11 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         var lens = NewLens();
         if (cl.Opt("to") is { } to) lens.Settings.DownloadDir = to;
         var save = cl.Flag("save") || cl.Peek("to") is not null;
+        if (cl.Flag("deployments"))
+        {
+            Print(await PipelineQueries.DeploymentsAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("definition"), cl.Opt("stage"), Int(cl.Opt("top")) ?? 10));
+            return 0;
+        }
         Print(Int(cl.Positional.FirstOrDefault()) is { } build
             ? cl.Flag("artifacts") || cl.Peek("artifact") is not null
                 ? await PipelineQueries.ArtifactsAsync(lens, cl.Opt("connection"), cl.Opt("project"), build, cl.Opt("artifact"), cl.Opt("part"), save)

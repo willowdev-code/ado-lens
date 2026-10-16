@@ -83,7 +83,7 @@ public static partial class PullRequestQueries
             DateTime.TryParse(Json.Str(pr, "closedDate"), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal, out var d) ? d : null;
         var prs = list.Where(pr => from is null || Closed(pr) >= from).OrderByDescending(Closed).Take(top).ToList();
         var label = $"{Code.Short(target)}{(repo is null ? "" : $" ({repo})")}";
-        if (prs.Count == 0) return $"no pull requests completed into {label} in {name}{(from is null ? "" : $" since {from.Value.ToLocalTime():yyyy-MM-dd}")}";
+        if (prs.Count == 0) return $"no pull requests completed into {label} in {name}{(from is null ? "" : $" since {Since(from.Value)}")}";
 
         var items = await Task.WhenAll(prs.Select(async pr =>
         {
@@ -95,9 +95,11 @@ public static partial class PullRequestQueries
             catch (AdoApiException) { return []; }
         }));
         var ids = items.SelectMany(x => x).Distinct().ToList();
-        var heads = ids.Count == 0 ? [] : (await session.Work.GetAsync(ids, relations: false, ["System.Id", "System.WorkItemType", "System.State", "System.Title"], ct))
-            .ToDictionary(WorkItems.Id, w => $"#{WorkItems.Id(w)} {Formatting.Collapse(WorkItems.Field(w, "System.Title") ?? "", 50)} ({WorkItems.Field(w, "System.State")})");
-        var sb = new StringBuilder($"{prs.Count} pull request(s) completed into {label} in {name}{(from is null ? "" : $" since {from.Value.ToLocalTime():yyyy-MM-dd}")}, newest first:\n");
+        // Type, state and tags with each work item: enough for a table without asking for every item again.
+        var heads = ids.Count == 0 ? [] : (await session.Work.GetAsync(ids, relations: false, ["System.Id", "System.WorkItemType", "System.State", "System.Title", "System.Tags"], ct))
+            .ToDictionary(WorkItems.Id, w => $"#{WorkItems.Id(w)} {WorkItems.Field(w, "System.WorkItemType")} {Formatting.Collapse(WorkItems.Field(w, "System.Title") ?? "", 50)} ({WorkItems.Field(w, "System.State")})" +
+                (WorkItems.Field(w, "System.Tags") is { Length: > 0 } tags ? $" [tags: {tags}]" : ""));
+        var sb = new StringBuilder($"{prs.Count} pull request(s) completed into {label} in {name}{(from is null ? "" : $" since {Since(from.Value)}")}, newest first:\n");
         for (var i = 0; i < prs.Count; i++)
         {
             var pr = prs[i];
@@ -108,6 +110,13 @@ public static partial class PullRequestQueries
         }
         if (list.Count >= (from is null ? top : 500) && prs.Count == top) sb.Append($"(top={top}; more with a higher top or a later since)");
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>The local day, with the time when one was given ("2026-10-15 14:30").</summary>
+    static string Since(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        return local.TimeOfDay == TimeSpan.Zero ? local.ToString("yyyy-MM-dd") : local.ToString("yyyy-MM-dd HH:mm");
     }
 
     static async Task<JsonElement> GetAsync(Session session, string? repo, int id, CancellationToken ct)
