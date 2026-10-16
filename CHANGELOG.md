@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.3 — unreleased
+## 0.7.3 — 2026-10-16
 
 Fixes from a real question: "pull requests merged into staging after release X, with their work items and tags".
 
