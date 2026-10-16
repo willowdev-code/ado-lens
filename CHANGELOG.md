@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.3 — unreleased
+
+Fixes from a real question: "pull requests merged into staging after release X, with their work items and tags".
+
+- `ado_pr` and `ado_pipeline` (reading: pull request lists and details, merged PRs, builds, deployments, artifacts) are
+  in every mode now, the Product Owner one too; creating and completing PRs and running pipelines stay for developers.
+- `ado_changes` of a pull request, changeset or commit lists its work items with type, state and tags.
+- `ado_trace` checks the release stages in parallel and skips deployments older than the change: it no longer runs
+  out of time on items with several pull requests.
+- `ado_file path=/ repo=<r> history=true version=<branch>`: the history of a whole repository or folder on a branch,
+  with pull requests and work items. An environment name given as the branch ("sbx03") is turned into its branch.
+- The environment map reads "UAT (sbx03) = branch staging" instead of "UAT (sbx03) [staging]".
+- The server instructions name the tools for "what went into a branch or an environment".
+
 ## 0.7.2 — 2026-10-16
 
 - `ado_pr merged=<branch>` (`adolens pr --merged staging --since 7d`): pull requests completed into a branch, newest

@@ -62,7 +62,7 @@ public static class Queries
         var sb = new StringBuilder(environments is null ? "" : "saved.\n");
         sb.AppendLine($"connection {cfg.Connection}: https://dev.azure.com/{conn.Organization}, project {conn.Project ?? "-"}, team {conn.Team ?? "-"}, mode {lens.Settings.Mode}");
         sb.Append(conn.Environments.Count == 0 ? "local environments: not set"
-            : "environments (in flow order): " + string.Join(" -> ", conn.Environments.Select(e => $"{e.Value} [{e.Key}]")));
+            : "environments (in flow order): " + string.Join(" -> ", conn.Environments.Select(e => Flow(e.Key, e.Value))));
         return sb.ToString();
     }
 
@@ -85,7 +85,7 @@ public static class Queries
             var map = ParseEnvironments(environments);
             var url = await session.Team.SaveAsync(name, map, ct);
             return $"saved for the whole team on the wiki page \"{TeamSettings.PagePath}\" of {name}: " +
-                   string.Join(" -> ", map.Select(e => $"{e.Value} [{e.Key}]")) + $"\n{url}";
+                   string.Join(" -> ", map.Select(e => Flow(e.Key, e.Value))) + $"\n{url}";
         }
         var text = SettingsAnswer(lens, connection, environments);
         if (environments is not null) return text;
@@ -94,7 +94,7 @@ public static class Queries
         var p = s.Project(project);
         var (effective, source) = await EnvironmentFlow.EffectiveAsync(s, p, ct);
         if (effective.Count > 0)
-            return text + $"\nin use for {p} ({source}): " + string.Join(" -> ", effective.Select(e => $"{e.Value} [{e.Key}]"));
+            return text + $"\nin use for {p} ({source}): " + string.Join(" -> ", effective.Select(e => Flow(e.Key, e.Value)));
         var detected = await EnvironmentFlow.DetectAsync(s, p, ct);
         return text + (detected.Count == 0
             ? $"\nno release stages or long-lived branches found in {p}"
@@ -102,6 +102,10 @@ public static class Queries
               "Ask the user what each is called and in which order code moves, then save with environments=\"key=name; …\" " +
               "(scope=team for everyone, after the user agrees).");
     }
+
+    /// <summary>"UAT (sbx03) = branch staging", "UAT + SCM = release stage Main-Deploy/Stage 1": the name, then what it is.</summary>
+    internal static string Flow(string key, string name) =>
+        $"{name} = {(key.Contains('/') ? "release stage" : "branch")} {key}";
 
     static Dictionary<string, string> ParseEnvironments(string environments)
     {

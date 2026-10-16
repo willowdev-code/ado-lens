@@ -178,11 +178,11 @@ Nigdy nie jest uprawnieniem.
 |---|---|:-:|:-:|:-:|
 | `core` | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_fields` | ✓ | ✓ | ✓ |
 | `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link`, `ado_search`, `ado_undo`, `ado_attachments`, `ado_create_tree` | ✓ | ✓ | ✓ |
-| `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
-| `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
+| `pr` | `ado_pr_update` | – | ✓ | ✓ |
+| `pipelines` | `ado_pipeline_run` | – | ✓ | ✓ |
 | `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day`, `ado_health`, `ado_release_notes`, `ado_metrics` | ✓ | – | ✓ |
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
-| `trace` | `ado_trace`, `ado_changes`, `ado_file`, `ado_label`, `ado_review` | ✓ | ✓ | ✓ |
+| `trace` | `ado_trace`, `ado_changes`, `ado_file`, `ado_label`, `ado_review`, `ado_pr`, `ado_pipeline` | ✓ | ✓ | ✓ |
 | `recipes` | `ado_recipe` | ✓ | ✓ | ✓ |
 | `test` | `ado_tests`, `ado_test_create` | ✓ | – | ✓ |
 | `test`, `recipes` | w planie | ✓ | (recipes) | ✓ |

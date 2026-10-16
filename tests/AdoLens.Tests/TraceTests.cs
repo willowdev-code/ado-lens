@@ -172,8 +172,8 @@ public class TraceTests : IDisposable
                     && text.IndexOf("- PROD (Shop master", StringComparison.Ordinal) < text.IndexOf("- UAT + SCM (Main release", StringComparison.Ordinal), text);
         Assert.Contains("- UAT (Shop staging / lcs): YES - deployed 2026-10-04 (build 2026.10.4.1): PR 482 (dev, 10-02)", text);
         Assert.Contains("- PROD (Shop master / lcs): NOT YET - last deployment 2026-09-20 (build 2026.9.20.1) has none of it", text);
-        Assert.Contains("- UAT branch staging (portal): merged: PR 482 (dev, 10-02)", text);
-        Assert.Contains("- PROD branch master (portal): NOT merged yet", text);
+        Assert.Contains("- UAT = branch staging (portal): merged: PR 482 (dev, 10-02)", text);
+        Assert.Contains("- PROD = branch master (portal): NOT merged yet", text);
         Assert.DoesNotContain("Other / x", text); // a stage of a branch this change is not on
         Assert.Contains("acceptance criteria changed after the first code change (2026-10-05 Anna Nowak)", text);
         Assert.Contains("TASKS\n- #2 Task [To Do] Build the form", text);
