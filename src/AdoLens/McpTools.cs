@@ -36,11 +36,12 @@ public static class McpTools
             """,
         [Toolsets.Trace] = """
             - Checking work against what was asked: ado_trace, then read the diffs with ado_changes - never assume.
-            - What went into a branch or an environment: ado_pr merged=<branch> since=<time> (with work items and tags); the time of a
-              deployment: ado_pipeline deployments=true; a branch's whole history: ado_file path=/ repo=<r> history=true version=<branch>.
+            - A branch's whole history: ado_file path=/ repo=<r> history=true version=<branch>.
             """,
         [Toolsets.Pr] = """
             - PR description: what and why with the work item, changes as bullets by area, how to check, risks only if any.
+            - What went into a branch or an environment: ado_pr merged=<branch> since=<time> (with work items and tags); the time of a
+              deployment: ado_pipeline deployments=true.
             """,
         [Toolsets.Pipelines] = """
             - A failed build: give the error lines from the log, not the whole log.
@@ -319,8 +320,8 @@ public static class TraceTools
             () => Knowledge.FileAsync(lens, connection, project, path, repo, version, part, history, top, detail, ct));
 }
 
-// Reading pull requests and builds is part of checking work (PO mode too); changing them is for developers.
-[McpServerToolType, Toolset(Toolsets.Trace)]
+// Pull requests and pipelines are for developers: the Product Owner mode leaves them out.
+[McpServerToolType, Toolset(Toolsets.Pr)]
 public static class PrReadTools
 {
     [McpServerTool(Name = "ado_pr", ReadOnly = true, Idempotent = true)]
@@ -347,7 +348,7 @@ public static class PrReadTools
 public static class PrTools
 {
     [McpServerTool(Name = "ado_pr_update")]
-    [Description("Acts on pull requests: create (repo, source, target, title, text, workItems, reviewers, draft), comment (text, optional file and line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), publish, complete, abandon. @[name] in text notifies.")]
+    [Description("Acts on pull requests: create (repo, source, target, title, text, workItems, reviewers, draft), comment (text, optional file and line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), tag (tags), publish, complete, abandon. @[name] in text notifies.")]
     public static Task<string> PrUpdate(Lens lens,
         string action,
         int? id = null,
@@ -364,20 +365,21 @@ public static class PrTools
         [Description("Work item ids: 123;456.")] string? workItems = null,
         [Description("Names or e-mails separated by ';'.")] string? reviewers = null,
         bool draft = false,
+        [Description("For tag and create: 'a; b' adds, '-c' removes.")] string? tags = null,
         bool deleteSourceBranch = false,
         [Description("noFastForward | squash | rebase | rebaseMerge.")] string? mergeStrategy = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_pr_update", new { action, id, repo, thread, file, line, vote, status, source, target, title, workItems, reviewers, draft, deleteSourceBranch, mergeStrategy, connection },
+        => McpTools.Run("ado_pr_update", new { action, id, repo, thread, file, line, vote, status, source, target, title, workItems, reviewers, draft, tags, deleteSourceBranch, mergeStrategy, connection },
             () => PullRequestQueries.ActAsync(lens, connection, new PullRequestQueries.PrAction
             {
                 Action = action, Id = id, Repo = repo, Text = text, Thread = thread, File = file, Line = line, Vote = vote, Status = status,
                 Source = source, Target = target, Title = title, WorkItems = workItems, Reviewers = reviewers, Draft = draft,
-                DeleteSourceBranch = deleteSourceBranch, MergeStrategy = mergeStrategy,
+                DeleteSourceBranch = deleteSourceBranch, MergeStrategy = mergeStrategy, Tags = tags,
             }, ct));
 }
 
-[McpServerToolType, Toolset(Toolsets.Trace)]
+[McpServerToolType, Toolset(Toolsets.Pipelines)]
 public static class PipelineReadTools
 {
     [McpServerTool(Name = "ado_pipeline", ReadOnly = true, Idempotent = true)]

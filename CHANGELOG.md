@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 — unreleased
+
+- Pull request tags (labels): `ado_pr_update action=tag tags="R349; -old"`, tags when creating a PR, and tags shown in
+  PR lists, details and merged PRs.
+- Product Owner mode: no pull request or pipeline tools and no developer prompts (`dev_*`); they stay in the dev and
+  full modes.
+
 ## 0.7.3 — 2026-10-16
 
 Fixes from a real question: "pull requests merged into staging after release X, with their work items and tags".

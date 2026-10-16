@@ -162,7 +162,7 @@ async Task<int> RunServerAsync()
         })
         .WithStdioServerTransport()
         .WithActiveTools(lens.Settings)
-        .WithPrompts([typeof(Prompts)]);
+        .WithPrompts(Prompts.TypesFor(lens.Settings));
     await builder.Build().RunAsync();
     return 0;
 }

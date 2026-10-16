@@ -12,6 +12,11 @@ namespace AdoLens;
 [McpServerPromptType]
 public static class Prompts
 {
+    /// <summary>The prompt classes of a mode: developer prompts (dev_*) only in the dev and full modes.</summary>
+    /// IEnumerable on purpose: an array would bind to the generic WithPrompts&lt;T&gt;(target) and register nothing.
+    public static IEnumerable<Type> TypesFor(Settings settings) =>
+        settings.Mode == "po" ? [typeof(Prompts)] : [typeof(Prompts), typeof(DevPrompts)];
+
     /// <summary>The installed skills: …\ADO Lens\skills (the program is in …\ADO Lens\bin); in a source tree, skills\ above.</summary>
     internal static string? SkillsDir()
     {
@@ -33,6 +38,8 @@ public static class Prompts
         }
         return fallback;
     }
+
+    internal static string AskSkill(string skill, string fallback, string request) => Ask(skill, fallback, request);
 
     static string Ask(string skill, string fallback, string request) =>
         $"{Skill(skill, fallback)}\n\n---\nRequest: {request.Trim()}\nAnswer in the language of the request (Polish request → Polish answer).";
@@ -84,6 +91,13 @@ public static class Prompts
     [Description("A D365 message pasted as seen on screen: its label, translations, and where and in which process it appears.")]
     public static string Label([Description("The message text as seen (values in it are fine).")] string text) =>
         $"Use ado_label with this text, then read the method that shows it (ado_file part=<method>) and explain in plain language when the user sees this message and what to do about it.\n\nMessage: {text.Trim()}\nAnswer in the language of the message.";
+}
+
+/// <summary>Prompts for developers: registered in the dev and full modes only.</summary>
+[McpServerPromptType]
+public static class DevPrompts
+{
+    static string Ask(string skill, string fallback, string request) => Prompts.AskSkill(skill, fallback, request);
 
     [McpServerPrompt(Name = "dev_start", Title = "Start work on a work item")]
     [Description("Developer: what to do, where in the code, a plan from the acceptance criteria.")]
