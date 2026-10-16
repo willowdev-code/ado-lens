@@ -14,6 +14,8 @@
 #ifndef OutDir
   #define OutDir "..\..\dist"
 #endif
+; The file version is numbers only: 0.8.0 for a test release 0.8.0-beta.1.
+#define FileVersion Copy(Version, 1, Pos("-", Version + "-") - 1)
 
 [Setup]
 AppId={{6F1C2B9E-4D7A-4E21-9B8C-3A5D0E7F1A42}
@@ -45,7 +47,7 @@ LicenseFile={#Source}\LICENSE
 ; Users choose: Polish or English (the choice is kept for the settings console too).
 ShowLanguageDialog=yes
 CloseApplications=no
-VersionInfoVersion={#Version}
+VersionInfoVersion={#FileVersion}
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
