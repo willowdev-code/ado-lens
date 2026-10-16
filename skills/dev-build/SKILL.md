@@ -5,6 +5,8 @@ description: Diagnoses a failed build or release for a developer - the failing s
 
 # A red build
 
+First load the tools this needs: `ado_tools enable="code;pipelines"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. `ado_pipeline` (recent runs; `definition` / `branch` to narrow) → the failed run; `ado_pipeline build=<id>` for the

@@ -7,6 +7,8 @@ description: Writes acceptance test cases from a work item's acceptance criteria
 
 Plain language, in the user's language; steps a business tester can follow on UAT.
 
+First load the tools this needs: `ado_tools enable="tests;code"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. `ado_work_item ids=<id>` — the acceptance criteria (from the parent for a task). No criteria: look at the

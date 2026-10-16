@@ -7,6 +7,8 @@ description: Prepares backlog refinement for a Product Owner - what is not ready
 
 The reader is a Product Owner: plain language, in the user's language; ids in brackets.
 
+First load the tools this needs: `ado_tools enable="write;boards;code"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. `ado_health` (the team's open backlog) — items without acceptance criteria, description, estimate or parent,

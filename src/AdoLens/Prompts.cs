@@ -90,7 +90,7 @@ public static class Prompts
     [McpServerPrompt(Name = "label", Title = "Where does this message come from")]
     [Description("A D365 message pasted as seen on screen: its label, translations, and where and in which process it appears.")]
     public static string Label([Description("The message text as seen (values in it are fine).")] string text) =>
-        $"Use ado_label with this text, then read the method that shows it (ado_file part=<method>) and explain in plain language when the user sees this message and what to do about it.\n\nMessage: {text.Trim()}\nAnswer in the language of the message.";
+        $"Load the code tools if they are not there (ado_tools enable=code), then use ado_label with this text, then read the method that shows it (ado_file part=<method>) and explain in plain language when the user sees this message and what to do about it.\n\nMessage: {text.Trim()}\nAnswer in the language of the message.";
 }
 
 /// <summary>Prompts for developers: registered in the dev and full modes only.</summary>

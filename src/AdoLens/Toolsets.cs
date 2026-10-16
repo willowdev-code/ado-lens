@@ -1,56 +1,100 @@
+using System.Reflection;
+using ModelContextProtocol.Server;
+
 namespace AdoLens;
 
-/// <summary>Marks a tool class with the tool set it belongs to.</summary>
-[AttributeUsage(AttributeTargets.Class)]
+/// <summary>Marks a tool class (or one tool method, which then overrides its class) with the group it belongs to.</summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class ToolsetAttribute(string name) : Attribute
 {
     public string Name { get; } = name;
 }
 
 /// <summary>
-/// Tool sets and modes. A mode is only a choice of which tools Claude sees (fewer tools: better choices and fewer
-/// tokens per session) — never a permission; the PAT decides what is allowed.
+/// Tool groups and modes. Every tool definition is paid in tokens in every session, so a session starts with the small
+/// core and Claude loads a group (ado_tools enable=…) when the conversation needs it. A mode only says which groups may
+/// be loaded - never a permission; the PAT decides what is allowed.
 /// </summary>
 public static class Toolsets
 {
-    public const string Core = "core", Work = "work", Boards = "boards", Wiki = "wiki", Trace = "trace", Code = "code",
-        Pr = "pr", Pipelines = "pipelines", Test = "test", Recipes = "recipes";
+    public const string Core = "core", Write = "write", Boards = "boards", Wiki = "wiki", Code = "code",
+        Tests = "tests", Recipes = "recipes", Pr = "pr", Pipelines = "pipelines";
 
-    public static readonly string[] All = [Core, Work, Boards, Wiki, Trace, Code, Pr, Pipelines, Test, Recipes];
+    public static readonly string[] All = [Core, Write, Boards, Wiki, Code, Tests, Recipes, Pr, Pipelines];
+
+    /// <summary>What a group is for, in one line (the ado_tools description and answer).</summary>
+    public static readonly Dictionary<string, string> About = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [Write] = "create, change, comment, link, undo work items; fields and states of the process",
+        [Boards] = "sprint, board, backlog, my day, backlog health, metrics, release notes",
+        [Wiki] = "read, search and write wiki pages",
+        [Code] = "changes of a changeset/PR/commit, files and their history, D365 labels, checks before testing, attachments",
+        [Tests] = "test cases and their results",
+        [Recipes] = "saved repeatable changes",
+        [Pr] = "pull requests: lists, merged into a branch, details, create, comment, vote, tag, complete",
+        [Pipelines] = "builds, why they failed, deployments, artifacts, running a pipeline",
+    };
 
     public static readonly Dictionary<string, string[]> Modes = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["po"] = [Core, Work, Boards, Wiki, Trace, Test, Recipes],
-        ["dev"] = [Core, Work, Wiki, Trace, Code, Pr, Pipelines, Recipes],
+        ["po"] = [Core, Write, Boards, Wiki, Code, Tests, Recipes],
+        ["dev"] = [Core, Write, Wiki, Code, Pr, Pipelines, Recipes],
         ["full"] = All,
     };
 
+    /// <summary>Old tool set names (before 0.8) still read from settings.</summary>
+    static readonly Dictionary<string, string> Renamed = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["work"] = Write, ["trace"] = Code, ["test"] = Tests,
+    };
+
+    /// <summary>The groups the mode allows (plus extra ones from the settings).</summary>
     public static HashSet<string> Active(Settings settings)
     {
         var set = new HashSet<string>(Modes.GetValueOrDefault(settings.Mode) ?? Modes["po"], StringComparer.OrdinalIgnoreCase);
-        set.UnionWith(settings.ExtraToolsets);
+        foreach (var extra in settings.ExtraToolsets)
+            if (TryNormalize(extra) is { } n) set.Add(n);
         set.Add(Core);
         return set;
     }
 
-    /// <summary>Tool classes of the active tool sets.</summary>
-    public static List<Type> TypesFor(Settings settings)
+    /// <summary>The groups a session starts with: only the core, or every allowed group when the settings say so.</summary>
+    public static HashSet<string> Loaded(Settings settings) =>
+        settings.LoadAllTools ? Active(settings) : new HashSet<string>([Core], StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Every tool method with its group: the method's own attribute, else its class's.</summary>
+    public static IEnumerable<(string Group, MethodInfo Method)> Catalog() =>
+        typeof(Toolsets).Assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null)
+                .Select(m => ((m.GetCustomAttribute<ToolsetAttribute>() ?? t.GetCustomAttribute<ToolsetAttribute>())?.Name ?? Core, m)));
+
+    public static IEnumerable<MethodInfo> Methods(IEnumerable<string> groups)
     {
-        var active = Active(settings);
-        return typeof(Toolsets).Assembly.GetTypes()
-            .Where(t => t.GetCustomAttributes(typeof(ToolsetAttribute), false) is [ToolsetAttribute a] && active.Contains(a.Name))
-            .ToList();
+        var set = new HashSet<string>(groups, StringComparer.OrdinalIgnoreCase);
+        return Catalog().Where(c => set.Contains(c.Group)).Select(c => c.Method);
     }
 
-    /// <summary>
-    /// Registers the tools of the active tool sets. The cast matters: a List&lt;Type&gt; would bind to the generic
-    /// WithTools&lt;T&gt;(target) overload and register the list's own (no) methods.
-    /// </summary>
+    public static string ToolName(MethodInfo m) => m.GetCustomAttribute<McpServerToolAttribute>()?.Name ?? m.Name;
+
+    /// <summary>Registers the tools a session starts with.</summary>
     public static Microsoft.Extensions.DependencyInjection.IMcpServerBuilder WithActiveTools(
-        this Microsoft.Extensions.DependencyInjection.IMcpServerBuilder builder, Settings settings) =>
-        Microsoft.Extensions.DependencyInjection.McpServerBuilderExtensions.WithTools(builder, (IEnumerable<Type>)TypesFor(settings));
+        this Microsoft.Extensions.DependencyInjection.IMcpServerBuilder builder, Settings settings)
+    {
+        foreach (var method in Methods(Loaded(settings)))
+            Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(builder.Services,
+                sp => McpServerTool.Create(method, options: new McpServerToolCreateOptions { Services = sp }));
+        return builder;
+    }
+
+    public static string? TryNormalize(string name)
+    {
+        var n = name.Trim();
+        if (Renamed.TryGetValue(n, out var renamed)) return renamed;
+        return All.FirstOrDefault(t => t.Equals(n, StringComparison.OrdinalIgnoreCase));
+    }
 
     public static string Normalize(string name) =>
-        All.FirstOrDefault(t => t.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase))
-        ?? throw new ArgumentException($"unknown tool set '{name}' (known: {string.Join(", ", All)})");
+        TryNormalize(name) ?? throw new ArgumentException($"unknown tool group '{name}' (known: {string.Join(", ", All)})");
 }

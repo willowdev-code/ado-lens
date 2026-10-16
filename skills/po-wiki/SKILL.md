@@ -8,6 +8,8 @@ description: Writes or updates a documentation page on the project wiki for a Pr
 Write for the people who will read the page (users, testers, new colleagues): plain language, in the language the
 wiki is written in (look at its other pages), short sections, examples.
 
+First load the tools this needs: `ado_tools enable="wiki;code;boards"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. Facts first:

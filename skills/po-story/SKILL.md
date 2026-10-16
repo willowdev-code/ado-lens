@@ -8,6 +8,8 @@ description: Writes a work item for a Product Owner - a requirement (user story,
 The reader of the item is a developer and a tester; the writer is a Product Owner. Goal: after reading it, everyone
 knows what to do and how to check it — nothing more. Write in the language the user writes in.
 
+First load the tools this needs: `ado_tools enable="write"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. Find out what is needed — ask only what is missing, at most 3 short questions at once:

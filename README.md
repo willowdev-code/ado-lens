@@ -133,7 +133,8 @@ adolens config                               # show settings
 adolens config --connection contoso --project Demo --team "Demo Team"
 adolens config --default-connection fabrikam
 adolens config --mode dev                    # po | dev | full
-adolens config --add-toolset pipelines       # one more tool set on top of the mode
+adolens config --add-toolset pipelines       # one more tool group on top of the mode
+adolens config --load-all-tools true         # every group of the mode at start (more tokens)
 adolens config --confirm-above 3             # updates of more items are previewed first (0: always)
 adolens config --usage-log false
 adolens config --show-tokens true            # end every answer with [~N tokens]
@@ -168,24 +169,28 @@ staging → UAT, master → PROD). Claude asks the user once how they call these
 
 Settings live in `%LOCALAPPDATA%\ado-lens\adolens.json` (no secrets) — they can be edited by hand too.
 
-### Modes and tool sets
+### Modes and tool groups
 
-A mode only chooses which tools Claude sees: fewer tools mean better choices and fewer tokens in every session. It is
-never a permission.
+Every tool definition costs tokens in every session, so a session starts with a small core (about 1.3k tokens) and
+Claude loads a group with `ado_tools enable=<group>` when the conversation needs it — a question about the sprint
+loads `boards`, a new story loads `write`. The skills and prompts load what they use. A mode only chooses which groups
+may be loaded; it is never a permission (the PAT decides).
 
-| Tool set | Tools | po | dev | full |
+| Group | Tools | po | dev | full |
 |---|---|:-:|:-:|:-:|
-| `core` | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_fields` | ✓ | ✓ | ✓ |
-| `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link`, `ado_search`, `ado_undo`, `ado_attachments`, `ado_create_tree` | ✓ | ✓ | ✓ |
-| `pr` | `ado_pr_update` | – | ✓ | ✓ |
-| `pipelines` | `ado_pipeline_run` | – | ✓ | ✓ |
-| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day`, `ado_health`, `ado_release_notes`, `ado_metrics` | ✓ | – | ✓ |
+| `core` (always) | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_tools`, `ado_work_item`, `ado_query`, `ado_search`, `ado_trace` | ✓ | ✓ | ✓ |
+| `write` | `ado_fields`, `ado_create`, `ado_update`, `ado_comment`, `ado_link`, `ado_create_tree`, `ado_undo` | ✓ | ✓ | ✓ |
+| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day`, `ado_health`, `ado_metrics`, `ado_release_notes` | ✓ | – | ✓ |
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
-| `trace` | `ado_trace`, `ado_changes`, `ado_file`, `ado_label`, `ado_review`, `ado_pr`, `ado_pipeline` | ✓ | ✓ | ✓ |
+| `code` | `ado_changes`, `ado_file`, `ado_label`, `ado_review`, `ado_attachments` | ✓ | ✓ | ✓ |
+| `tests` | `ado_tests`, `ado_test_create` | ✓ | – | ✓ |
 | `recipes` | `ado_recipe` | ✓ | ✓ | ✓ |
-| `test` | `ado_tests`, `ado_test_create` | ✓ | – | ✓ |
-| `test`, `recipes` | planned | ✓ | (recipes) | ✓ |
-| `code` | planned | – | ✓ | ✓ |
+| `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
+| `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
+
+`adolens config --add-toolset <group>` allows one more group on top of the mode. A client that does not take new tools
+during a conversation can start with every group of the mode: `adolens config --load-all-tools true` (or *Tools at
+start* in the settings menu) — about 6k tokens per session instead of 1.3k.
 
 ## Tool map
 
@@ -342,7 +347,7 @@ regular expression per line, `!word` for allowed words. Without a list the relea
 
 | File | What it checks |
 |---|---|
-| `SetupTests.cs` | settings, connections and PAT order (Credential Manager first), command line, Claude configuration edits, Credential Manager, HTTP retries and errors, tool definition budget per mode |
+| `SetupTests.cs` | settings, connections and PAT order (Credential Manager first), command line, Claude configuration edits, Credential Manager, HTTP retries and errors, tool definition budget at start and per mode, the session core, tool groups |
 | `MetadataTests.cs` | fetching the structure (levels, inherited process name, bugs on the requirement backlog), change history, compact `ado_fields` answers |
 | `BoardTests.cs` | sprint progress, capacity left with days off, attention list, picking sprints, ended sprints, board columns and WIP, moving cards with the state mapping, backlog order and reordering, my day |
 | `SetupFlowTests.cs` | release versions and packages for updates, the team's wiki table (round trip, hand-edited pages), detecting the flow from releases and branches, the team map on the wiki with its version, local map over the team's |
@@ -375,7 +380,7 @@ issues or commits.
 | rich text | `Html.cs` |
 | people | `Identities.cs` |
 | connections, PAT, Claude registration | `Settings.cs`, `CredentialStore.cs`, `ClaudeConfigs.cs`, `Cli.cs` |
-| modes and tool sets | `Toolsets.cs` |
+| modes and tool groups, loading them | `Toolsets.cs`, `ToolGroups.cs` |
 | HTTP, retries, errors | `AdoClient.cs` |
 
 Documentation is bilingual: every change to `README.md` goes to `README.pl.md` in the same commit.

@@ -49,6 +49,12 @@ public sealed partial class Settings
     /// <summary>Language of the settings console and installer texts: "pl", "en", or null for the language of Windows.</summary>
     public string? Language { get; set; }
 
+    /// <summary>
+    /// Start every session with all tool groups of the mode instead of the core only (for clients that do not take new
+    /// tools during a conversation; costs more tokens per session).
+    /// </summary>
+    public bool LoadAllTools { get; set; }
+
     /// <summary>Where files are saved (save=true); null: Downloads\ADO Lens.</summary>
     public string? DownloadDir { get; set; }
 

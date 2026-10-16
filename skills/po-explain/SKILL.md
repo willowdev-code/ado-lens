@@ -8,6 +8,8 @@ description: Explains how a feature works and why it works that way, in business
 The reader is a Product Owner or a business user: answer in plain language, in the language the user writes in.
 Technical names (objects, methods, files) only in brackets, or when asked for "details".
 
+First load the tools this needs: `ado_tools enable="code;wiki"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. `ado_search text=<feature in the user's words>` — work items, wiki pages and code at once. Try a second wording

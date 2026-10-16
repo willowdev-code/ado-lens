@@ -5,6 +5,8 @@ description: Explains why a piece of code is the way it is - the history of a fi
 
 # Why the code is like this
 
+First load the tools this needs: `ado_tools enable="code"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. `ado_file path=<file or object name> history=true` - changes newest first, with pull requests and work items.

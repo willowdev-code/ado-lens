@@ -16,16 +16,17 @@ public static class McpTools
     static readonly Dictionary<string, string> Lines = new()
     {
         [Toolsets.Core] = """
-            - Field names, values and states differ per process and company: check them with ado_fields before writing.
+            - Checking work against what was asked: ado_trace, then read the diffs with ado_changes - never assume.
+            - "How does X work": ado_search, then read the sources; say what comes from code and what from documentation.
             """,
-        [Toolsets.Work] = """
+        [Toolsets.Write] = """
+            - Field names, values and states differ per process and company: check them with ado_fields before writing.
             - ado_update on many items returns a preview: show it, then repeat the call with confirm.
             - Writing: short and complete - what to do or what was done, no filler. Requirement: goal in 1-2 sentences,
               scope as bullets, testable acceptance criteria in their own field. Bug: what happens, what should, numbered
               steps, where. Task: one sentence. Comment: decision or question first.
-            - "How does X work": ado_search, then read the sources; say what comes from code and what from documentation.
             """,
-        [Toolsets.Test] = """
+        [Toolsets.Tests] = """
             - Test Cases from acceptance criteria: one case per criterion, short steps with an expected result each; show them before creating.
             """,
         [Toolsets.Recipes] = """
@@ -34,8 +35,7 @@ public static class McpTools
         [Toolsets.Boards] = """
             - Say plainly when a sprint has ended or a column is over its WIP limit.
             """,
-        [Toolsets.Trace] = """
-            - Checking work against what was asked: ado_trace, then read the diffs with ado_changes - never assume.
+        [Toolsets.Code] = """
             - A branch's whole history: ado_file path=/ repo=<r> history=true version=<branch>.
             """,
         [Toolsets.Pr] = """
@@ -51,11 +51,20 @@ public static class McpTools
             """,
     };
 
+    const string Groups = """
+        - The core tools are loaded; the others come in groups: before using a tool that is not there, load its group with
+          ado_tools enable=<group> (several: "write;boards"). ado_tools without arguments lists the groups.
+        """;
+
+    /// <summary>Instructions of the groups loaded at start (with groups, the core only) and how to load the others.</summary>
     public static string Instructions(Settings settings)
     {
-        var active = Toolsets.Active(settings);
-        return Intro + string.Concat(Lines.Where(l => active.Contains(l.Key)).Select(l => l.Value));
+        var loaded = Toolsets.Loaded(settings);
+        return Intro + (settings.LoadAllTools ? "" : Groups) + string.Concat(Lines.Where(l => loaded.Contains(l.Key)).Select(l => l.Value));
     }
+
+    /// <summary>The writing and usage hints of a group, returned when the group is loaded during a conversation.</summary>
+    public static string? Hints(string group) => Lines.GetValueOrDefault(group)?.Trim();
 
     /// <summary>
     /// Field values as Claude sends them: an object whose values are text, numbers or booleans, or that object as a JSON
@@ -138,6 +147,12 @@ public static class McpTools
 [McpServerToolType, Toolset(Toolsets.Core)]
 public static class CoreTools
 {
+    [McpServerTool(Name = "ado_tools")]
+    [Description("Loads a group of ADO Lens tools into this conversation: write (create/change/comment/link work items, fields), boards (sprint, board, backlog, metrics, release notes), wiki, code (changes, files, history, D365 labels, checks, attachments), tests, recipes, pr (pull requests), pipelines (builds, deployments, artifacts). Without enable: the groups and what is loaded.")]
+    public static Task<string> Tools(Lens lens, McpServer server,
+        [Description("Group(s) to load: write or \"write;boards\".")] string? enable = null)
+        => McpTools.Run("ado_tools", new { enable }, () => Task.FromResult(ToolGroups.Load(lens.Settings, server, enable)));
+
     [McpServerTool(Name = "ado_status", ReadOnly = true, Idempotent = true)]
     [Description("ADO Lens version, connection, signed-in user, PAT source and metadata age.")]
     public static Task<string> Status(Lens lens,
@@ -164,7 +179,7 @@ public static class CoreTools
             return failed ? throw new InvalidOperationException(text) : text;
         });
 
-    [McpServerTool(Name = "ado_fields", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "ado_fields", ReadOnly = true, Idempotent = true), Toolset(Toolsets.Write)]
     [Description("Work item structure of the project: types by backlog level; with type: states, transitions, fields, required flags, allowed values; with field: one field across types; with changes: what changed in the structure.")]
     public static Task<string> Fields(Lens lens,
         [Description("Work item type, e.g. Bug or Product Backlog Item.")] string? type = null,
@@ -262,10 +277,10 @@ public static class BoardTools
             () => BoardQueries.MyDayAsync(lens, connection, project, since, null, ct));
 }
 
-[McpServerToolType, Toolset(Toolsets.Trace)]
+[McpServerToolType, Toolset(Toolsets.Code)]
 public static class TraceTools
 {
-    [McpServerTool(Name = "ado_trace", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "ado_trace", ReadOnly = true, Idempotent = true), Toolset(Toolsets.Core)]
     [Description("Was a work item done as asked and where is it: acceptance criteria and their changes, linked code (item and tasks), builds, each release stage YES / NOT YET, tests, signals.")]
     public static Task<string> Trace(Lens lens, int id,
         [Description("summary | normal | full.")] string? detail = null,
@@ -348,7 +363,7 @@ public static class PrReadTools
 public static class PrTools
 {
     [McpServerTool(Name = "ado_pr_update")]
-    [Description("Acts on pull requests: create (repo, source, target, title, text, workItems, reviewers, draft), comment (text, optional file and line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), tag (tags), publish, complete, abandon. @[name] in text notifies.")]
+    [Description("Pull request actions: create (repo, source, target, title, text, workItems, reviewers, draft), comment (text, file, line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), tag, publish, complete, abandon. @[name] notifies.")]
     public static Task<string> PrUpdate(Lens lens,
         string action,
         int? id = null,
@@ -365,7 +380,7 @@ public static class PrTools
         [Description("Work item ids: 123;456.")] string? workItems = null,
         [Description("Names or e-mails separated by ';'.")] string? reviewers = null,
         bool draft = false,
-        [Description("For tag and create: 'a; b' adds, '-c' removes.")] string? tags = null,
+        [Description("'a; b' adds, '-c' removes.")] string? tags = null,
         bool deleteSourceBranch = false,
         [Description("noFastForward | squash | rebase | rebaseMerge.")] string? mergeStrategy = null,
         string? connection = null,
@@ -457,10 +472,10 @@ public static class WikiTools
             () => WikiQueries.WriteAsync(lens, connection, project, wiki, path, content, mode, version, comment, ct));
 }
 
-[McpServerToolType, Toolset(Toolsets.Work)]
+[McpServerToolType, Toolset(Toolsets.Write)]
 public static class WorkTools
 {
-    [McpServerTool(Name = "ado_work_item", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "ado_work_item", ReadOnly = true, Idempotent = true), Toolset(Toolsets.Core)]
     [Description("Work items by id: state, people, paths, filled fields, description and acceptance criteria as markdown, parent/children/related, linked code and builds.")]
     public static Task<string> WorkItem(Lens lens,
         [Description("One or more ids: 123 or 123;456.")] string ids,
@@ -471,7 +486,7 @@ public static class WorkTools
         => McpTools.Run("ado_work_item", new { ids, include, detail, connection },
             () => WorkQueries.ItemAsync(lens, connection, ids, include, detail, ct));
 
-    [McpServerTool(Name = "ado_query", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "ado_query", ReadOnly = true, Idempotent = true), Toolset(Toolsets.Core)]
     [Description("Work items found by WIQL or by a saved query (path like 'Shared Queries/Open bugs' or id), one line each.")]
     public static Task<string> Query(Lens lens,
         [Description("WIQL; use reference names from ado_fields. Macros like @Me and @CurrentIteration work.")] string? wiql = null,
@@ -496,8 +511,8 @@ public static class WorkTools
         string? area = null,
         [Description("Tags separated by ';'.")] string? tags = null,
         string? state = null,
-        [Description("Other fields by name or reference name: {\"Priority\": 2}.")] System.Text.Json.JsonElement? fields = null,
-        [Description("A team template (ado_fields type=… lists them) for the values not given.")] string? template = null,
+        [Description("Other fields by name: {\"Priority\": 2}.")] System.Text.Json.JsonElement? fields = null,
+        [Description("Team template for values not given (ado_fields type=… lists them).")] string? template = null,
         string? project = null,
         string? connection = null,
         CancellationToken ct = default)
@@ -509,7 +524,7 @@ public static class WorkTools
             }, ct));
 
     [McpServerTool(Name = "ado_update")]
-    [Description("Changes one or many work items (ids or WIQL): state only along the process transitions, people by name; several items are previewed first and written with confirm=<token from the preview>.")]
+    [Description("Changes work items (ids or WIQL): state along the process transitions, people by name; several items are previewed first, then written with confirm=<token>.")]
     public static Task<string> Update(Lens lens,
         [Description("Ids: 123 or 123;456.")] string? ids = null,
         [Description("WIQL selecting the items instead of ids.")] string? wiql = null,
@@ -522,8 +537,8 @@ public static class WorkTools
         [Description("Iteration path, 'current' or 'next'.")] string? iteration = null,
         string? area = null,
         [Description("'a; b' replaces, '+a; -b' adds and removes.")] string? tags = null,
-        [Description("Other fields by name or reference name; empty value clears.")] System.Text.Json.JsonElement? fields = null,
-        [Description("Markdown comment for each item, alone or with changes; @[name or e-mail] notifies a person.")] string? comment = null,
+        [Description("Other fields by name; empty value clears.")] System.Text.Json.JsonElement? fields = null,
+        [Description("Markdown comment for each item; @[name] notifies.")] string? comment = null,
         [Description("Token from the preview.")] string? confirm = null,
         string? connection = null,
         CancellationToken ct = default)
@@ -563,7 +578,7 @@ public static class WorkTools
         => McpTools.Run("ado_create_tree", new { parent, iteration, area, confirm, project, connection },
             () => WorkTree.CreateAsync(lens, connection, project, parent, items, iteration, area, confirm, ct));
 
-    [McpServerTool(Name = "ado_attachments")]
+    [McpServerTool(Name = "ado_attachments"), Toolset(Toolsets.Code)]
     [Description("Files of a work item and screenshots pasted into it: the list; file=<name or number> gives a document's text (PDF, Word, Excel, PowerPoint, e-mail, ZIP list, text) or shows images and scanned pages; save=true streams it to disk (any size) and returns the path; add=<local path> attaches a file.")]
     public static async Task<IEnumerable<ModelContextProtocol.Protocol.ContentBlock>> AttachmentsTool(Lens lens, int id,
         string? file = null,
@@ -589,7 +604,7 @@ public static class WorkTools
         return blocks;
     }
 
-    [McpServerTool(Name = "ado_search", ReadOnly = true, Idempotent = true)]
+    [McpServerTool(Name = "ado_search", ReadOnly = true, Idempotent = true), Toolset(Toolsets.Core)]
     [Description("One search over work items, wiki pages and code of the project, grouped - the start for \"how does X work\".")]
     public static Task<string> Search(Lens lens, string text,
         [Description("work;wiki;code (default all).")] string? scope = null,
@@ -606,7 +621,7 @@ public static class WorkTools
             () => list ? Task.FromResult(Audit.List(lens, connection, 10)) : Audit.UndoAsync(lens, connection, confirm, ct));
 }
 
-[McpServerToolType, Toolset(Toolsets.Test)]
+[McpServerToolType, Toolset(Toolsets.Tests)]
 public static class TestTools
 {
     [McpServerTool(Name = "ado_tests", ReadOnly = true, Idempotent = true)]

@@ -8,6 +8,8 @@ description: Checks whether a work item was done as asked and where the change i
 The reader is a Product Owner, not a developer: answer in plain business language, in the language the user writes in.
 Technical names (objects, methods, files, ids of commits) only in brackets or when asked for "details".
 
+First load the tools this needs: `ado_tools enable="code;write"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. `ado_trace id=<id>` — what was asked (acceptance criteria), what code is linked, builds, where it is deployed, signals.
