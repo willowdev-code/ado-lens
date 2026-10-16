@@ -63,6 +63,53 @@ public static partial class PullRequestQueries
         return sb.ToString().TrimEnd();
     }
 
+    /// <summary>
+    /// Pull requests completed into a branch (all repositories of the project, or one), newest first, optionally since a
+    /// date, each with its work items: "what went into staging this week".
+    /// </summary>
+    public static async Task<string> MergedAsync(Lens lens, string? connection, string? project, string branch, string? repo, string? since, int top,
+        CancellationToken ct = default)
+    {
+        var session = lens.For(connection);
+        var name = session.Project(project);
+        var target = branch.StartsWith("refs/", StringComparison.Ordinal) ? branch : "refs/heads/" + branch.Trim();
+        var from = since is null ? (DateTime?)null : Formatting.ParseSince(since);
+        top = Math.Clamp(top, 1, 200);
+        var repoFilter = repo is null ? "" : $"&searchCriteria.repositoryId={(await session.Code.RepoAsync(repo, name, ct)).Id}";
+        // The API returns completed PRs newest first; read enough to cover the period, then cut.
+        var list = await session.Client.GetListAsync(
+            $"{AdoClient.Scope(name)}_apis/git/pullrequests?searchCriteria.status=completed&searchCriteria.targetRefName={Uri.EscapeDataString(target)}{repoFilter}&$top={(from is null ? top : 500)}", ct);
+        static DateTime? Closed(JsonElement pr) =>
+            DateTime.TryParse(Json.Str(pr, "closedDate"), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal, out var d) ? d : null;
+        var prs = list.Where(pr => from is null || Closed(pr) >= from).OrderByDescending(Closed).Take(top).ToList();
+        var label = $"{Code.Short(target)}{(repo is null ? "" : $" ({repo})")}";
+        if (prs.Count == 0) return $"no pull requests completed into {label} in {name}{(from is null ? "" : $" since {from.Value.ToLocalTime():yyyy-MM-dd}")}";
+
+        var items = await Task.WhenAll(prs.Select(async pr =>
+        {
+            try
+            {
+                var linked = await session.Client.GetListAsync($"_apis/git/repositories/{Json.Str(Json.Obj(pr, "repository"), "id")}/pullRequests/{pr.GetProperty("pullRequestId").GetInt32()}/workitems", ct);
+                return linked.Select(w => int.TryParse(Json.Str(w, "id"), out var i) ? i : 0).Where(i => i > 0).ToList();
+            }
+            catch (AdoApiException) { return []; }
+        }));
+        var ids = items.SelectMany(x => x).Distinct().ToList();
+        var heads = ids.Count == 0 ? [] : (await session.Work.GetAsync(ids, relations: false, ["System.Id", "System.WorkItemType", "System.State", "System.Title"], ct))
+            .ToDictionary(WorkItems.Id, w => $"#{WorkItems.Id(w)} {Formatting.Collapse(WorkItems.Field(w, "System.Title") ?? "", 50)} ({WorkItems.Field(w, "System.State")})");
+        var sb = new StringBuilder($"{prs.Count} pull request(s) completed into {label} in {name}{(from is null ? "" : $" since {from.Value.ToLocalTime():yyyy-MM-dd}")}, newest first:\n");
+        for (var i = 0; i < prs.Count; i++)
+        {
+            var pr = prs[i];
+            var wi = items[i].Where(heads.ContainsKey).Select(x => heads[x]).ToList();
+            sb.AppendLine($"- PR {pr.GetProperty("pullRequestId").GetInt32()} {Closed(pr):yyyy-MM-dd} {Json.Str(Json.Obj(pr, "repository"), "name")}: " +
+                          $"{Formatting.Collapse(Json.Str(pr, "title") ?? "", 70)} ({Json.Str(Json.Obj(pr, "createdBy"), "displayName")}, from {Formatting.Collapse(Code.Short(Json.Str(pr, "sourceRefName")) ?? "", 40)})" +
+                          (wi.Count > 0 ? " -> " + string.Join("; ", wi) : " - no work item"));
+        }
+        if (list.Count >= (from is null ? top : 500) && prs.Count == top) sb.Append($"(top={top}; more with a higher top or a later since)");
+        return sb.ToString().TrimEnd();
+    }
+
     static async Task<JsonElement> GetAsync(Session session, string? repo, int id, CancellationToken ct)
     {
         var repoId = repo is null ? null : (await session.Code.RepoAsync(repo, session.Config.Project, ct)).Id;

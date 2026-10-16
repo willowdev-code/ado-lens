@@ -20,7 +20,7 @@ public sealed partial class CommandLine
         ["logout"] = ["connection=", "all", "remove"],
         ["connections"] = [],
         ["trace"] = ["connection=", "detail="],
-        ["pr"] = ["connection=", "project=", "repo=", "list=", "detail="],
+        ["pr"] = ["connection=", "project=", "repo=", "list=", "detail=", "merged=", "since=", "top="],
         ["pipeline"] = ["connection=", "project=", "definition=", "branch=", "top=", "detail=", "artifacts", "artifact=", "part=", "save", "to="],
         ["changes"] = ["connection=", "repo=", "file=", "detail="],
         ["config"] = ["env=", "remove-env=", "connection=", "default-connection=", "project=", "team=", "mode=", "usage-log=", "add-toolset=", "remove-toolset=", "confirm-above=", "show-tokens=", "language=", "label-languages=", "download-dir="],

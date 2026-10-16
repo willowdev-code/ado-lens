@@ -162,8 +162,10 @@ public static partial class BoardQueries
         string title, condition;
         if (since is not null)
         {
-            var from = Formatting.ParseSince(since, day);
-            var to = until is null ? day : Formatting.ParseSince(until, day);
+            // A date ("2026-10-01") comes back in UTC; the query and the title work with local days.
+            static DateTime LocalDay(DateTime d) => (d.Kind == DateTimeKind.Utc ? d.ToLocalTime() : d).Date;
+            var from = LocalDay(Formatting.ParseSince(since, day));
+            var to = until is null ? day : LocalDay(Formatting.ParseSince(until, day));
             title = $"{from:yyyy-MM-dd} - {to:yyyy-MM-dd}";
             condition = $" AND [Microsoft.VSTS.Common.StateChangeDate] >= '{from:yyyy-MM-dd}' AND [Microsoft.VSTS.Common.StateChangeDate] < '{to.AddDays(1):yyyy-MM-dd}'" +
                         await AreaAsync(boards, name, t, ct);

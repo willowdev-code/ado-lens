@@ -53,6 +53,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           trace <id>       was it done as asked, and where is it (DEV / UAT / PROD)   --detail summary|full
           changes <523 | C523 | "PR 482" | sha --repo <r>>   files, X++ methods; --file <name> for a diff
           pr [<id>]        PRs waiting for my review and mine (--list active: all); with id: reviewers, checks, threads
+                            --merged <branch> [--since 7d] [--repo <r>] [--top 30]: completed into a branch, with work items
           pipeline [<build id>]   recent builds (--definition <name> --branch <b> --top 10); with id: why it failed
                             --artifacts (list) | --artifact <name> [--part <file>] [--save [--to <folder>]]
           wiki [<page path>]  --search <text>  --depth 2  --detail full  --wiki <name>
@@ -843,7 +844,9 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         var lens = NewLens();
         Print(Int(cl.Positional.FirstOrDefault()) is { } id
             ? await PullRequestQueries.ShowAsync(lens, cl.Opt("connection"), id, cl.Opt("repo"), cl.Opt("detail"))
-            : await PullRequestQueries.ListAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("list")));
+            : cl.Opt("merged") is { } branch
+                ? await PullRequestQueries.MergedAsync(lens, cl.Opt("connection"), cl.Opt("project"), branch, cl.Opt("repo"), cl.Opt("since"), Int(cl.Opt("top")) ?? 30)
+                : await PullRequestQueries.ListAsync(lens, cl.Opt("connection"), cl.Opt("project"), cl.Opt("list")));
         return 0;
     }
 

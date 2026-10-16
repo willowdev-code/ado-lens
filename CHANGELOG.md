@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 — unreleased
+
+- `ado_pr merged=<branch>` (`adolens pr --merged staging --since 7d`): pull requests completed into a branch, newest
+  first, each with its work items and their state - "what went into UAT this week".
+- Dates given as `since=yyyy-MM-dd` are local days (before, a day earlier in Polish time was shown and used).
+
 ## 0.7.1 — 2026-10-15
 
 Fixes from use in a process with many required fields.
