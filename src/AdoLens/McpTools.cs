@@ -321,17 +321,22 @@ public static class TraceTools
 public static class PrTools
 {
     [McpServerTool(Name = "ado_pr", ReadOnly = true, Idempotent = true)]
-    [Description("Pull requests: without id the ones waiting for my review and mine (list=active: all active); with id: status, reviewers and votes, checks, work items, open comment threads.")]
+    [Description("Pull requests: without id the ones waiting for my review and mine (list=active: all active); merged=<branch>: those completed into a branch (since, top), with their work items; with id: status, reviewers and votes, checks, work items, open comment threads.")]
     public static Task<string> Pr(Lens lens,
         int? id = null,
-        [Description("Repository name (optional with id).")] string? repo = null,
+        [Description("Repository name (optional).")] string? repo = null,
         [Description("review (default) | active.")] string? list = null,
+        [Description("Target branch, e.g. staging.")] string? merged = null,
+        [Description("With merged: 7d, 2w or yyyy-MM-dd.")] string? since = null,
+        int top = 30,
         [Description("full: all threads, whole description.")] string? detail = null,
         string? project = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_pr", new { id, repo, list, detail, project, connection },
-            () => id is { } n ? PullRequestQueries.ShowAsync(lens, connection, n, repo, detail, ct) : PullRequestQueries.ListAsync(lens, connection, project, list, ct));
+        => McpTools.Run("ado_pr", new { id, repo, list, merged, since, top, detail, project, connection },
+            () => id is { } n ? PullRequestQueries.ShowAsync(lens, connection, n, repo, detail, ct)
+                : merged is not null ? PullRequestQueries.MergedAsync(lens, connection, project, merged, repo, since, top, ct)
+                : PullRequestQueries.ListAsync(lens, connection, project, list, ct));
 
     [McpServerTool(Name = "ado_pr_update")]
     [Description("Acts on pull requests: create (repo, source, target, title, text, workItems, reviewers, draft), comment (text, optional file and line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), publish, complete, abandon. @[name] in text notifies.")]
@@ -368,9 +373,11 @@ public static class PrTools
 public static class PipelineTools
 {
     [McpServerTool(Name = "ado_pipeline", ReadOnly = true, Idempotent = true)]
-    [Description("Builds: recent runs (optionally of one pipeline or branch); with build: why it failed - failed steps, errors and the error lines of the log; artifacts=true lists its artifacts, artifact=<name> its files (part=<file> reads one, save=true saves it to disk).")]
+    [Description("Builds: recent runs (optionally of one pipeline or branch); with build: why it failed - failed steps, errors and the error lines of the log; artifacts=true lists its artifacts, artifact=<name> its files (part=<file> reads one, save=true saves it to disk); deployments=true: recent release deployments (definition, stage) with dates.")]
     public static Task<string> Pipeline(Lens lens,
         int? build = null,
+        bool deployments = false,
+        [Description("With deployments: stage name, e.g. UAT.")] string? stage = null,
         bool artifacts = false,
         string? artifact = null,
         string? part = null,
@@ -382,8 +389,9 @@ public static class PipelineTools
         string? project = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_pipeline", new { build, artifacts, artifact, part, save, definition, branch, top, detail, project, connection },
-            () => build is { } b
+        => McpTools.Run("ado_pipeline", new { build, deployments, stage, artifacts, artifact, part, save, definition, branch, top, detail, project, connection },
+            () => deployments ? PipelineQueries.DeploymentsAsync(lens, connection, project, definition, stage, top, ct)
+                : build is { } b
                 ? artifacts || artifact is not null ? PipelineQueries.ArtifactsAsync(lens, connection, project, b, artifact, part, save, ct)
                   : PipelineQueries.BuildAsync(lens, connection, project, b, detail, ct)
                 : PipelineQueries.ListAsync(lens, connection, project, definition, branch, top, ct));

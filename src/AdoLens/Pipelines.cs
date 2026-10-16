@@ -74,6 +74,43 @@ public static partial class PipelineQueries
         return string.Join('\n', hits.Select(x => $"{x.i + 1}: {Formatting.Collapse(x.l, 300)}"));
     }
 
+    /// <summary>
+    /// Recent deployments of classic releases, newest first: definition, stage, release name, when it finished, the
+    /// build deployed - "when did XYZ reach UAT" (the date then goes into since= of other tools).
+    /// </summary>
+    public static async Task<string> DeploymentsAsync(Lens lens, string? connection, string? project, string? definition, string? stage, int top,
+        CancellationToken ct = default)
+    {
+        var session = lens.For(connection);
+        var name = session.Project(project);
+        var vsrm = session.Client.ServiceUrl("vsrm") + Uri.EscapeDataString(name) + "/";
+        var filter = "";
+        if (!string.IsNullOrWhiteSpace(definition))
+        {
+            var defs = await session.Client.GetListAsync($"{vsrm}_apis/release/definitions?searchText={Uri.EscapeDataString(definition.Trim())}", ct);
+            var def = defs.FirstOrDefault(d => string.Equals(Json.Str(d, "name"), definition.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (def.ValueKind != JsonValueKind.Object) def = defs.FirstOrDefault();
+            if (def.ValueKind != JsonValueKind.Object) return $"no release definition like '{definition}' in {name}";
+            filter = $"&definitionId={def.GetProperty("id").GetInt32()}";
+        }
+        top = Math.Clamp(top, 1, 100);
+        var list = await session.Client.GetListAsync($"{vsrm}_apis/release/deployments?queryOrder=descending&$top={(stage is null ? top : 200)}{filter}", ct);
+        var rows = list.Where(d => stage is null || (Json.Str(Json.Obj(d, "releaseEnvironment"), "name") ?? "").Contains(stage.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Take(top).ToList();
+        if (rows.Count == 0) return $"no deployments found in {name}{(definition is null ? "" : $" for {definition}")}{(stage is null ? "" : $", stage {stage}")}";
+        var sb = new StringBuilder($"deployments in {name}, newest first:\n");
+        foreach (var d in rows)
+        {
+            var when = DateTime.TryParse(Json.Str(d, "completedOn") ?? Json.Str(d, "startedOn") ?? Json.Str(d, "queuedOn"), CultureInfo.InvariantCulture,
+                DateTimeStyles.AdjustToUniversal, out var w) ? w.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "?";
+            var artifact = Json.Arr(Json.Obj(d, "release"), "artifacts").FirstOrDefault(a => Json.Bool(a, "isPrimary"));
+            var version = Json.Str(Json.Obj(Json.Obj(artifact, "definitionReference"), "version"), "name");
+            sb.AppendLine($"- {when} {Json.Str(Json.Obj(d, "releaseDefinition"), "name")} / {Json.Str(Json.Obj(d, "releaseEnvironment"), "name")}: " +
+                          $"{Json.Str(Json.Obj(d, "release"), "name")} {Json.Str(d, "deploymentStatus")}{(version is null ? "" : $", build {version}")}");
+        }
+        return sb.Append("A time here works as since= (e.g. ado_pr merged=staging since=\"2026-10-15 14:30\").").ToString();
+    }
+
     const long MaxArtifactRead = 20 * 1024 * 1024;
 
     /// <summary>
