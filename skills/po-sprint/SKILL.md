@@ -8,6 +8,8 @@ description: Summarizes a sprint or a period for a Product Owner and stakeholder
 The reader is a Product Owner or a stakeholder: plain business language, in the user's language; ids and technical
 names only in brackets.
 
+First load the tools this needs: `ado_tools enable="boards;wiki"` (one call; skip it when they are already there).
+
 ## How is the sprint going
 
 1. `ado_sprint` (the team's current sprint; `sprint=next|previous|<name>` when asked). If the sprint has ended, say so

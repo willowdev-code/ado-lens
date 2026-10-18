@@ -8,7 +8,7 @@ namespace AdoLens;
 /// <summary>Pull requests: lists, one PR with reviewers, policies, work items and human comment threads, and actions.</summary>
 public static partial class PullRequestQueries
 {
-    public static readonly string[] Actions = ["create", "comment", "reply", "resolve", "vote", "publish", "complete", "abandon"];
+    public static readonly string[] Actions = ["create", "comment", "reply", "resolve", "vote", "tag", "publish", "complete", "abandon"];
 
     static readonly Dictionary<string, int> Votes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -37,7 +37,7 @@ public static partial class PullRequestQueries
         return $"PR {pr.GetProperty("pullRequestId").GetInt32()} [{Json.Str(Json.Obj(pr, "repository"), "name")}] {Json.Str(pr, "title")}: " +
                $"{Code.Short(Json.Str(pr, "targetRefName"))} <- {Code.Short(Json.Str(pr, "sourceRefName"))} " +
                $"({Json.Str(Json.Obj(pr, "createdBy"), "displayName")}, {Ago(Json.Str(pr, "creationDate"))})" +
-               (votes.Any() ? $"; {string.Join(", ", votes)}" : "") + (flags.Count > 0 ? $"; {string.Join(", ", flags)}" : "");
+               (votes.Any() ? $"; {string.Join(", ", votes)}" : "") + (flags.Count > 0 ? $"; {string.Join(", ", flags)}" : "") + Tags(pr);
     }
 
     public static async Task<string> ListAsync(Lens lens, string? connection, string? project, string? list, CancellationToken ct = default)
@@ -106,7 +106,7 @@ public static partial class PullRequestQueries
             var wi = items[i].Where(heads.ContainsKey).Select(x => heads[x]).ToList();
             sb.AppendLine($"- PR {pr.GetProperty("pullRequestId").GetInt32()} {Closed(pr):yyyy-MM-dd} {Json.Str(Json.Obj(pr, "repository"), "name")}: " +
                           $"{Formatting.Collapse(Json.Str(pr, "title") ?? "", 70)} ({Json.Str(Json.Obj(pr, "createdBy"), "displayName")}, from {Formatting.Collapse(Code.Short(Json.Str(pr, "sourceRefName")) ?? "", 40)})" +
-                          (wi.Count > 0 ? " -> " + string.Join("; ", wi) : " - no work item"));
+                          Tags(pr) + (wi.Count > 0 ? " -> " + string.Join("; ", wi) : " - no work item"));
         }
         if (list.Count >= (from is null ? top : 500) && prs.Count == top) sb.Append($"(top={top}; more with a higher top or a later since)");
         return sb.ToString().TrimEnd();
@@ -229,6 +229,32 @@ public static partial class PullRequestQueries
         public bool Draft { get; init; }
         public bool DeleteSourceBranch { get; init; }
         public string? MergeStrategy { get; init; }
+        /// <summary>"a; b" adds, "-c" removes (pull request labels).</summary>
+        public string? Tags { get; init; }
+    }
+
+    /// <summary>The active labels (tags) of a pull request as "[tags: a; b]", or "".</summary>
+    internal static string Tags(JsonElement pr)
+    {
+        var names = Json.Arr(pr, "labels").Where(l => !l.TryGetProperty("active", out var a) || a.ValueKind != JsonValueKind.False)
+            .Select(l => Json.Str(l, "name")).Where(n => !string.IsNullOrEmpty(n)).ToList();
+        return names.Count == 0 ? "" : $" [tags: {string.Join("; ", names)}]";
+    }
+
+    /// <summary>Adds and removes labels: "a; b" adds, "-c" removes; returns the labels after the change.</summary>
+    static async Task<List<string>> SetTagsAsync(AdoClient client, string baseUrl, string tags, CancellationToken ct)
+    {
+        foreach (var t in tags.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (t.StartsWith('-'))
+            {
+                try { await client.SendAsync(HttpMethod.Delete, $"{baseUrl}/labels/{Uri.EscapeDataString(t[1..].Trim())}", null, null, ct); }
+                catch (AdoApiException ex) when (ex.Status == System.Net.HttpStatusCode.NotFound) { }
+            }
+            else await client.PostAsync($"{baseUrl}/labels", new { name = t.TrimStart('+').Trim() }, ct);
+        }
+        return (await client.GetListAsync($"{baseUrl}/labels", ct)).Where(l => !l.TryGetProperty("active", out var a) || a.ValueKind != JsonValueKind.False)
+            .Select(l => Json.Str(l, "name")).Where(n => n is not null).Select(n => n!).ToList();
     }
 
     public static async Task<string> ActAsync(Lens lens, string? connection, PrAction a, CancellationToken ct = default)
@@ -257,8 +283,10 @@ public static partial class PullRequestQueries
                 ["reviewers"] = reviewers,
             };
             var pr = await client.PostAsync($"_apis/git/repositories/{repo.Id}/pullrequests", body, ct);
+            if (!string.IsNullOrWhiteSpace(a.Tags))
+                await SetTagsAsync(client, $"_apis/git/repositories/{repo.Id}/pullrequests/{pr.GetProperty("pullRequestId").GetInt32()}", a.Tags, ct);
             var words = Html.Words(a.Text);
-            return $"created {Line(pr)}" + (WorkQueries.ParseIds(a.WorkItems).Count == 0 ? "\nnote: no work item linked (branch policies often require one)" : "")
+            return $"created {Line(pr)}{(string.IsNullOrWhiteSpace(a.Tags) ? "" : $" [tags: {a.Tags}]")}" + (WorkQueries.ParseIds(a.WorkItems).Count == 0 ? "\nnote: no work item linked (branch policies often require one)" : "")
                    + (words > 150 ? $"\nnote: description has {words} words; usually ≤ 150 - what and why, changes, how to check" : "");
         }
 
@@ -305,6 +333,12 @@ public static partial class PullRequestQueries
                 var (me, _) = await new Boards(session).MeAsync(ct);
                 await client.SendAsync(HttpMethod.Put, $"{baseUrl}/reviewers/{me}", new { vote }, "application/json", ct);
                 return $"voted on PR {id}: {VoteText(vote)}";
+            }
+            case "tag":
+            {
+                if (string.IsNullOrWhiteSpace(a.Tags)) throw new ArgumentException("tag needs tags: \"a; b\" adds, \"-c\" removes");
+                var now = await SetTagsAsync(client, baseUrl, a.Tags, ct);
+                return $"PR {id} tags: {(now.Count == 0 ? "none" : string.Join("; ", now))}";
             }
             case "publish":
                 await client.SendAsync(HttpMethod.Patch, baseUrl, new { isDraft = false }, "application/json", ct);

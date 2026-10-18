@@ -136,7 +136,8 @@ adolens config                               # pokaż ustawienia
 adolens config --connection contoso --project Demo --team "Demo Team"
 adolens config --default-connection fabrikam
 adolens config --mode dev                    # po | dev | full
-adolens config --add-toolset pipelines       # dodatkowy zestaw narzędzi ponad tryb
+adolens config --add-toolset pipelines       # dodatkowa grupa narzędzi ponad tryb
+adolens config --tool-loading auto           # auto | demand | all: kiedy ładować grupy narzędzi
 adolens config --confirm-above 3             # zmiany większej liczby elementów najpierw jako podgląd (0: zawsze)
 adolens config --usage-log false
 adolens config --show-tokens true            # każda odpowiedź kończy się [~N tokens]
@@ -169,24 +170,32 @@ staging → UAT, master → PROD). Claude raz pyta użytkownika, jak nazywa te �
 
 Ustawienia siedzą w `%LOCALAPPDATA%\ado-lens\adolens.json` (bez sekretów) — można je też edytować ręcznie.
 
-### Tryby i zestawy narzędzi
+### Tryby i grupy narzędzi
 
-Tryb wybiera tylko, które narzędzia widzi Claude: mniej narzędzi to trafniejszy wybór i mniej tokenów w każdej sesji.
-Nigdy nie jest uprawnieniem.
+Każda definicja narzędzia kosztuje tokeny w każdej sesji, więc sesja startuje z małym rdzeniem (ok. 1,5 tys. tokenów),
+a Claude dociąga grupę przez `ado_tools enable=<grupa>`, gdy rozmowa jej potrzebuje — pytanie o sprint ładuje `boards`,
+nowa historyjka `write`. Skille i prompty same ładują to, czego używają. Tryb wybiera tylko, które grupy wolno załadować;
+nigdy nie jest uprawnieniem (o tym decyduje PAT).
 
-| Zestaw | Narzędzia | po | dev | full |
+| Grupa | Narzędzia | po | dev | full |
 |---|---|:-:|:-:|:-:|
-| `core` | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_fields` | ✓ | ✓ | ✓ |
-| `work` | `ado_work_item`, `ado_query`, `ado_create`, `ado_update`, `ado_comment`, `ado_link`, `ado_search`, `ado_undo`, `ado_attachments`, `ado_create_tree` | ✓ | ✓ | ✓ |
-| `pr` | `ado_pr_update` | – | ✓ | ✓ |
-| `pipelines` | `ado_pipeline_run` | – | ✓ | ✓ |
-| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day`, `ado_health`, `ado_release_notes`, `ado_metrics` | ✓ | – | ✓ |
+| `core` (zawsze) | `ado_status`, `ado_settings`, `ado_upgrade`, `ado_tools`, `ado_work_item`, `ado_query`, `ado_search`, `ado_trace` | ✓ | ✓ | ✓ |
+| `write` | `ado_fields`, `ado_create`, `ado_update`, `ado_comment`, `ado_link`, `ado_create_tree`, `ado_undo` | ✓ | ✓ | ✓ |
+| `boards` | `ado_sprint`, `ado_board`, `ado_backlog`, `ado_my_day`, `ado_health`, `ado_metrics`, `ado_release_notes` | ✓ | – | ✓ |
 | `wiki` | `ado_wiki`, `ado_wiki_write` | ✓ | ✓ | ✓ |
-| `trace` | `ado_trace`, `ado_changes`, `ado_file`, `ado_label`, `ado_review`, `ado_pr`, `ado_pipeline` | ✓ | ✓ | ✓ |
+| `code` | `ado_changes`, `ado_file`, `ado_label`, `ado_review`, `ado_attachments` | ✓ | ✓ | ✓ |
+| `tests` | `ado_tests`, `ado_test_create` | ✓ | – | ✓ |
 | `recipes` | `ado_recipe` | ✓ | ✓ | ✓ |
-| `test` | `ado_tests`, `ado_test_create` | ✓ | – | ✓ |
-| `test`, `recipes` | w planie | ✓ | (recipes) | ✓ |
-| `code` | w planie | – | ✓ | ✓ |
+| `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
+| `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
+
+`adolens config --add-toolset <grupa>` dopuszcza jeszcze jedną grupę ponad tryb. Kiedy ładować grupy, ustawia
+`adolens config --tool-loading` (albo *Narzędzia na start* w menu ustawień):
+
+- `auto` (domyślnie): na żądanie w Claude Code, który przyjmuje nowe narzędzia w trakcie rozmowy; w innych klientach,
+  także w Claude Desktop, wszystkie grupy trybu od startu (ok. 6–7 tys. tokenów), żeby niczego tam nie brakowało;
+- `demand`: na żądanie w każdym kliencie (ok. 1,3 tys. tokenów na start) — dla klienta, o którym wiadomo, że przyjmuje nowe narzędzia;
+- `all`: wszystkie grupy trybu od startu wszędzie.
 
 ## Mapa narzędzi
 
@@ -342,7 +351,7 @@ i publikuje go razem z `.sha256` i opisem z `CHANGELOG.md` (podgląd: `.\release
 
 | Plik | Co sprawdza |
 |---|---|
-| `SetupTests.cs` | ustawienia, połączenia i kolejność PAT (najpierw Menedżer poświadczeń), linia poleceń, edycja konfiguracji Claude'a, Menedżer poświadczeń, ponawianie i błędy HTTP, budżet definicji narzędzi na tryb, faktyczna rejestracja narzędzi |
+| `SetupTests.cs` | ustawienia, połączenia i kolejność PAT (najpierw Menedżer poświadczeń), linia poleceń, edycja konfiguracji Claude'a, Menedżer poświadczeń, ponawianie i błędy HTTP, budżet definicji narzędzi na start i na tryb, rdzeń sesji, grupy narzędzi |
 | `MetadataTests.cs` | pobieranie struktury (poziomy, nazwa procesu dziedziczonego, bugi na backlogu wymagań), historia zmian, zwięzłe odpowiedzi `ado_fields` |
 | `BoardTests.cs` | postęp sprintu, pozostała pojemność z dniami wolnymi, lista do uwagi, wybór sprintu, zakończone sprinty, kolumny tablicy i WIP, przesuwanie kart z mapowaniem stanów, kolejność backlogu i jej zmiana, mój dzień |
 | `SetupFlowTests.cs` | wersje i paczki wydań do aktualizacji, tabela zespołu na wiki (w obie strony, strony poprawiane ręcznie), wykrywanie przepływu z release'ów i gałęzi, mapa zespołu na wiki z wersją, mapa lokalna ponad zespołową |
@@ -375,7 +384,7 @@ organizacji do testów, zgłoszeń ani commitów.
 | tekst sformatowany | `Html.cs` |
 | osoby | `Identities.cs` |
 | połączenia, PAT, rejestracja w Claude | `Settings.cs`, `CredentialStore.cs`, `ClaudeConfigs.cs`, `Cli.cs` |
-| tryby i zestawy narzędzi | `Toolsets.cs` |
+| tryby i grupy narzędzi, ich ładowanie | `Toolsets.cs`, `ToolGroups.cs` |
 | HTTP, ponawianie, błędy | `AdoClient.cs` |
 
 Dokumentacja jest w dwóch językach: każdą zmianę w `README.md` trzeba odzwierciedlić w `README.pl.md` w tym samym commicie.

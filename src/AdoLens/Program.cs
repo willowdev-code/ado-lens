@@ -149,9 +149,9 @@ async Task<int> RunServerAsync()
     builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
-    var toolTypes = Toolsets.TypesFor(lens.Settings);
+    var startTools = Toolsets.Methods(Toolsets.Loaded(lens.Settings)).Select(Toolsets.ToolName).ToList();
     if (Environment.GetEnvironmentVariable("ADOLENS_VERBOSE") == "1")
-        Console.Error.WriteLine($"ado-lens: mode {lens.Settings.Mode}, tool classes: {string.Join(", ", toolTypes.Select(t => t.Name))}");
+        Console.Error.WriteLine($"ado-lens: mode {lens.Settings.Mode}, groups {string.Join(", ", Toolsets.Loaded(lens.Settings))}, tools: {string.Join(", ", startTools)}");
 
     builder.Services.AddSingleton(lens);
     builder.Services
@@ -162,7 +162,12 @@ async Task<int> RunServerAsync()
         })
         .WithStdioServerTransport()
         .WithActiveTools(lens.Settings)
-        .WithPrompts([typeof(Prompts)]);
+        .WithRequestFilters(f => f.AddListToolsFilter(next => (context, ct) =>
+        {
+            ToolGroups.ForClient(lens.Settings, context.Server);
+            return next(context, ct);
+        }))
+        .WithPrompts(Prompts.TypesFor(lens.Settings));
     await builder.Build().RunAsync();
     return 0;
 }

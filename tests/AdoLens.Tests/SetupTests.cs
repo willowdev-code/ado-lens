@@ -269,11 +269,14 @@ public class ToolBudgetTests
     /// Raise the limit on purpose when new tools need it.
     /// </summary>
     [Theory]
-    [InlineData("po", 8000)]
-    [InlineData("dev", 8000)]
-    public void Tool_definitions_do_not_grow_by_accident(string mode, int maxTokens)
+    [InlineData("po", "demand", 2000)]
+    [InlineData("full", "auto", 3000)]
+    [InlineData("po", "all", 8000)]
+    [InlineData("dev", "all", 8000)]
+    [InlineData("full", "all", 9000)]
+    public void Tool_definitions_do_not_grow_by_accident(string mode, string loading, int maxTokens)
     {
-        var settings = new Settings { Mode = mode };
+        var settings = new Settings { Mode = mode, ToolLoading = loading };
         // What a client gets per tool: its name, description and input schema (plus a few annotation flags).
         var chars = McpTools.Instructions(settings).Length
                     + RegisteredTools(settings).Sum(t => t.ProtocolTool.Name.Length + (t.ProtocolTool.Description?.Length ?? 0)
@@ -284,25 +287,51 @@ public class ToolBudgetTests
     }
 
     [Fact]
+    public void A_session_starts_with_the_core_and_loads_groups_on_demand()
+    {
+        Assert.Equal(["ado_query", "ado_search", "ado_settings", "ado_status", "ado_tools", "ado_trace", "ado_upgrade", "ado_work_item"],
+            RegisteredTools(new Settings { Mode = "po" }).Select(t => t.ProtocolTool.Name).Order().ToList());
+        Assert.Contains("ado_tools enable=", McpTools.Instructions(new Settings { Mode = "po" }));
+        Assert.DoesNotContain("ado_tools enable=", McpTools.Instructions(new Settings { Mode = "po", ToolLoading = "all" }));
+        Assert.True(ToolGroups.TakesNewTools("claude-code"));
+        Assert.False(ToolGroups.TakesNewTools("claude-ai"));
+        Assert.False(ToolGroups.TakesNewTools(null));
+        Assert.Equal("demand", Settings.NormalizeToolLoading("on-demand"));
+        Assert.Equal("auto", new Settings().ToolLoading);
+    }
+
+    [Fact]
     public void The_server_really_registers_the_tools_of_the_mode()
     {
-        var names = RegisteredTools(new Settings { Mode = "po" }).Select(t => t.ProtocolTool.Name).Order().ToList();
-        Assert.Equal(["ado_attachments", "ado_backlog", "ado_board", "ado_changes", "ado_comment", "ado_create", "ado_create_tree", "ado_fields", "ado_file", "ado_health", "ado_label", "ado_link", "ado_metrics", "ado_my_day", "ado_pipeline", "ado_pr",
+        var names = RegisteredTools(new Settings { Mode = "po", ToolLoading = "all" }).Select(t => t.ProtocolTool.Name).Order().ToList();
+        Assert.Equal(["ado_attachments", "ado_backlog", "ado_board", "ado_changes", "ado_comment", "ado_create", "ado_create_tree", "ado_fields", "ado_file", "ado_health", "ado_label", "ado_link", "ado_metrics", "ado_my_day",
             "ado_query", "ado_recipe", "ado_release_notes", "ado_review", "ado_search", "ado_settings", "ado_sprint", "ado_status", "ado_test_create", "ado_tests",
-            "ado_trace", "ado_undo", "ado_update",
+            "ado_tools", "ado_trace", "ado_undo", "ado_update",
             "ado_upgrade", "ado_wiki", "ado_wiki_write", "ado_work_item"], names);
+        Assert.Contains("ado_pr", RegisteredTools(new Settings { Mode = "dev", ToolLoading = "all" }).Select(t => t.ProtocolTool.Name));
+    }
+
+    [Fact]
+    public void Every_tool_is_in_a_known_group_and_every_group_has_tools()
+    {
+        var catalog = Toolsets.Catalog().ToList();
+        Assert.All(catalog, c => Assert.Contains(c.Group, Toolsets.All));
+        Assert.All(Toolsets.All, g => Assert.Contains(catalog, c => c.Group == g));
+        Assert.Equal(catalog.Count, catalog.Select(c => Toolsets.ToolName(c.Method)).Distinct().Count());
+        Assert.All(Toolsets.All.Where(g => g != Toolsets.Core), g => Assert.True(Toolsets.About.ContainsKey(g), g));
     }
 
     [Fact]
     public void Modes_choose_tool_sets_and_extras_are_added()
     {
         var po = Toolsets.Active(new Settings { Mode = "po" });
-        var devPlus = Toolsets.Active(new Settings { Mode = "dev", ExtraToolsets = ["boards"] });
+        var devPlus = Toolsets.Active(new Settings { Mode = "dev", ExtraToolsets = ["boards", "test"] });
         Assert.Contains(Toolsets.Boards, po);
         Assert.DoesNotContain(Toolsets.Pr, po);
+        Assert.DoesNotContain(Toolsets.Pipelines, po);
         Assert.Contains(Toolsets.Boards, devPlus);
-        Assert.Contains(typeof(CoreTools), Toolsets.TypesFor(new Settings { Mode = "po" }));
-        Assert.Contains(typeof(WorkTools), Toolsets.TypesFor(new Settings { Mode = "dev" }));
+        Assert.Contains(Toolsets.Tests, devPlus); // the name before 0.8
+        Assert.Equal(Toolsets.Write, Toolsets.Normalize("work"));
+        Assert.Equal([Toolsets.Core], Toolsets.Loaded(new Settings { Mode = "full" }));
     }
 }
-

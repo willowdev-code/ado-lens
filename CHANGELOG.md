@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.0 — 2026-10-18
+
+Fewer tokens in every Claude Code session: about 1.6k instead of 5.5–7k.
+
+- Tool groups loaded on demand: a session starts with the core (`ado_status`, `ado_settings`, `ado_upgrade`,
+  `ado_work_item`, `ado_query`, `ado_search`, `ado_trace` and the new `ado_tools`), and Claude loads a group with
+  `ado_tools enable=write` (or `"write;boards"`) when the conversation needs it; the client is told about the new tools
+  (MCP `tools/list_changed`). Groups: `write`, `boards`, `wiki`, `code`, `tests`, `recipes`, `pr`, `pipelines`. The mode
+  says which groups may be loaded. Skills and prompts load the groups they use.
+- `adolens config --tool-loading auto|demand|all` (or *Tools at start* in the settings menu). `auto`, the default: on
+  demand in Claude Code; every group of the mode at start in other clients (Claude Desktop), which may not take new
+  tools during a conversation. `demand`: on demand everywhere. `all`: everything at start.
+- Tool sets renamed to groups: `work` → `write`, `trace` → `code`, `test` → `tests` (old names in the settings still work).
+- Shorter descriptions of `ado_update`, `ado_create` and `ado_pr_update`.
+- Pull request tags (labels): `ado_pr_update action=tag tags="R349; -old"`, tags when creating a PR, and tags shown in
+  PR lists, details and merged PRs.
+- Product Owner mode: no pull request or pipeline tools and no developer prompts (`dev_*`); they stay in the dev and
+  full modes.
+
 ## 0.7.3 — 2026-10-16
 
 Fixes from a real question: "pull requests merged into staging after release X, with their work items and tags".

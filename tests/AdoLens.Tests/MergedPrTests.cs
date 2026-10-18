@@ -12,7 +12,7 @@ public class MergedPrTests : IDisposable
             .On("/contoso/Demo/_apis/git/pullrequests", """
                 {"value":[
                   {"pullRequestId":12,"title":"Login form","closedDate":"2026-10-14T10:00:00Z","repository":{"id":"r1","name":"portal"},
-                   "createdBy":{"displayName":"Anna Nowak"},"sourceRefName":"refs/heads/feature/login"},
+                   "createdBy":{"displayName":"Anna Nowak"},"sourceRefName":"refs/heads/feature/login","labels":[{"name":"R349","active":true},{"name":"old","active":false}]},
                   {"pullRequestId":11,"title":"Old change","closedDate":"2026-09-01T10:00:00Z","repository":{"id":"r1","name":"portal"},
                    "createdBy":{"displayName":"Ben Kowalski"},"sourceRefName":"refs/heads/feature/old"}]}
                 """)
@@ -34,7 +34,7 @@ public class MergedPrTests : IDisposable
     {
         var all = await PullRequestQueries.MergedAsync(lens, null, null, "staging", null, null, 30);
         Assert.Contains("2 pull request(s) completed into staging in Demo", all);
-        Assert.Contains("- PR 12 2026-10-14 portal: Login form (Anna Nowak, from feature/login) -> #1 Product Backlog Item Login page (New) [tags: UAT]", all);
+        Assert.Contains("- PR 12 2026-10-14 portal: Login form (Anna Nowak, from feature/login) [tags: R349] -> #1 Product Backlog Item Login page (New) [tags: UAT]", all);
         Assert.Contains("- PR 11 2026-09-01 portal: Old change (Ben Kowalski, from feature/old) - no work item", all);
         Assert.Contains(ado.Requests, r => r.Contains("searchCriteria.status=completed") && r.Contains("searchCriteria.targetRefName=refs/heads/staging"));
 

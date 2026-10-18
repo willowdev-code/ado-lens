@@ -5,6 +5,8 @@ description: Writes a pull request description from its work item, or reviews a 
 
 # Pull requests
 
+First load the tools this needs: `ado_tools enable="code;pr"` (one call; skip it when they are already there).
+
 ## Writing a description (work item given)
 
 1. `ado_work_item ids=<id>` for the goal and criteria; `ado_changes` of the branch's commits or the PR for what

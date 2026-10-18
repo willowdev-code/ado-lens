@@ -18,7 +18,7 @@ public class PromptTests : IDisposable
         Assert.Contains("# Checking work for a Product Owner", text); // read from skills/po-verify/SKILL.md, front matter left out
         Assert.DoesNotContain("name: po-verify", text);
         Assert.Contains("Request: Was work item #37 done as asked", text);
-        Assert.Contains("Request: Pull request for PR 12.", Prompts.DevPr("PR 12"));
+        Assert.Contains("Request: Pull request for PR 12.", DevPrompts.DevPr("PR 12"));
     }
 
     [Fact]
@@ -29,15 +29,22 @@ public class PromptTests : IDisposable
             Assert.True(File.Exists(Path.Combine(skills, name, "SKILL.md")), name);
     }
 
-    [Fact]
-    public void The_server_registers_the_prompts()
+    static List<string> PromptNames(string mode)
     {
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         Microsoft.Extensions.DependencyInjection.McpServerBuilderExtensions.WithPrompts(
-            Microsoft.Extensions.DependencyInjection.McpServerServiceCollectionExtensions.AddMcpServer(services), [typeof(Prompts)]);
+            Microsoft.Extensions.DependencyInjection.McpServerServiceCollectionExtensions.AddMcpServer(services), Prompts.TypesFor(new Settings { Mode = mode }));
         var sp = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
-        var names = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetServices<McpServerPrompt>(sp).Select(p => p.ProtocolPrompt.Name).Order().ToList();
-        Assert.Equal(["dev_build", "dev_pr", "dev_start", "dev_why", "explain", "label", "refine", "sprint", "story", "test", "verify", "wiki"], names);
+        return Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetServices<McpServerPrompt>(sp).Select(p => p.ProtocolPrompt.Name).Order().ToList();
+    }
+
+    [Fact]
+    public void The_server_registers_the_prompts_of_the_mode()
+    {
+        // A Product Owner gets no developer prompts (pull requests, builds, code history).
+        Assert.Equal(["explain", "label", "refine", "sprint", "story", "test", "verify", "wiki"], PromptNames("po"));
+        Assert.Equal(["dev_build", "dev_pr", "dev_start", "dev_why", "explain", "label", "refine", "sprint", "story", "test", "verify", "wiki"], PromptNames("full"));
+        Assert.Contains("dev_pr", PromptNames("dev"));
     }
 
     [Fact]

@@ -7,6 +7,8 @@ description: Starts a developer's work on a work item - what is asked (criteria 
 
 The reader is a developer: technical and short - objects, methods, paths, ids.
 
+First load the tools this needs: `ado_tools enable="code;write"` (one call; skip it when they are already there).
+
 ## Steps
 
 1. `ado_work_item ids=<id> include=comments` and its parent (for a task the criteria are there); specifications,
