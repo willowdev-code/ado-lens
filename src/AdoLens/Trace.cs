@@ -165,7 +165,15 @@ public static partial class TraceQueries
         if (firstCode is { } fc && criteriaChanges.Where(x => x.When > fc).ToList() is { Count: > 0 } late)
             signals.Add($"acceptance criteria changed after the first code change ({string.Join(", ", late.Select(x => $"{Date(x.When)} {x.Who}"))}) - check the code against the current version");
         if (changes.Count == 0)
-            signals.Add(Category(wi) == "Completed" ? "closed without any linked code" : "no code linked yet");
+        {
+            var said = string.Join("\n", new[] { WorkItems.DescriptionRef, WorkItems.ReproStepsRef, "Microsoft.VSTS.CMMI.ProposedFix", "Microsoft.VSTS.Common.Resolution",
+                    "Microsoft.VSTS.TCM.SystemInfo" }.Select(f => Html.ToMarkdown(WorkItems.Field(wi, f))))
+                + "\n" + string.Join("\n", (await TryCommentsAsync(work, project, id, ct)).Select(c => Html.ToMarkdown(Json.Str(c, "text"))));
+            var hints = ConfigWords().Matches(said).Select(m => m.Value.ToLowerInvariant()).Distinct().Take(4).ToList();
+            signals.Add(hints.Count > 0
+                ? $"no code linked, and the item speaks of configuration ({string.Join(", ", hints)}): probably a change in the system's setup - it can be checked only there, not in code"
+                : Category(wi) == "Completed" ? "closed without any linked code" : "no code linked yet");
+        }
         foreach (var pr in changes.Select(x => x.Change).Where(x => x.Kind == "pr" && x.State is "active" or "abandoned"))
             signals.Add($"{pr.Label} is {pr.State}");
         var openTasks = children.Where(c => Category(c) is not ("Completed" or "Removed")).ToList();
@@ -342,6 +350,16 @@ public static partial class TraceQueries
         return keys.Select(k => (Key: k, C: Classify(k))).Where(x => x.C.Order >= 0)
             .OrderBy(x => x.C.Order).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .Select(x => (x.Key, x.C.Guess)).ToList();
+    }
+
+    /// <summary>Words of a change made in configuration rather than code (D365 and general, English and Polish).</summary>
+    [GeneratedRegex(@"\b(?:electronic reporting|ER configuration|konfiguracj\w*|configuration|parametr\w*|parameters?|setup|ustawie\w*|data management|DMF|workflow|number sequence|sekwencj\w* numer\w*|batch job)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex ConfigWords();
+
+    static async Task<List<JsonElement>> TryCommentsAsync(WorkItems work, string project, int id, CancellationToken ct)
+    {
+        try { return await work.CommentsAsync(project, id, 30, ct); }
+        catch (AdoApiException) { return []; }
     }
 
     [GeneratedRegex(@"^Merged PR (?<n>\d+)")]

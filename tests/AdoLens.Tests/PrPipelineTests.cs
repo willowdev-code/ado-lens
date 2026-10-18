@@ -127,6 +127,13 @@ public class PrPipelineTests : IDisposable
         Assert.Contains("\"workItemRefs\":[{\"id\":\"1\"}]", body);
         Assert.StartsWith("created PR 482", created);
 
+        // After creating: a better title and description, and the work items the branch policy wants.
+        var updated = await PullRequestQueries.ActAsync(lens, null, new() { Action = "update", Id = 482, Title = "Login form v2", Text = "Adds the form.", WorkItems = "1;2" });
+        Assert.Equal("PR 482 updated: title; description; linked #2; already linked #1", updated);
+        Assert.Contains("\"title\":\"Login form v2\"", writes.Last(w => w.Method == "PATCH").Body);
+        Assert.Contains("vstfs:///Git/PullRequestId/p1%2Fr1%2F482", items.Patches.Single(x => x.Id == 2).Body);
+        Assert.DoesNotContain(items.Patches, x => x.Id == 1 && x.Body.Contains("PullRequestId"));
+
         await Assert.ThrowsAsync<ArgumentException>(() => PullRequestQueries.ActAsync(lens, null, new() { Action = "merge", Id = 482 }));
     }
 

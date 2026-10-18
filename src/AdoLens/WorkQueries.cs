@@ -53,6 +53,7 @@ public static partial class WorkQueries
         if (items.Count == 0) return $"no work item {string.Join(", ", wanted.Select(i => "#" + i))} (missing, deleted or not visible with this PAT)";
 
         var headers = d == "summary" ? [] : await HeadersAsync(work, items.SelectMany(WorkItemFormat.LinkedIds), ct);
+        if (d != "summary") await WorkItemFormat.ReleaseStagesAsync(session.Client, items, ct);
         var sb = new StringBuilder();
         foreach (var wi in items)
         {

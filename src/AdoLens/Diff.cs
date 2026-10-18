@@ -166,6 +166,55 @@ public static class AotDiff
     }
 
     /// <summary>The XML without method bodies: what is left are fields, controls and properties.</summary>
+    /// <summary>Collections shown in a skeleton, with the properties worth a word for their items.</summary>
+    static readonly Dictionary<string, string[]> SkeletonParts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Fields"] = ["ExtendedDataType", "EnumType", "Label", "Mandatory", "StringSize"],
+        ["FieldModifications"] = ["Label", "Mandatory", "ExtendedDataType"],
+        ["FieldGroups"] = [],
+        ["FieldGroupExtensions"] = [],
+        ["Indexes"] = ["AllowDuplicates", "AlternateKey"],
+        ["Relations"] = ["RelatedTable", "Cardinality", "RelationshipType"],
+        ["RelationExtensions"] = [],
+        ["DataSources"] = ["Table"],
+        ["Mappings"] = [],
+    };
+
+    static readonly string[] SkeletonRoot = ["Label", "TableGroup", "TableType", "Extends", "ConfigurationKey", "PrimaryIndex", "ClusteredIndex", "TitleField1", "TitleField2"];
+
+    /// <summary>
+    /// The metadata of an AOT object in a few lines (table, table extension, view, map): properties, then each field with
+    /// its type and label, indexes with their fields, relations with their table - instead of the raw XML.
+    /// </summary>
+    public static string Skeleton(XDocument? doc)
+    {
+        if (doc?.Root is not { } root) return "";
+        var sb = new StringBuilder();
+        string? Value(XElement e, string name) => e.Elements().FirstOrDefault(x => x.Name.LocalName == name)?.Value.Trim() is { Length: > 0 } v ? v : null;
+        var props = SkeletonRoot.Select(p => (p, v: Value(root, p))).Where(x => x.v is not null).Select(x => $"{x.p} {x.v}").ToList();
+        if (props.Count > 0) sb.AppendLine(string.Join("; ", props));
+        foreach (var part in root.Elements().Where(e => SkeletonParts.ContainsKey(e.Name.LocalName)))
+        {
+            var items = part.Elements().ToList();
+            if (items.Count == 0) continue;
+            var keys = SkeletonParts[part.Name.LocalName];
+            sb.AppendLine($"{part.Name.LocalName} ({items.Count}):");
+            foreach (var item in items.Take(80))
+            {
+                var name = Value(item, "Name") ?? item.Name.LocalName;
+                var extra = keys.Select(k => (k, v: Value(item, k))).Where(x => x.v is not null)
+                    .Select(x => x.k is "ExtendedDataType" or "EnumType" or "RelatedTable" or "Table" or "Label" ? x.v! : $"{x.k} {x.v}").ToList();
+                // Index and group members, relation constraints: their field names.
+                var members = item.Descendants().Where(d => d.Name.LocalName is "DataField" or "Field" && d.Parent != item)
+                    .Select(d => d.Value.Trim()).Where(v => v.Length > 0 && !v.Contains('\n')).Distinct().Take(8).ToList();
+                if (members.Count > 0) extra.Add("(" + string.Join(", ", members) + ")");
+                sb.AppendLine($"- {name}{(extra.Count > 0 ? ": " + string.Join(", ", extra) : "")}");
+            }
+            if (items.Count > 80) sb.AppendLine($"- … {items.Count - 80} more (detail=full)");
+        }
+        return sb.ToString().TrimEnd();
+    }
+
     public static string Metadata(XDocument? doc)
     {
         if (doc?.Root is null) return "";

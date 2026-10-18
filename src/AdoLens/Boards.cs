@@ -356,6 +356,21 @@ public static partial class BoardQueries
         }
         if (detail == "summary") return sb.ToString().TrimEnd();
 
+        if (detail == "full")
+        {
+            // Per person: their open items and tasks and the hours left on them.
+            var people = open.GroupBy(w => WorkItems.Field(w, "System.AssignedTo") ?? "(unassigned)")
+                .Select(g => (Who: g.Key, Items: g.Count(w => Level(s, w) != Levels.Task), Tasks: g.Count(w => Level(s, w) == Levels.Task),
+                    Left: g.Sum(w => Number(w, RemainingRef) ?? 0)))
+                .OrderByDescending(p => p.Items + p.Tasks).ToList();
+            if (people.Count > 0)
+            {
+                sb.AppendLine("by person (open):");
+                foreach (var p in people)
+                    sb.AppendLine($"  {p.Who}: {p.Items} item(s), {p.Tasks} task(s){(p.Left > 0 ? $", {Num(p.Left)} h left" : "")}");
+            }
+        }
+
         foreach (var g in new[] { "in progress", "not started", "done" })
         {
             if (!groups.TryGetValue(g, out var list)) continue;

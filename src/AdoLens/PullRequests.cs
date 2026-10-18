@@ -8,7 +8,7 @@ namespace AdoLens;
 /// <summary>Pull requests: lists, one PR with reviewers, policies, work items and human comment threads, and actions.</summary>
 public static partial class PullRequestQueries
 {
-    public static readonly string[] Actions = ["create", "comment", "reply", "resolve", "vote", "tag", "publish", "complete", "abandon"];
+    public static readonly string[] Actions = ["create", "update", "comment", "reply", "resolve", "vote", "tag", "publish", "complete", "abandon"];
 
     static readonly Dictionary<string, int> Votes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -296,6 +296,35 @@ public static partial class PullRequestQueries
         var baseUrl = $"_apis/git/repositories/{repoId}/pullrequests/{id}";
         switch (action)
         {
+            case "update":
+            {
+                var changes = new Dictionary<string, object?>();
+                if (!string.IsNullOrWhiteSpace(a.Title)) changes["title"] = a.Title.Trim();
+                if (a.Text is not null) changes["description"] = await MentionsAsync(session.People, a.Text, ct);
+                var link = WorkQueries.ParseIds(a.WorkItems);
+                if (changes.Count == 0 && link.Count == 0) throw new ArgumentException("update needs title, text or workItems");
+                if (changes.Count > 0) await client.SendAsync(HttpMethod.Patch, baseUrl, changes, "application/json", ct);
+                // A work item is linked to a PR by an artifact link on the work item (what the web does).
+                var projectId = Json.Str(Json.Obj(Json.Obj(current, "repository"), "project"), "id");
+                var already = (await client.GetListAsync($"{baseUrl}/workitems", ct)).Select(w => Json.Str(w, "id")).ToHashSet();
+                var linked = new List<int>();
+                foreach (var wi in link.Where(w => !already.Contains(w.ToString(CultureInfo.InvariantCulture))))
+                {
+                    await session.Work.PatchAsync(wi, [new
+                    {
+                        op = "add", path = "/relations/-",
+                        value = new { rel = "ArtifactLink", url = $"vstfs:///Git/PullRequestId/{projectId}%2F{repoId}%2F{id}", attributes = new { name = "Pull Request" } },
+                    }], ct);
+                    linked.Add(wi);
+                }
+                var parts = new List<string>();
+                if (changes.ContainsKey("title")) parts.Add("title");
+                if (changes.ContainsKey("description")) parts.Add("description");
+                if (linked.Count > 0) parts.Add("linked " + string.Join(", ", linked.Select(i => "#" + i)));
+                if (link.Count > linked.Count) parts.Add("already linked " + string.Join(", ", link.Except(linked).Select(i => "#" + i)));
+                var words = Html.Words(a.Text);
+                return $"PR {id} updated: {string.Join("; ", parts)}" + (words > 150 ? $"\nnote: description has {words} words; usually ≤ 150 - what and why, changes, how to check" : "");
+            }
             case "comment":
             {
                 if (string.IsNullOrWhiteSpace(a.Text)) throw new ArgumentException("comment needs text");

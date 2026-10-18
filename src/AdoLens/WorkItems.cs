@@ -219,6 +219,20 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         }
         if (r.Reason is not null) set["System.Reason"] = r.Reason.Trim();
 
+        // Rules of an inherited process ("make Field required when ..."): not part of the field list of the type.
+        var newState = set.TryGetValue("System.State", out var st) ? st as string
+            : current is null ? type.States.FirstOrDefault(x => x.Category == "Proposed")?.Name ?? type.States.FirstOrDefault()?.Name : null;
+        var byRule = new List<string>();
+        foreach (var rule in await RequiredRulesAsync(s, type, ct))
+        {
+            if (set.ContainsKey(rule.Field) || current is { } cur && Field(cur, rule.Field) is not null) continue;
+            if (current is not null && newState is null) continue;   // only a state change makes a rule apply on update
+            if (!rule.Applies(set, newState, created: current is null)) continue;
+            byRule.Add($"{(s.Fields.TryGetValue(rule.Field, out var fd) ? fd.Name : rule.Field)} [{rule.Field}] ({rule.When})");
+        }
+        if (byRule.Count > 0)
+            throw new InvalidOperationException($"{type.Name} needs by a rule of the process: {string.Join("; ", byRule)} - pass them in fields");
+
         if (current is null)
         {
             // Fields Azure DevOps fills itself (ids from the paths, the creator, dates) are "required" in some processes
@@ -246,6 +260,55 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
 
         Lengths(type, r, notes, Has(s, type, AcceptanceRef));
         return ops;
+    }
+
+    public sealed record RequiredRule(string Field, string When, List<(string Type, string? Field, string? Value)> Conditions)
+    {
+        /// <summary>Whether the rule applies to this save; conditions that cannot be known before saving do not count.</summary>
+        public bool Applies(IReadOnlyDictionary<string, object?> set, string? state, bool created) => Conditions.All(c => c.Type switch
+        {
+            "whenWorkItemIsCreated" => created,
+            "whenStateChangedTo" => state is not null && string.Equals(state, c.Value, StringComparison.OrdinalIgnoreCase),
+            "when" => c.Field is not null && set.TryGetValue(c.Field, out var v) && string.Equals(v?.ToString(), c.Value, StringComparison.OrdinalIgnoreCase),
+            "whenNot" => c.Field is not null && set.TryGetValue(c.Field, out var v) && !string.Equals(v?.ToString(), c.Value, StringComparison.OrdinalIgnoreCase),
+            _ => false,
+        });
+    }
+
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<RequiredRule>> _rules = new();
+
+    /// <summary>
+    /// "Make required" rules of the type in an inherited process; empty for other processes or without permission.
+    /// </summary>
+    public async Task<List<RequiredRule>> RequiredRulesAsync(Snapshot s, TypeInfo type, CancellationToken ct = default)
+    {
+        var key = s.Project.Id + "|" + type.Ref;
+        if (_rules.TryGetValue(key, out var known)) return known;
+        var list = new List<RequiredRule>();
+        try
+        {
+            var props = await client.GetAsync($"_apis/projects/{s.Project.Id}/properties?api-version=7.1-preview.1", ct);
+            var processId = Json.Arr(props, "value").Where(v => Json.Str(v, "name") == "System.ProcessTemplateType").Select(v => Json.Str(v, "value")).FirstOrDefault();
+            if (processId is not null)
+                foreach (var rule in await client.GetListAsync($"_apis/work/processes/{processId}/workItemTypes/{Uri.EscapeDataString(type.Ref)}/rules", ct))
+                {
+                    if (Json.Bool(rule, "isDisabled")) continue;
+                    var conditions = Json.Arr(rule, "conditions").Select(c => (Json.Str(c, "conditionType") ?? "", Json.Str(c, "field"), Json.Str(c, "value"))).ToList();
+                    var when = conditions.Count == 0 ? "always" : string.Join(" and ", conditions.Select(c => c.Item1 switch
+                    {
+                        "whenStateChangedTo" => $"on moving to {c.Item3}",
+                        "whenWorkItemIsCreated" => "on create",
+                        "when" => $"when {c.Item2} = {c.Item3}",
+                        "whenNot" => $"when {c.Item2} is not {c.Item3}",
+                        _ => $"{c.Item1} {c.Item2} {c.Item3}".Trim(),
+                    }));
+                    foreach (var a in Json.Arr(rule, "actions").Where(a => Json.Str(a, "actionType") == "makeRequired"))
+                        if (Json.Str(a, "targetField") is { } field) list.Add(new RequiredRule(field, when, conditions));
+                }
+        }
+        catch (AdoApiException) { }
+        _rules[key] = list;
+        return list;
     }
 
     /// <summary>Fields set by Azure DevOps on every save, never by the caller.</summary>

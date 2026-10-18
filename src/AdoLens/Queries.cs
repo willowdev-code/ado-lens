@@ -119,6 +119,14 @@ public static class Queries
         return map;
     }
 
+    /// <summary>"required by rules:" lines of a type (inherited processes), or nothing.</summary>
+    static async Task<string> RulesAsync(Session session, Snapshot snap, TypeInfo t, CancellationToken ct)
+    {
+        var rules = await session.Work.RequiredRulesAsync(snap, t, ct);
+        if (rules.Count == 0) return "";
+        return "required by rules: " + string.Join("; ", rules.Select(r => $"{(snap.Fields.TryGetValue(r.Field, out var f) ? f.Name : r.Field)} ({r.When})")) + "\n";
+    }
+
     public static async Task<string> FieldsAsync(Lens lens, string? connection, string? project, string? type, string? field,
         string? changes, bool all, bool refresh, CancellationToken ct = default)
     {
@@ -147,7 +155,7 @@ public static class Queries
             answer = Formatting.Field(snap, field, refreshing);
         else if (type is not null)
             answer = snap.FindType(type) is { } t
-                ? (Formatting.Type(snap, t, all, refreshing) + "\n" + await Templates.SectionAsync(session, snap, t, ct)).TrimEnd()
+                ? (Formatting.Type(snap, t, all, refreshing) + "\n" + await RulesAsync(session, snap, t, ct) + await Templates.SectionAsync(session, snap, t, ct)).TrimEnd()
                 : $"no work item type '{type}' in {snap.Project.Name}; types: " +
                   string.Join(", ", snap.Types.Where(x => !x.Disabled && x.Level != Levels.Hidden).Select(x => x.Name).Order(StringComparer.OrdinalIgnoreCase));
         else

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.0 — 2026-10-18
+
+Improvements from testing on a real project.
+
+- `ado_pr_update action=update`: change the title or description of a pull request and link work items to it after it
+  was created (branch policies often require a linked work item), instead of abandoning it and opening a new one.
+- People are found by name, e-mail or a display name with a company suffix ("Anna Nowak (Contoso)"); when the identity
+  search finds nobody, the people picker of the web is asked too.
+- Fields required by rules of an inherited process ("required when moving to Resolved") are checked before writing
+  and listed in `ado_fields type=<type>`, instead of a 400 from Azure DevOps.
+- `ado_sprint detail=full`: who has what - open items, tasks and hours left per person.
+- `ado_file` on a table, table extension, view or map: a skeleton of properties, fields (type, label, mandatory),
+  indexes, relations and field groups instead of only the methods.
+- `ado_work_item`: links to release stages name the release, the stage, its status and date; commit links give the
+  full commit id.
+- `ado_trace`: with no code linked, an item that speaks of configuration (ER, parameters, setup…) is reported as a
+  probable change in the system's setup that can be checked only there.
+
 ## 0.8.2 — 2026-10-18
 
 Fewer false alarms in sprints and checks.
