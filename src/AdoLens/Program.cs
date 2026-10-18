@@ -162,6 +162,11 @@ async Task<int> RunServerAsync()
         })
         .WithStdioServerTransport()
         .WithActiveTools(lens.Settings)
+        .WithRequestFilters(f => f.AddListToolsFilter(next => (context, ct) =>
+        {
+            ToolGroups.ForClient(lens.Settings, context.Server);
+            return next(context, ct);
+        }))
         .WithPrompts(Prompts.TypesFor(lens.Settings));
     await builder.Build().RunAsync();
     return 0;

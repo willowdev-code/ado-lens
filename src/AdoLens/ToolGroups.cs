@@ -10,6 +10,28 @@ namespace AdoLens;
 /// </summary>
 public static class ToolGroups
 {
+    /// <summary>Clients known to take new tools during a conversation (MCP tools/list_changed), by their clientInfo name.</summary>
+    static readonly string[] TakeNewTools = ["claude-code"];
+
+    static int _clientChecked;
+
+    public static bool TakesNewTools(string? clientName) =>
+        clientName is { } n && TakeNewTools.Any(c => n.Contains(c, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// ToolLoading=auto: before the first tool list, a client that is not known to take new tools gets every group of
+    /// the mode, so nothing is missing there; the others keep the core and load groups on demand.
+    /// </summary>
+    public static void ForClient(Settings settings, McpServer server)
+    {
+        if (Interlocked.Exchange(ref _clientChecked, 1) == 1) return;
+        if (settings.ToolLoading != "auto" || TakesNewTools(server.ClientInfo?.Name)) return;
+        if (server.ServerOptions.ToolCollection is not { } tools) return;
+        using (tools.DeferChangedEvents())
+            foreach (var method in Toolsets.Methods(Toolsets.Active(settings)))
+                tools.TryAdd(McpServerTool.Create(method, options: new McpServerToolCreateOptions { Services = server.Services }));
+    }
+
     public static string Load(Settings settings, McpServer server, string? enable)
     {
         var tools = server.ServerOptions.ToolCollection ?? throw new InvalidOperationException("this server has no tool collection");

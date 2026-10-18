@@ -134,7 +134,7 @@ adolens config --connection contoso --project Demo --team "Demo Team"
 adolens config --default-connection fabrikam
 adolens config --mode dev                    # po | dev | full
 adolens config --add-toolset pipelines       # one more tool group on top of the mode
-adolens config --load-all-tools true         # every group of the mode at start (more tokens)
+adolens config --tool-loading auto           # auto | demand | all: when tool groups are loaded
 adolens config --confirm-above 3             # updates of more items are previewed first (0: always)
 adolens config --usage-log false
 adolens config --show-tokens true            # end every answer with [~N tokens]
@@ -171,7 +171,7 @@ Settings live in `%LOCALAPPDATA%\ado-lens\adolens.json` (no secrets) — they ca
 
 ### Modes and tool groups
 
-Every tool definition costs tokens in every session, so a session starts with a small core (about 1.3k tokens) and
+Every tool definition costs tokens in every session, so a session starts with a small core (about 1.5k tokens) and
 Claude loads a group with `ado_tools enable=<group>` when the conversation needs it — a question about the sprint
 loads `boards`, a new story loads `write`. The skills and prompts load what they use. A mode only chooses which groups
 may be loaded; it is never a permission (the PAT decides).
@@ -188,9 +188,13 @@ may be loaded; it is never a permission (the PAT decides).
 | `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
 | `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
 
-`adolens config --add-toolset <group>` allows one more group on top of the mode. A client that does not take new tools
-during a conversation can start with every group of the mode: `adolens config --load-all-tools true` (or *Tools at
-start* in the settings menu) — about 6k tokens per session instead of 1.3k.
+`adolens config --add-toolset <group>` allows one more group on top of the mode. When groups are loaded is
+`adolens config --tool-loading` (or *Tools at start* in the settings menu):
+
+- `auto` (default): on demand in Claude Code, which takes new tools during a conversation; every group of the mode
+  at start in other clients, Claude Desktop among them (about 6–7k tokens), so nothing is missing there;
+- `demand`: on demand in every client (about 1.3k tokens at start) — for a client known to take new tools;
+- `all`: every group of the mode at start everywhere.
 
 ## Tool map
 

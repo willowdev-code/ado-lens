@@ -56,11 +56,14 @@ public static class McpTools
           ado_tools enable=<group> (several: "write;boards"). ado_tools without arguments lists the groups.
         """;
 
-    /// <summary>Instructions of the groups loaded at start (with groups, the core only) and how to load the others.</summary>
+    /// <summary>
+    /// Instructions and how to load groups. They are sent before the server knows the client, so only demand keeps them
+    /// to the core lines (the others come with each loaded group); auto and all carry the lines of every group of the mode.
+    /// </summary>
     public static string Instructions(Settings settings)
     {
-        var loaded = Toolsets.Loaded(settings);
-        return Intro + (settings.LoadAllTools ? "" : Groups) + string.Concat(Lines.Where(l => loaded.Contains(l.Key)).Select(l => l.Value));
+        var groups = settings.ToolLoading == "demand" ? Toolsets.Loaded(settings) : Toolsets.Active(settings);
+        return Intro + (settings.ToolLoading == "all" ? "" : Groups) + string.Concat(Lines.Where(l => groups.Contains(l.Key)).Select(l => l.Value));
     }
 
     /// <summary>The writing and usage hints of a group, returned when the group is loaded during a conversation.</summary>

@@ -58,9 +58,12 @@ public static class Toolsets
         return set;
     }
 
-    /// <summary>The groups a session starts with: only the core, or every allowed group when the settings say so.</summary>
+    /// <summary>
+    /// The groups a session starts with: the core, or every allowed group with ToolLoading=all. With auto the rest is
+    /// added before the first tool list for a client that does not take new tools (see <see cref="ToolGroups.ForClient"/>).
+    /// </summary>
     public static HashSet<string> Loaded(Settings settings) =>
-        settings.LoadAllTools ? Active(settings) : new HashSet<string>([Core], StringComparer.OrdinalIgnoreCase);
+        settings.ToolLoading == "all" ? Active(settings) : new HashSet<string>([Core], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Every tool method with its group: the method's own attribute, else its class's.</summary>
     public static IEnumerable<(string Group, MethodInfo Method)> Catalog() =>

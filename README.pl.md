@@ -137,7 +137,7 @@ adolens config --connection contoso --project Demo --team "Demo Team"
 adolens config --default-connection fabrikam
 adolens config --mode dev                    # po | dev | full
 adolens config --add-toolset pipelines       # dodatkowa grupa narzędzi ponad tryb
-adolens config --load-all-tools true         # wszystkie grupy trybu od startu (więcej tokenów)
+adolens config --tool-loading auto           # auto | demand | all: kiedy ładować grupy narzędzi
 adolens config --confirm-above 3             # zmiany większej liczby elementów najpierw jako podgląd (0: zawsze)
 adolens config --usage-log false
 adolens config --show-tokens true            # każda odpowiedź kończy się [~N tokens]
@@ -172,7 +172,7 @@ Ustawienia siedzą w `%LOCALAPPDATA%\ado-lens\adolens.json` (bez sekretów) — 
 
 ### Tryby i grupy narzędzi
 
-Każda definicja narzędzia kosztuje tokeny w każdej sesji, więc sesja startuje z małym rdzeniem (ok. 1,3 tys. tokenów),
+Każda definicja narzędzia kosztuje tokeny w każdej sesji, więc sesja startuje z małym rdzeniem (ok. 1,5 tys. tokenów),
 a Claude dociąga grupę przez `ado_tools enable=<grupa>`, gdy rozmowa jej potrzebuje — pytanie o sprint ładuje `boards`,
 nowa historyjka `write`. Skille i prompty same ładują to, czego używają. Tryb wybiera tylko, które grupy wolno załadować;
 nigdy nie jest uprawnieniem (o tym decyduje PAT).
@@ -189,9 +189,13 @@ nigdy nie jest uprawnieniem (o tym decyduje PAT).
 | `pr` | `ado_pr`, `ado_pr_update` | – | ✓ | ✓ |
 | `pipelines` | `ado_pipeline`, `ado_pipeline_run` | – | ✓ | ✓ |
 
-`adolens config --add-toolset <grupa>` dopuszcza jeszcze jedną grupę ponad tryb. Klient, który nie przyjmuje nowych
-narzędzi w trakcie rozmowy, może startować ze wszystkimi grupami trybu: `adolens config --load-all-tools true` (albo
-*Narzędzia na start* w menu ustawień) — ok. 6 tys. tokenów na sesję zamiast 1,3 tys.
+`adolens config --add-toolset <grupa>` dopuszcza jeszcze jedną grupę ponad tryb. Kiedy ładować grupy, ustawia
+`adolens config --tool-loading` (albo *Narzędzia na start* w menu ustawień):
+
+- `auto` (domyślnie): na żądanie w Claude Code, który przyjmuje nowe narzędzia w trakcie rozmowy; w innych klientach,
+  także w Claude Desktop, wszystkie grupy trybu od startu (ok. 6–7 tys. tokenów), żeby niczego tam nie brakowało;
+- `demand`: na żądanie w każdym kliencie (ok. 1,3 tys. tokenów na start) — dla klienta, o którym wiadomo, że przyjmuje nowe narzędzia;
+- `all`: wszystkie grupy trybu od startu wszędzie.
 
 ## Mapa narzędzi
 

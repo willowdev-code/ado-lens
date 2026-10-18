@@ -49,11 +49,21 @@ public sealed partial class Settings
     /// <summary>Language of the settings console and installer texts: "pl", "en", or null for the language of Windows.</summary>
     public string? Language { get; set; }
 
+    public const string ToolLoadings = "auto, demand, all";
+
     /// <summary>
-    /// Start every session with all tool groups of the mode instead of the core only (for clients that do not take new
-    /// tools during a conversation; costs more tokens per session).
+    /// demand: a session starts with the core and Claude loads groups when it needs them; all: every group of the mode
+    /// from the start (more tokens); auto: demand for clients known to take new tools during a conversation, all for others.
     /// </summary>
-    public bool LoadAllTools { get; set; }
+    public string ToolLoading { get; set; } = "auto";
+
+    public static string NormalizeToolLoading(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "auto" or "" => "auto",
+        "demand" or "on-demand" or "core" => "demand",
+        "all" => "all",
+        _ => throw new ArgumentException($"unknown tool loading '{value}' (known: {ToolLoadings})"),
+    };
 
     /// <summary>Where files are saved (save=true); null: Downloads\ADO Lens.</summary>
     public string? DownloadDir { get; set; }

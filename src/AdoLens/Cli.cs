@@ -28,7 +28,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           config          show or change settings
                             --connection <name> --project <name> --team <name>   (defaults of a connection)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
-                            --show-tokens true|false  --load-all-tools true|false  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
+                            --show-tokens true|false  --tool-loading auto|demand|all  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
                             --language pl|en|auto (settings console and installer texts)
                             --download-dir <folder>|default (where save=true puts files; default Downloads\ADO Lens)
                             --connection <c> --label-languages "en-US, pl"|all  (languages review and label require)
@@ -323,9 +323,9 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                 settings.ShowTokens = bool.TryParse(st, out var b) ? b : throw new ArgumentException("--show-tokens takes true or false");
                 changed = true;
             }
-            if (cl.Opt("load-all-tools") is { } la)
+            if (cl.Opt("tool-loading") is { } tl)
             {
-                settings.LoadAllTools = bool.TryParse(la, out var b) ? b : throw new ArgumentException("--load-all-tools takes true or false");
+                settings.ToolLoading = Settings.NormalizeToolLoading(tl);
                 changed = true;
             }
             if (cl.Opt("confirm-above") is { } ca)
@@ -342,7 +342,12 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (changed) settings.Save(SettingsPath);
         Console.WriteLine($"settings: {SettingsPath}{(changed ? " (saved)" : "")}");
         Console.WriteLine($"mode: {settings.Mode} (tool groups: {string.Join(", ", Toolsets.Active(settings).OrderBy(t => Array.IndexOf(Toolsets.All, t)))}; "
-                          + (settings.LoadAllTools ? "all loaded at start)" : "core at start, the rest when Claude needs them)"));
+                          + settings.ToolLoading switch
+                          {
+                              "all" => "all loaded at start)",
+                              "demand" => "core at start, the rest when Claude needs them)",
+                              _ => "auto: on demand in Claude Code, all at start in other clients)",
+                          });
         Console.WriteLine($"usage log: {(settings.UsageLog ? "on" : "off")}   token footer: {(settings.ShowTokens ? "on" : "off")}   preview updates of more than {settings.ConfirmBulkAbove} items   default connection: {settings.DefaultConnection ?? "-"}");
         return Connections();
     }
@@ -749,8 +754,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Console.WriteLine(Ui.T("  6. Language: Polish / English", "  6. Język: polski / angielski"));
             Console.WriteLine(Ui.T("  7. Required label languages (checks of D365 changes)", "  7. Wymagane języki etykiet (kontrola zmian D365)"));
             Console.WriteLine(Ui.T($"  8. Download folder: {Downloads.BaseDir(settings)}", $"  8. Folder pobierania: {Downloads.BaseDir(settings)}"));
-            Console.WriteLine(Ui.T($"  9. Tools at start: {(settings.LoadAllTools ? "all of the mode" : "core, the rest on demand")}",
-                                   $"  9. Narzędzia na start: {(settings.LoadAllTools ? "wszystkie z trybu" : "podstawowe, reszta na żądanie")}"));
+            Console.WriteLine(Ui.T($"  9. Tools at start: {settings.ToolLoading}", $"  9. Narzędzia na start: {settings.ToolLoading}"));
             var choice = Prompt(Ui.T("Choice (Enter = done): ", "Wybór (Enter = koniec): "));
             switch (choice?.Trim())
             {
@@ -791,12 +795,14 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     Ui.Polish = settings.Language == "pl" || settings.Language is null && Ui.Polish;
                     break;
                 case "9":
-                    Console.WriteLine(Ui.T("  1. Core only - Claude loads the other groups when the conversation needs them (fewer tokens)",
-                                           "  1. Tylko podstawowe - Claude dociąga pozostałe grupy, gdy rozmowa ich wymaga (mniej tokenów)"));
-                    Console.WriteLine(Ui.T("  2. All tools of the mode at start (for a client that does not take new tools during a conversation)",
-                                           "  2. Wszystkie narzędzia trybu od startu (dla klienta, który nie przyjmuje nowych narzędzi w trakcie rozmowy)"));
-                    var t = Prompt(Ui.T($"  choice [{(settings.LoadAllTools ? 2 : 1)}]: ", $"  wybór [{(settings.LoadAllTools ? 2 : 1)}]: "));
-                    settings.LoadAllTools = t?.Trim() switch { "1" => false, "2" => true, _ => settings.LoadAllTools };
+                    Console.WriteLine(Ui.T("  1. auto - on demand in Claude Code, all at start in other clients (Claude Desktop)",
+                                           "  1. auto - na żądanie w Claude Code, wszystkie od startu w innych klientach (Claude Desktop)"));
+                    Console.WriteLine(Ui.T("  2. demand - core at start, Claude loads the other groups when the conversation needs them (fewest tokens)",
+                                           "  2. demand - podstawowe na start, Claude dociąga pozostałe grupy, gdy rozmowa ich wymaga (najmniej tokenów)"));
+                    Console.WriteLine(Ui.T("  3. all - every tool of the mode at start", "  3. all - wszystkie narzędzia trybu od startu"));
+                    var cur = settings.ToolLoading switch { "demand" => "2", "all" => "3", _ => "1" };
+                    var t = Prompt(Ui.T($"  choice [{cur}]: ", $"  wybór [{cur}]: "));
+                    settings.ToolLoading = (string.IsNullOrWhiteSpace(t) ? cur : t.Trim()) switch { "2" => "demand", "3" => "all", _ => "auto" };
                     settings.Save(SettingsPath);
                     Console.WriteLine(Ui.T("  new Claude sessions use it", "  obowiązuje w nowych sesjach Claude'a"));
                     break;
