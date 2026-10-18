@@ -110,7 +110,13 @@ public sealed class Boards(Session session)
     /// <summary>Ids in the sprint of the team and the parent of each child (tasks under their requirement).</summary>
     public async Task<(List<int> Ids, Dictionary<int, int> Parent)> SprintItemsAsync(string project, string team, Iteration it, CancellationToken ct)
     {
-        var root = await client.GetAsync($"{Scope(project, team)}_apis/work/teamsettings/iterations/{it.Id}/workitems", ct);
+        JsonElement root;
+        try { root = await client.GetAsync($"{Scope(project, team)}_apis/work/teamsettings/iterations/{it.Id}/workitems", ct); }
+        catch (AdoApiException ex) when (ex.Message.Contains("VS402337", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"{it.Name} holds more than 20 000 work items (the Azure DevOps limit for one query) - it is probably a " +
+                                                "collecting iteration, not a sprint; pick another with sprint=<name>, or ask with ado_query");
+        }
         var ids = new List<int>();
         var parent = new Dictionary<int, int>();
         foreach (var r in Json.Arr(root, "workItemRelations"))
@@ -188,8 +194,21 @@ public static partial class BoardQueries
     {
         var type = s.FindType(WorkItems.Field(wi, "System.WorkItemType") ?? "");
         var state = WorkItems.Field(wi, "System.State");
-        return type?.States.FirstOrDefault(x => x.Name.Equals(state, StringComparison.OrdinalIgnoreCase))?.Category ?? "InProgress";
+        return type?.States.FirstOrDefault(x => x.Name.Equals(state, StringComparison.OrdinalIgnoreCase))?.Category
+               // A type or state this project does not know (an item of another project in the sprint): any type with that state.
+               ?? s.Types.SelectMany(t => t.States).FirstOrDefault(x => x.Name.Equals(state, StringComparison.OrdinalIgnoreCase))?.Category
+               ?? GuessCategory(state);
     }
+
+    /// <summary>The category of a state no process here knows, by its usual names.</summary>
+    internal static string GuessCategory(string? state) => (state ?? "").Trim().ToLowerInvariant() switch
+    {
+        "done" or "closed" or "completed" or "finished" or "zamknięty" or "zakończony" or "gotowe" => "Completed",
+        "removed" or "cut" or "usunięty" => "Removed",
+        "new" or "proposed" or "to do" or "nowy" => "Proposed",
+        "resolved" => "Resolved",
+        _ => "InProgress",
+    };
 
     static string Group(string category) => category switch
     {
@@ -225,6 +244,9 @@ public static partial class BoardQueries
         var s = (await session.Meta.GetAsync(name, ct)).Snapshot;
 
         var sb = new StringBuilder();
+        var asked = (sprint ?? "current").Trim();
+        if (asked.Equals("current", StringComparison.OrdinalIgnoreCase) && it.Start is { } s0 && it.Finish is { } f0 && (day < s0 || day > f0))
+            sb.AppendLine("NO CURRENT SPRINT for the team today - this is the " + (day > f0 ? "last one that ended:" : "next one:"));
         sb.Append($"{it.Name} ({t})");
         if (it.Start is { } start && it.Finish is { } finish)
         {

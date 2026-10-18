@@ -54,6 +54,18 @@ if (Test-Path $skillSrc) {
     }
 }
 
+# The program folder off the user's PATH (raw, so other %VARIABLE% entries stay as they are).
+$binFull = [IO.Path]::GetFullPath((Join-Path $InstallDir 'bin')).TrimEnd('\')
+$envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+$userPath = [string]$envKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+$kept = @($userPath -split ';' | Where-Object { $_ -and [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ine $binFull })
+if ($kept.Count -ne @($userPath -split ';' | Where-Object { $_ }).Count) {
+    $envKey.SetValue('Path', ($kept -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    [Environment]::SetEnvironmentVariable('ADOLENS_PATH_REFRESH', '1', 'User')
+    [Environment]::SetEnvironmentVariable('ADOLENS_PATH_REFRESH', $null, 'User')
+    Write-Host "  removed $binFull from PATH"
+}
+$envKey.Close()
 if ($RemoveData -and (Test-Path $data)) { Remove-Item $data -Recurse -Force; Write-Host "  removed $data" }
 # This script lives in the folder it removes: delete everything else now, the folder itself after it exits.
 Get-ChildItem $InstallDir -Force | Where-Object { $_.FullName -ne $PSCommandPath } | Remove-Item -Recurse -Force

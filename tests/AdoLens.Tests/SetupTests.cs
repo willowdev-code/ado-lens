@@ -209,8 +209,8 @@ public class CredentialStoreTests
         try
         {
             Assert.Null(CredentialStore.Read(name));
-            CredentialStore.Write(name, "contoso", "token-Ä…Ä™-123");
-            Assert.Equal("token-Ä…Ä™-123", CredentialStore.Read(name));
+            CredentialStore.Write(name, "contoso", "token-ąę-123");
+            Assert.Equal("token-ąę-123", CredentialStore.Read(name));
             CredentialStore.Write(name, "contoso", "replaced");
             Assert.Equal("replaced", CredentialStore.Read(name));
             Assert.True(CredentialStore.Delete(name));

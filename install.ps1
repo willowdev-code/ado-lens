@@ -102,6 +102,21 @@ else {
 }
 Say "version: $(& $exe version)"
 
+# "adolens" in any new terminal: the program folder on the user's PATH, as the setup EXE does. Read and written raw
+# (REG_EXPAND_SZ) so entries like %USERPROFILE%\... stay as they are.
+$binFull = [IO.Path]::GetFullPath($binDst).TrimEnd('\')
+$envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+$userPath = [string]$envKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+$entries = @($userPath -split ';' | Where-Object { $_ })
+if (-not ($entries | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ieq $binFull })) {
+    $envKey.SetValue('Path', (($entries + $binFull) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    # Tells Windows (Explorer, new terminals) that the environment changed.
+    [Environment]::SetEnvironmentVariable('ADOLENS_PATH_REFRESH', '1', 'User')
+    [Environment]::SetEnvironmentVariable('ADOLENS_PATH_REFRESH', $null, 'User')
+    Say "added to PATH: $binFull ('adolens' works in terminals opened from now on)"
+}
+$envKey.Close()
+
 Head '3/6 Azure DevOps connection'
 & $exe status --quiet --offline
 $state = $LASTEXITCODE

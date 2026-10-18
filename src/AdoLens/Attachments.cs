@@ -73,6 +73,9 @@ public static class Attachments
             return ($"{head}: {list.Count} file(s)\n" + string.Join('\n', list.Select((a, i) => $"{i + 1}. {a.Name}{Size(a.Size)}{(a.Comment is { Length: > 0 } c ? $" - {c}" : "")}")) +
                     "\nfile=<name or number> reads one (documents as text, images and scans shown); save=true saves it to disk (any size).", []);
 
+        var same = list.Select((a, i) => (a, i)).Where(x => x.a.Name.Equals(file.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        if (same.Count > 1)
+            return ($"{same.Count} files named {same[0].a.Name} on #{id}: pick one by number - {string.Join(", ", same.Select(x => $"file={x.i + 1}{Size(x.a.Size)}"))}", []);
         var pick = int.TryParse(file, out var n) && n >= 1 && n <= list.Count ? list[n - 1]
             : list.FirstOrDefault(a => a.Name.Equals(file.Trim(), StringComparison.OrdinalIgnoreCase))
               ?? list.FirstOrDefault(a => a.Name.Contains(file.Trim(), StringComparison.OrdinalIgnoreCase));

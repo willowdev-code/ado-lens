@@ -131,9 +131,9 @@ public class KnowledgeTests : IDisposable
     public async Task File_history_names_the_work_items_behind_each_change()
     {
         var text = await Knowledge.FileAsync(lens, null, null, "/src/AxClass/CreditCheck.xml", "erp", null, null, true, 15, null);
-        Assert.Contains("history of erp: /src/AxClass/CreditCheck.xml: 2 changes", text);
+        Assert.Contains("history of erp: /src/AxClass/CreditCheck.xml (the default branch): 2 changes", text);
         Assert.Contains("- 2026-10-10 Ben Kowalski - PR 482: Credit limit check -> #1 Login page (New)", text);
-        Assert.Contains("- 2026-09-01 Anna Nowak - commit bbbbbbb: Typo", text);
+        Assert.Contains("- 2026-09-01 Anna Nowak - commit bbbbbbbb22: Typo", text);
         Assert.Contains("1 of 2 changes have no work item", text);
     }
 
@@ -250,7 +250,7 @@ public class KnowledgeTests : IDisposable
     public async Task The_history_of_a_whole_repository_or_folder()
     {
         var text = await Knowledge.FileAsync(lens, null, null, "/", "erp", null, null, true, 15, null);
-        Assert.Contains("history of erp: /: 2 changes", text);
+        Assert.Contains("history of erp: / (the default branch): 2 changes", text);
         Assert.Contains("PR 482: Credit limit check -> #1 Login page (New)", text);
         Assert.Contains("is a folder", await Knowledge.FileAsync(lens, null, null, "/", "erp", null, null, false, 15, null));
     }

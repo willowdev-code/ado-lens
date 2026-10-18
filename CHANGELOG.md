@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.1 — 2026-10-18
+
+Fixes from testing on a real project.
+
+- `adolens` works in any new terminal after an install or upgrade with the script (`get.ps1`, `install.ps1`,
+  `adolens upgrade --install` on such an installation) too: the program folder is added to the user's PATH, as the
+  setup EXE already did; `uninstall.ps1` takes it off.
+
+- Tool arguments in another JSON shape are read instead of failing with a bare "An error occurred invoking":
+  `ids=714800` (a number for text), `workItems=[1,2]`, `file=1`, `top="20"`, `draft="true"`. This was behind the failing
+  `ado_update` (even with only a comment), `ado_pr_update action=create` with work items and `ado_attachments file=<n>`.
+  An argument that still cannot be read says which and why.
+- `ado_attachments`: two files with the same name are listed by number to pick one.
+- `ado_file history=true`: full commit ids (they work in `ado_changes` and `ado_file version=`), changes that came in
+  with a merge are listed too, and the branch read is named.
+- `ado_file` without a version names the branch it read (the default one).
+- `ado_sprint`: a sprint over the Azure DevOps limit of 20 000 work items says so instead of a raw server error; with
+  no current sprint the answer starts with NO CURRENT SPRINT; items in a state this project's process does not know
+  (e.g. from another project) are put in done / in progress by the state's usual name.
+
 ## 0.8.0 — 2026-10-18
 
 Fewer tokens in every Claude Code session: about 1.6k instead of 5.5–7k.
