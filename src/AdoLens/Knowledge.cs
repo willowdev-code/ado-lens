@@ -255,6 +255,7 @@ public static partial class Knowledge
                 foreach (var (n, src) in hit) sb.AppendLine($"--- {n}").AppendLine(src.Trim());
                 return sb.ToString().TrimEnd();
             }
+            if (!full && AotDiff.Skeleton(doc) is { Length: > 0 } skeleton) sb.AppendLine(skeleton);
             sb.AppendLine($"{AotDiff.ObjectName(path)}: {methods.Count} methods (part=<method> shows one)");
             foreach (var (n, src) in methods) sb.AppendLine($"- {n} ({Diff.Split(src.Trim()).Length} lines)");
             if (full) sb.AppendLine().AppendLine(AotDiff.Metadata(doc));

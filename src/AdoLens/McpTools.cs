@@ -366,7 +366,7 @@ public static class PrReadTools
 public static class PrTools
 {
     [McpServerTool(Name = "ado_pr_update")]
-    [Description("Pull request actions: create (repo, source, target, title, text, workItems, reviewers, draft), comment (text, file, line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), tag, publish, complete, abandon. @[name] notifies.")]
+    [Description("Pull request actions: create (repo, source, target, title, text, workItems, reviewers, draft), update (title, text, workItems: links them), comment (text, file, line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), tag, publish, complete, abandon. @[name] notifies.")]
     public static Task<string> PrUpdate(Lens lens,
         string action,
         int? id = null,

@@ -175,6 +175,44 @@ public static class WorkItemFormat
     }
 
     /// <summary>vstfs links in words: "changeset 523 (Fix x)", "PR 482", "commit 1a2b3c4", "build 213864".</summary>
+    /// <summary>"releaseId:stageId" → "Release-12 / UAT: succeeded 2026-10-10", filled by <see cref="ReleaseStagesAsync"/>.</summary>
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> ReleaseStages = new();
+
+    static (string Project, string Release, string Stage)? ReleaseStage(string url)
+    {
+        var plain = Uri.UnescapeDataString(url);
+        var i = plain.IndexOf("/ReleaseManagement/ReleaseEnvironment/", StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return null;
+        var parts = plain[(i + "/ReleaseManagement/ReleaseEnvironment/".Length)..].Split(':');
+        return parts.Length == 3 ? (parts[0], parts[1], parts[2]) : null;
+    }
+
+    /// <summary>Looks up the release stages the items are linked to (at most 10 releases), for <see cref="Artifact"/>.</summary>
+    public static async Task ReleaseStagesAsync(AdoClient client, IEnumerable<JsonElement> items, CancellationToken ct)
+    {
+        var wanted = items.SelectMany(w => Json.Arr(w, "relations")).Where(r => Json.Str(r, "rel") == "ArtifactLink")
+            .Select(r => ReleaseStage(Json.Str(r, "url") ?? "")).Where(x => x is not null).Select(x => x!.Value)
+            .Where(x => !ReleaseStages.ContainsKey($"{x.Release}:{x.Stage}"))
+            .GroupBy(x => x.Release).Take(10).ToList();
+        await Task.WhenAll(wanted.Select(async g =>
+        {
+            try
+            {
+                var release = await client.GetAsync(client.ServiceUrl("vsrm") + $"{g.First().Project}/_apis/release/releases/{g.Key}", ct);
+                foreach (var env in Json.Arr(release, "environments"))
+                {
+                    var steps = Json.Arr(env, "deploySteps").ToList();
+                    var when = (steps.Count > 0 ? Json.Str(steps[^1], "lastModifiedOn") : null) ?? Json.Str(env, "modifiedOn");
+                    var date = DateTime.TryParse(when, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var d)
+                        ? " " + d.ToLocalTime().ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) : "";
+                    ReleaseStages[$"{g.Key}:{(env.TryGetProperty("id", out var id) ? id.ToString() : "")}"] =
+                        $"{Json.Str(release, "name")} / {Json.Str(env, "name")}: {Json.Str(env, "status")}{date}";
+                }
+            }
+            catch (AdoApiException) { }
+        }));
+    }
+
     public static string Artifact(string url, string? name, string? comment)
     {
         // Git artifacts escape their parts: vstfs:///Git/Commit/{project}%2F{repo}%2F{sha}.
@@ -184,7 +222,9 @@ public static class WorkItemFormat
         {
             _ when url.Contains("/VersionControl/Changeset/", StringComparison.OrdinalIgnoreCase) => $"changeset {last}",
             _ when url.Contains("/Git/PullRequestId/", StringComparison.OrdinalIgnoreCase) => $"PR {last}",
-            _ when url.Contains("/Git/Commit/", StringComparison.OrdinalIgnoreCase) => $"commit {(last.Length > 7 ? last[..7] : last)}",
+            _ when url.Contains("/Git/Commit/", StringComparison.OrdinalIgnoreCase) => $"commit {last}",
+            _ when ReleaseStage(url) is { } rs => ReleaseStages.TryGetValue($"{rs.Release}:{rs.Stage}", out var known)
+                ? $"release {known}" : $"release {rs.Release}, stage {rs.Stage}",
             _ when url.Contains("/Git/Ref/", StringComparison.OrdinalIgnoreCase) && plain.IndexOf("/GB", StringComparison.Ordinal) is var gb and >= 0 => $"branch {plain[(gb + 3)..]}",
             _ when url.Contains("/Build/Build/", StringComparison.OrdinalIgnoreCase) => $"build {last}",
             _ when url.Contains("/Wiki/", StringComparison.OrdinalIgnoreCase) => "wiki page",
