@@ -43,6 +43,7 @@ public class BoardTests : IDisposable
                   {"rel":"System.LinkTypes.Hierarchy-Forward","source":{"id":1},"target":{"id":2}},
                   {"rel":null,"source":null,"target":{"id":4}}]}
                 """)
+            .On(team + "teamsettings/iterations/s3/workitems", """{"workItemRelations":[]}""")
             .On(team + "teamsettings/iterations/s2/capacities", """
                 {"teamMembers":[
                   {"teamMember":{"displayName":"Anna Nowak"},"activities":[{"capacityPerDay":6,"name":"Development"}],"daysOff":[]},
@@ -100,6 +101,18 @@ public class BoardTests : IDisposable
         Assert.Contains("#4 Bug [New] Error on save: unassigned", text);
         Assert.Contains("#1 Product Backlog Item [Committed] Login page (Anna Nowak) | 5 | tasks 0/1 done, 10 h left", text);
         Assert.DoesNotContain("not started (1):\n  #2", text);
+    }
+
+    [Fact]
+    public async Task Sprint_says_so_when_none_is_current_and_capacity_is_not_compared_without_remaining_work()
+    {
+        var after = await BoardQueries.SprintAsync(lens, null, null, null, null, null, new DateTime(2026, 11, 20));
+        Assert.StartsWith("NO CURRENT SPRINT for the team today - this is the last one that ended:", after);
+
+        ((JsonObject)items.Items[2]["fields"]!).Remove("Microsoft.VSTS.Scheduling.RemainingWork");
+        var text = (await BoardQueries.SprintAsync(lens, null, null, null, null, null, Today)).Replace("\r", "");
+        Assert.Contains("remaining work is filled on only 0 of 1 open tasks (0 h) - too little to compare with capacity", text);
+        Assert.DoesNotContain("spare", text);
     }
 
     [Theory]

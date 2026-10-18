@@ -210,6 +210,23 @@ public static partial class BoardQueries
         _ => "InProgress",
     };
 
+    static bool HasField(Snapshot s, string type, string reference) =>
+        s.FieldsOf(type) is { Count: > 0 } f ? f.Any(x => x.Ref == reference) : s.Fields.ContainsKey(reference);
+
+    /// <summary>
+    /// Not started, or in the first in-progress state of its type. Later (in test, waiting for production) a missing
+    /// estimate or criteria is no longer worth a flag.
+    /// </summary>
+    static bool Early(Snapshot s, JsonElement wi)
+    {
+        var category = Category(s, wi);
+        if (category == "Proposed") return true;
+        if (category != "InProgress") return false;
+        var type = s.FindType(WorkItems.Field(wi, "System.WorkItemType") ?? "");
+        var first = type?.States.FirstOrDefault(x => x.Category == "InProgress")?.Name;
+        return first is null || first.Equals(WorkItems.Field(wi, "System.State"), StringComparison.OrdinalIgnoreCase);
+    }
+
     static string Group(string category) => category switch
     {
         "Proposed" => "not started",
@@ -287,17 +304,28 @@ public static partial class BoardQueries
         }
         sb.AppendLine();
 
-        var remaining = items.Where(w => Group(Category(s, w)) is not ("done" or "removed")).Sum(w => Number(w, RemainingRef) ?? 0);
+        var open = items.Where(w => Group(Category(s, w)) is not ("done" or "removed")).ToList();
+        var remaining = open.Sum(w => Number(w, RemainingRef) ?? 0);
+        // Remaining Work is kept on tasks; when most open tasks have none, a "fits" would only be a guess.
+        var openTasks = open.Where(w => Level(s, w) == Levels.Task).ToList();
+        var kept = openTasks.Count(w => Number(w, RemainingRef) is not null);
         if (it.Finish is { } end && day <= end && s.Fields.ContainsKey(RemainingRef))
         {
-            var cap = await TryAsync(() => boards.CapacityLeftAsync(name, t, it, it.Start is { } st && st > day ? st : day, working, ct));
-            sb.AppendLine(cap is { } c
-                ? $"remaining work {Num(remaining)} h, capacity left {Num(c.Hours)} h ({c.People} people) - " +
-                  (remaining <= c.Hours ? $"fits, {Num(c.Hours - remaining)} h spare" : $"OVER by {Num(remaining - c.Hours)} h")
-                : $"remaining work {Num(remaining)} h; no capacity set for the team");
+            if (openTasks.Count > 0 && kept * 2 < openTasks.Count)
+                sb.AppendLine($"remaining work is filled on only {kept} of {openTasks.Count} open tasks ({Num(remaining)} h) - too little to compare with capacity");
+            else
+            {
+                var cap = await TryAsync(() => boards.CapacityLeftAsync(name, t, it, it.Start is { } st && st > day ? st : day, working, ct));
+                sb.AppendLine(cap is { } c
+                    ? $"remaining work {Num(remaining)} h, capacity left {Num(c.Hours)} h ({c.People} people) - " +
+                      (remaining <= c.Hours ? $"fits, {Num(c.Hours - remaining)} h spare" : $"OVER by {Num(remaining - c.Hours)} h")
+                    : $"remaining work {Num(remaining)} h; no capacity set for the team");
+            }
         }
 
         var attention = new List<string>();
+        var attentionTop = 0;
+        var topIds = live.Select(WorkItems.Id).ToHashSet();
         foreach (var w in live.Concat(children.Values.SelectMany(x => x)).Where(w => Group(Category(s, w)) is not ("done" or "removed")))
         {
             var why = new List<string>();
@@ -306,15 +334,23 @@ public static partial class BoardQueries
                 why.Add($"no change for {(day - ch.ToLocalTime().Date).Days} days");
             if ((WorkItems.Field(w, "System.Tags") ?? "").Split(';').Any(x => x.Trim().Equals("blocked", StringComparison.OrdinalIgnoreCase))
                 || WorkItems.Field(w, BlockedRef) is "Yes") why.Add("blocked");
-            if (level == Levels.Requirement && estimate is not null && Number(w, estimate) is null) why.Add("no estimate");
-            if (level == Levels.Requirement && fields.Contains(WorkItems.AcceptanceRef) && Html.ToMarkdown(WorkItems.Field(w, WorkItems.AcceptanceRef)).Length == 0)
-                why.Add("no acceptance criteria");
+            var typeName = WorkItems.Field(w, "System.WorkItemType") ?? "";
+            if (level == Levels.Requirement && Early(s, w))
+            {
+                if (estimate is not null && HasField(s, typeName, estimate) && Number(w, estimate) is null) why.Add("no estimate");
+                if (fields.Contains(WorkItems.AcceptanceRef) && HasField(s, typeName, WorkItems.AcceptanceRef)
+                    && Html.ToMarkdown(WorkItems.Field(w, WorkItems.AcceptanceRef)).Length == 0)
+                    why.Add("no acceptance criteria");
+            }
             if (WorkItems.Field(w, "System.AssignedTo") is null) why.Add("unassigned");
-            if (why.Count > 0) attention.Add($"- {WorkItemFormat.Header(w)}{Who(w)}: {string.Join("; ", why)}");
+            if (why.Count == 0) continue;
+            attention.Add($"- {WorkItemFormat.Header(w)}{Who(w)}: {string.Join("; ", why)}");
+            if (topIds.Contains(WorkItems.Id(w))) attentionTop++;
         }
         if (attention.Count > 0)
         {
-            sb.AppendLine($"attention ({attention.Count}):");
+            var taskCount = attention.Count - attentionTop;
+            sb.AppendLine(taskCount > 0 ? $"attention ({attention.Count}: {attentionTop} items, {taskCount} of their tasks):" : $"attention ({attention.Count}):");
             foreach (var a in attention.Take(detail == "full" ? 200 : 15)) sb.AppendLine(a);
             if (attention.Count > 15 && detail != "full") sb.AppendLine($"- … {attention.Count - 15} more (detail=full)");
         }
