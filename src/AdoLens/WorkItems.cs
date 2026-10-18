@@ -244,7 +244,7 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         if (r.Parent is { } parent)
             ops.Add(new { op = "add", path = "/relations/-", value = new { rel = "System.LinkTypes.Hierarchy-Reverse", url = $"{WebBase}_apis/wit/workItems/{parent}" } });
 
-        Lengths(type, r, notes);
+        Lengths(type, r, notes, Has(s, type, AcceptanceRef));
         return ops;
     }
 
@@ -334,15 +334,17 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
     }
 
     /// <summary>Soft limits of the writing rules: informative notes, the write still happens.</summary>
-    static void Lengths(TypeInfo type, WriteRequest r, List<string> notes)
+    static void Lengths(TypeInfo type, WriteRequest r, List<string> notes, bool criteriaField)
     {
         var limit = type.Level switch { Levels.Requirement => 120, Levels.Bug => 100, Levels.Task => 40, Levels.Portfolio => 150, _ => 0 };
-        var words = Html.Words(r.Description);
+        // Without a criteria field the criteria are part of the description, so it may be longer.
+        if (!criteriaField) limit *= 2;
+        var words = Html.Words(r.Description) + (criteriaField ? 0 : Html.Words(r.AcceptanceCriteria));
         if (limit > 0 && words > limit)
             notes.Add($"description has {words} words; {type.Level} items usually need ≤ {limit} - what to do, not how");
         var criteria = (r.AcceptanceCriteria ?? "").Split('\n').Count(l => l.TrimStart() is var t && (t.StartsWith("- ") || t.StartsWith("* ") || (t.Length > 2 && char.IsDigit(t[0]) && t.Contains(". "))));
         if (criteria > 7) notes.Add($"{criteria} acceptance criteria; more than 7 usually means the item should be split");
-        if (type.Level == Levels.Requirement && r.Description is not null && r.AcceptanceCriteria is null && words > 0)
+        if (criteriaField && type.Level == Levels.Requirement && r.Description is not null && r.AcceptanceCriteria is null && words > 0)
             notes.Add("no acceptance criteria given");
     }
 

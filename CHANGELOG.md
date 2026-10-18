@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.2 — 2026-10-18
+
+Fewer false alarms in sprints and checks.
+
+- `ado_sprint`: no "fits, N h spare" when most open tasks have no Remaining Work - it says how many have it instead;
+  the attention count says how many are items and how many their tasks.
+- "no acceptance criteria" only for types that have the field (a process that keeps criteria in the description is not
+  flagged, in `ado_sprint` and `ado_trace` alike); "no estimate" and "no acceptance criteria" only for items not
+  started or in the first state of the work, not for items in test or waiting for production.
+- `ado_create` / `ado_update`: for a type without a criteria field the criteria are part of the description, so the
+  length hint allows twice as many words and no "no acceptance criteria given" note.
+
 ## 0.8.1 — 2026-10-18
 
 Fixes from testing on a real project.

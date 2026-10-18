@@ -85,8 +85,12 @@ public static partial class TraceQueries
         {
             sb.AppendLine("acceptance criteria: none in their field" + (description.Length > 0 ? "; description:" : ""));
             if (description.Length > 0) sb.AppendLine(description.Length > 1500 && !full ? description[..1500] + "…" : description);
-            signals.Add(description.Length > 0 ? "no acceptance criteria: the check can only go by the description"
-                : "no acceptance criteria and no description: nothing to check the code against (look at the parent item)");
+            // A process without the criteria field keeps them in the description: nothing to flag then.
+            var criteriaField = s.FindType(WorkItems.Field(wi, "System.WorkItemType") ?? "") is not { } wt
+                                || s.FieldsOf(wt.Name) is not { Count: > 0 } wf || wf.Any(f => f.Ref == WorkItems.AcceptanceRef);
+            if (description.Length == 0 || criteriaField)
+                signals.Add(description.Length > 0 ? "no acceptance criteria: the check can only go by the description"
+                    : "no acceptance criteria and no description: nothing to check the code against (look at the parent item)");
         }
         var criteriaChanges = (await work.UpdatesAsync(project, id, ct))
             .Where(u => Json.Obj(Json.Obj(u, "fields"), WorkItems.AcceptanceRef).ValueKind == JsonValueKind.Object)
