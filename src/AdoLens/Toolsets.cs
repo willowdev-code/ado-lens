@@ -87,7 +87,7 @@ public static class Toolsets
     {
         foreach (var method in Methods(Loaded(settings)))
             Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(builder.Services,
-                sp => McpServerTool.Create(method, options: new McpServerToolCreateOptions { Services = sp }));
+                sp => ToolArguments.Tool(method, sp));
         return builder;
     }
 

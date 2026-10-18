@@ -223,10 +223,17 @@ public static partial class Knowledge
                 ? $"&versionDescriptor.version={version}&versionDescriptor.versionType=commit"
                 : $"&versionDescriptor.version={Uri.EscapeDataString(version)}&versionDescriptor.versionType=branch";
             text = await Content(session.Client, $"_apis/git/repositories/{file.RepoId}/items?path={Uri.EscapeDataString(file.Path)}&includeContent=true{v}", ct);
-            where = $"{file.RepoName}: {file.Path}" + (version is null ? "" : $" @ {version}");
+            where = $"{file.RepoName}: {file.Path} @ " + (version ?? $"{await DefaultBranchAsync(session.Client, file.RepoId!, ct)} (default branch; version=<branch> for another)");
         }
         if (text is null) return $"no file {where}";
         return Show(where, file.Path, text, part, detail == "full");
+    }
+
+    /// <summary>The default branch of a repository without "refs/heads/", or "the default branch" when unknown.</summary>
+    static async Task<string> DefaultBranchAsync(AdoClient client, string repoId, CancellationToken ct)
+    {
+        try { return Json.Str(await client.GetAsync($"_apis/git/repositories/{repoId}", ct), "defaultBranch")?.Replace("refs/heads/", "") ?? "the default branch"; }
+        catch (AdoApiException) { return "the default branch"; }
     }
 
     internal static async Task<string?> Content(AdoClient client, string url, CancellationToken ct)
@@ -293,7 +300,7 @@ public static partial class Knowledge
         else
         {
             var b = branch is null ? "" : $"&searchCriteria.itemVersion.version={Uri.EscapeDataString(branch)}&searchCriteria.itemVersion.versionType=branch";
-            var list = await client.GetListAsync($"_apis/git/repositories/{file.RepoId}/commits?searchCriteria.itemPath={Uri.EscapeDataString(file.Path)}&searchCriteria.$top={top}{b}", ct);
+            var list = await client.GetListAsync($"_apis/git/repositories/{file.RepoId}/commits?searchCriteria.itemPath={Uri.EscapeDataString(file.Path)}&searchCriteria.$top={top}&searchCriteria.historyMode=fullHistorySimplifyMerges{b}", ct);
             // The pull request of each commit: "Merged PR n" in a merge commit, else the PR that brought the commit in.
             var prOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var c in list)
@@ -334,13 +341,13 @@ public static partial class Knowledge
                 var message = Json.Str(c, "comment");
                 var shaKey = Json.Str(c, "commitId") ?? "";
                 var pr = MergedPr().IsMatch(message ?? "") && prOf.TryGetValue(shaKey, out var n) ? $"PR {n}"
-                    : prOf.TryGetValue(shaKey, out var via) ? $"commit {(shaKey.Length > 7 ? shaKey[..7] : shaKey)} (PR {via})" : null;
+                    : prOf.TryGetValue(shaKey, out var via) ? $"commit {shaKey} (PR {via})" : null;
                 var sha = Json.Str(c, "commitId") ?? "";
                 return new Change(Date(Json.Str(Json.Obj(c, "author"), "date")), Json.Str(Json.Obj(c, "author"), "name"),
-                    pr ?? $"commit {(sha.Length > 7 ? sha[..7] : sha)}", message, items[i]);
+                    pr ?? $"commit {sha}", message, items[i]);
             }));
         }
-        var where = file.Tfvc ? file.Path : $"{file.RepoName}: {file.Path}{(branch is null ? "" : $" ({branch})")}";
+        var where = file.Tfvc ? file.Path : $"{file.RepoName}: {file.Path} ({branch ?? await DefaultBranchAsync(client, file.RepoId!, ct)})";
         if (changes.Count == 0) return $"no history for {where}";
 
         var all = changes.SelectMany(c => c.Items).Distinct().ToList();

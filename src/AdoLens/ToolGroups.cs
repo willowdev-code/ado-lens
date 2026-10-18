@@ -29,7 +29,7 @@ public static class ToolGroups
         if (server.ServerOptions.ToolCollection is not { } tools) return;
         using (tools.DeferChangedEvents())
             foreach (var method in Toolsets.Methods(Toolsets.Active(settings)))
-                tools.TryAdd(McpServerTool.Create(method, options: new McpServerToolCreateOptions { Services = server.Services }));
+                tools.TryAdd(ToolArguments.Tool(method, server.Services!));
     }
 
     public static string Load(Settings settings, McpServer server, string? enable)
@@ -68,7 +68,7 @@ public static class ToolGroups
                 var added = new List<string>();
                 foreach (var method in Toolsets.Methods([group]))
                 {
-                    var tool = McpServerTool.Create(method, options: new McpServerToolCreateOptions { Services = server.Services });
+                    var tool = ToolArguments.Tool(method, server.Services!);
                     if (tools.TryAdd(tool)) added.Add(Toolsets.ToolName(method));
                 }
                 result.AppendLine(added.Count == 0
