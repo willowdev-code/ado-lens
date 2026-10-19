@@ -195,6 +195,22 @@ public class TraceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_trace_that_runs_out_of_time_answers_with_what_it_has()
+    {
+        var budget = TraceQueries.Budget;
+        TraceQueries.Budget = TimeSpan.Zero;
+        try
+        {
+            var text = (await TraceQueries.TraceAsync(lens, null, 1, null, timing: true)).Replace("\r", "");
+            Assert.Contains("ASKED", text);
+            Assert.Contains("INCOMPLETE (stopped after 0 s so the answer comes at all)", text);
+            Assert.Contains("linked changes were not read in time", text);
+            Assert.Contains("timing: item and", text);
+        }
+        finally { TraceQueries.Budget = budget; }
+    }
+
+    [Fact]
     public async Task Changes_list_objects_with_methods_and_diff_one_file()
     {
         var list = (await TraceQueries.ChangesAsync(lens, null, "C523", null, null, null)).Replace("\r", "");

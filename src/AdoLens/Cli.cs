@@ -50,7 +50,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           board [<board>]  --team <t>  --move <id> --column <name>  --detail summary|normal|full
           backlog          --level requirement|portfolio|task|<name>  --top 30  --move <id> --above <id> | --below <id>
           myday            --since 1d|3d|2w|yyyy-MM-dd (default: the previous working day)
-          trace <id>       was it done as asked, and where is it (DEV / UAT / PROD)   --detail summary|full
+          trace <id>       was it done as asked, and where is it (DEV / UAT / PROD)   --detail summary|full  --timing (how long each part took)
           changes <523 | C523 | "PR 482" | sha --repo <r>>   files, X++ methods; --file <name> for a diff
           pr [<id>]        PRs waiting for my review and mine (--list active: all); with id: reviewers, checks, threads
                             --merged <branch> [--since 7d] [--repo <r>] [--top 30]: completed into a branch, with work items
@@ -853,7 +853,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public async Task<int> TraceAsync()
     {
         if (Int(cl.Positional.FirstOrDefault()) is not { } id) { Console.Error.WriteLine("usage: adolens trace <work item id> [--detail summary|full]"); return 2; }
-        Print(await TraceQueries.TraceAsync(NewLens(), cl.Opt("connection"), id, cl.Opt("detail")));
+        Print(await TraceQueries.TraceAsync(NewLens(), cl.Opt("connection"), id, cl.Opt("detail"), timing: cl.Flag("timing")));
         return 0;
     }
 

@@ -19,7 +19,7 @@ public sealed partial class CommandLine
         ["test-create"] = ["connection=", "file=", "plan=", "suite="],
         ["logout"] = ["connection=", "all", "remove"],
         ["connections"] = [],
-        ["trace"] = ["connection=", "detail="],
+        ["trace"] = ["connection=", "detail=", "timing"],
         ["pr"] = ["connection=", "project=", "repo=", "list=", "detail=", "merged=", "since=", "top="],
         ["pipeline"] = ["connection=", "project=", "definition=", "branch=", "top=", "detail=", "artifacts", "artifact=", "part=", "save", "to=", "deployments", "stage="],
         ["changes"] = ["connection=", "repo=", "file=", "detail="],
