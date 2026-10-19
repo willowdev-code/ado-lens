@@ -40,13 +40,35 @@ public static partial class TraceQueries
         c.Files.Select(f => AotDiff.IsAot(f.Path) ? AotDiff.ObjectName(f.Path) : f.Path[(f.Path.LastIndexOf('/') + 1)..])
             .Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
 
-    public static async Task<string> TraceAsync(Lens lens, string? connection, int id, string? detail, CancellationToken ct = default)
+    /// <summary>
+    /// How long a trace may take. Clients give up on a tool after a while (about a minute), so the slow parts - reading
+    /// the linked changes, builds and where it is deployed - stop at this point and the answer says what is missing.
+    /// </summary>
+    internal static TimeSpan Budget = TimeSpan.FromSeconds(40);
+
+    /// <summary>Calls asking whether a change is in a branch or deployment at the same time (more get throttled).</summary>
+    const int ParallelChecks = 8;
+
+    public static async Task<string> TraceAsync(Lens lens, string? connection, int id, string? detail, CancellationToken ct = default, bool timing = false)
     {
         var session = lens.For(connection);
         var work = session.Work;
         var code = session.Code;
         var full = detail == "full";
         var summary = detail == "summary";
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(Budget);
+        var dt = deadline.Token;
+        bool OutOfTime(Exception e) => e is OperationCanceledException && !ct.IsCancellationRequested;
+        var missing = new List<string>();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var phases = new List<string>();
+        var lap = TimeSpan.Zero;
+        void Mark(string phase)
+        {
+            phases.Add($"{phase} {(clock.Elapsed - lap).TotalSeconds:0.0}s");
+            lap = clock.Elapsed;
+        }
 
         var items = await work.GetAsync([id], relations: true, ct: ct);
         if (items.Count == 0) return $"no work item #{id} visible with this PAT";
@@ -96,13 +118,17 @@ public static partial class TraceQueries
             .Where(u => Json.Obj(Json.Obj(u, "fields"), WorkItems.AcceptanceRef).ValueKind == JsonValueKind.Object)
             .Select(u => (When: UpdateTime(u), Who: Json.Str(Json.Obj(u, "revisedBy"), "displayName")))
             .Where(x => x.When is not null).ToList();
+        Mark($"item and {children.Count} tasks");
 
         // 2. What was done: code linked to the item and to its tasks.
         var links = Links(wi).Concat(children.SelectMany(Links)).DistinctBy(l => (l.Kind, l.Value)).ToList();
         var changes = new List<(CodeChange Change, int From)>();
         var failed = new List<string>();
-        await Parallel.ForEachAsync(links.Where(l => l.Kind != "build/build" && l.Kind != "git/ref"),
-            new ParallelOptions { MaxDegreeOfParallelism = 6, CancellationToken = ct }, async (l, token) =>
+        var toRead = links.Where(l => l.Kind != "build/build" && l.Kind != "git/ref").ToList();
+        try
+        {
+        await Parallel.ForEachAsync(toRead,
+            new ParallelOptions { MaxDegreeOfParallelism = 6, CancellationToken = dt }, async (l, token) =>
             {
                 try
                 {
@@ -117,6 +143,12 @@ public static partial class TraceQueries
                 }
                 catch (AdoApiException ex) { lock (failed) failed.Add($"{l.Kind.Split('/')[^1]} {l.Value.Split('/')[^1]}: {Formatting.Collapse(ex.Message, 100)}"); }
             });
+        }
+        catch (Exception e) when (OutOfTime(e))
+        {
+            missing.Add($"{toRead.Count - changes.Count - failed.Count} of {toRead.Count} linked changes were not read in time");
+        }
+        Mark($"{changes.Count} changes");
         changes = Combine(changes.OrderBy(c => c.Change.Date).ToList());
         var (env, envSource) = await EnvironmentFlow.EffectiveAsync(session, project, ct);
         // A PR from a long-lived branch (a release branch into master, staging into master…) carries many items at once:
@@ -125,8 +157,16 @@ public static partial class TraceQueries
         bool IsPromotion(CodeChange x) =>
             x.Kind == "pr" && x.Branch is { } src && (env.ContainsKey(src) || prTargets.Contains(src) || x.Files.Count > 100);
         var branches = new Dictionary<string, string?>();
-        foreach (var cs in changes.Select(x => x.Change).Where(x => x.Kind == "changeset"))
-            branches[cs.Id] = cs.Files.Count > 0 ? await code.TfvcBranchAsync(cs.Files[0].Path, ct) : null;
+        // One call per branch path, all at the same time (changesets of one item are mostly on the same branches).
+        var tfvc = changes.Select(x => x.Change).Where(x => x.Kind == "changeset").ToList();
+        var branchOf = new System.Collections.Concurrent.ConcurrentDictionary<string, Task<string?>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var found = await Task.WhenAll(tfvc.Select(cs => cs.Files.Count == 0 ? Task.FromResult<string?>(null)
+                : branchOf.GetOrAdd(cs.Files[0].Path[..Math.Max(0, cs.Files[0].Path.LastIndexOf('/'))], _ => code.TfvcBranchAsync(cs.Files[0].Path, dt))));
+            for (var i = 0; i < tfvc.Count; i++) branches[tfvc[i].Id] = found[i];
+        }
+        catch (Exception e) when (OutOfTime(e)) { missing.Add("TFVC branches of the changesets were not read in time"); }
 
         sb.AppendLine("\nDONE");
         if (changes.Count == 0) sb.AppendLine("no changesets, commits or pull requests linked to the item or its tasks");
@@ -168,7 +208,7 @@ public static partial class TraceQueries
         {
             var said = string.Join("\n", new[] { WorkItems.DescriptionRef, WorkItems.ReproStepsRef, "Microsoft.VSTS.CMMI.ProposedFix", "Microsoft.VSTS.Common.Resolution",
                     "Microsoft.VSTS.TCM.SystemInfo" }.Select(f => Html.ToMarkdown(WorkItems.Field(wi, f))))
-                + "\n" + string.Join("\n", (await TryCommentsAsync(work, project, id, ct)).Select(c => Html.ToMarkdown(Json.Str(c, "text"))));
+                + "\n" + string.Join("\n", (await TryCommentsAsync(work, project, id, dt)).Select(c => Html.ToMarkdown(Json.Str(c, "text"))));
             var hints = ConfigWords().Matches(said).Select(m => m.Value.ToLowerInvariant()).Distinct().Take(4).ToList();
             signals.Add(hints.Count > 0
                 ? $"no code linked, and the item speaks of configuration ({string.Join(", ", hints)}): probably a change in the system's setup - it can be checked only there, not in code"
@@ -187,10 +227,12 @@ public static partial class TraceQueries
         {
             sb.AppendLine("\nBUILDS");
             var shownBuilds = buildIds.Take(full ? 50 : 5).ToList();
-            var builds = await Task.WhenAll(shownBuilds.Select(b => code.BuildAsync(project, b, ct)));
+            JsonElement?[] builds;
+            try { builds = await Task.WhenAll(shownBuilds.Select(b => code.BuildAsync(project, b, dt))); }
+            catch (Exception e) when (OutOfTime(e)) { builds = new JsonElement?[shownBuilds.Count]; missing.Add("builds were not read in time"); }
             for (var i = 0; i < shownBuilds.Count; i++)
             {
-                if (builds[i] is not { } b) { sb.AppendLine($"- build {shownBuilds[i]}: no longer kept (deleted by retention)"); continue; }
+                if (builds[i] is not { } b) { sb.AppendLine($"- build {shownBuilds[i]}: {(dt.IsCancellationRequested ? "not read in time" : "no longer kept (deleted by retention)")}"); continue; }
                 sb.AppendLine($"- {Json.Str(Json.Obj(b, "definition"), "name")} {Json.Str(b, "buildNumber")}: {Json.Str(b, "result") ?? Json.Str(b, "status")}, " +
                               $"{Code.Short(Json.Str(b, "sourceBranch"))} @ {Json.Str(b, "sourceVersion")?[..Math.Min(8, Json.Str(b, "sourceVersion")!.Length)]}, {Date(DateTime.TryParse(Json.Str(b, "finishTime"), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var f) ? f : null)}");
                 if (i == 0 && Json.Str(b, "result") is "failed" or "partiallySucceeded") signals.Add($"the latest linked build ({Json.Str(b, "buildNumber")}) {Json.Str(b, "result")}");
@@ -202,7 +244,11 @@ public static partial class TraceQueries
         // Releases live with the code, which can be in another project than the work item.
         var projects = changes.Select(x => x.Change.Project).Append(project).Where(p => p is not null).Select(p => p!)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var deployments = (await Task.WhenAll(projects.Select(p => code.DeploymentsAsync(p, ct)))).SelectMany(x => x).ToList();
+        Mark("builds");
+        List<Deployment> deployments;
+        try { deployments = (await Task.WhenAll(projects.Select(p => code.DeploymentsAsync(p, dt)))).SelectMany(x => x).ToList(); }
+        catch (Exception e) when (OutOfTime(e)) { deployments = []; missing.Add("release deployments were not read in time"); }
+        Mark($"{deployments.Count} release stages");
         // The environment map names a release stage ("Definition/Stage", e.g. one stage deploying to UAT and SCM at once),
         // a whole release definition, or a branch ("staging"; TFVC: the last part of the branch path, e.g. "Main").
         var envOrder = env.Keys.Select((k, i) => (k, i)).ToDictionary(x => x.k, x => x.i, StringComparer.OrdinalIgnoreCase);
@@ -221,8 +267,15 @@ public static partial class TraceQueries
         // Each answer is one Azure DevOps call: asked once, all at the same time (a sequential walk timed out on items
         // with several PRs and many release stages).
         var containsCache = new System.Collections.Concurrent.ConcurrentDictionary<(string, string, bool), Task<bool?>>();
+        using var gate = new SemaphoreSlim(ParallelChecks);
         Task<bool?> Contains(string repo, string commit, string target, bool isBranch) =>
-            containsCache.GetOrAdd((commit, target, isBranch), _ => code.ContainsAsync(repo, commit, target, isBranch, ct));
+            containsCache.GetOrAdd((commit, target, isBranch), _ => Gated(() => code.ContainsAsync(repo, commit, target, isBranch, dt)));
+        async Task<bool?> Gated(Func<Task<bool?>> check)
+        {
+            await gate.WaitAsync(dt);
+            try { return await check(); }
+            finally { gate.Release(); }
+        }
         async Task<(List<CodeChange> In, List<CodeChange> NotYet, bool Known)> GitStatus(string repo, string target, bool isBranch, DateTime? deployedAt)
         {
             var git = changes.Select(x => x.Change).Where(x => x.Kind != "changeset" && string.Equals(x.RepoId, repo, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -272,7 +325,7 @@ public static partial class TraceQueries
                     return (string?)(label + (inside.Count > 0
                         ? $"YES - deployed {deployed}: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
                         : $"NOT YET - last deployment {deployed} has none of it"));
-                }, ct));
+                }, dt));
             }
         }
         // Git branches named in the environment map, even without release pipelines: is the work merged there?
@@ -289,9 +342,16 @@ public static partial class TraceQueries
                     return (string?)($"- {envLabel} = branch {branch} ({repoName}): " + (inside.Count > 0
                         ? $"merged: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
                         : "NOT merged yet"));
-                }, ct));
+                }, dt));
             }
-        where.AddRange((await Task.WhenAll(stageTasks)).Where(l => l is not null).Select(l => l!));
+        try { await Task.WhenAll(stageTasks); }
+        catch (Exception e) when (OutOfTime(e))
+        {
+            var open = stageTasks.Count(t => !t.IsCompletedSuccessfully);
+            missing.Add($"{open} of {stageTasks.Count} stages and branches were not checked in time (ado_changes or ado_pipeline answer them one by one)");
+        }
+        where.AddRange(stageTasks.Where(t => t.IsCompletedSuccessfully).Select(t => t.Result).Where(l => l is not null).Select(l => l!));
+        Mark($"{containsCache.Count} branch checks");
         if (where.Count > 0) sb.AppendLine("\nWHERE").AppendLine(string.Join('\n', where));
         else if (changes.Count > 0) sb.AppendLine("\nWHERE").AppendLine("no release stage deploys the branches of this change");
 
@@ -328,6 +388,10 @@ public static partial class TraceQueries
             sb.AppendLine("\nTASKS").AppendLine(string.Join('\n', children.Select(t => $"- {WorkItemFormat.Header(t)}{(WorkItems.Field(t, "System.AssignedTo") is { } who ? $" ({who})" : "")}")));
 
         sb.AppendLine("\nSIGNALS").AppendLine(signals.Count == 0 ? "- none" : string.Join('\n', signals.Select(x => "- " + x)));
+        if (missing.Count > 0)
+            sb.AppendLine($"\nINCOMPLETE (stopped after {Budget.TotalSeconds:0} s so the answer comes at all)").AppendLine(string.Join('\n', missing.Select(x => "- " + x)));
+        Mark("rest");
+        if (timing) sb.AppendLine($"\ntiming: {string.Join(", ", phases)}; total {clock.Elapsed.TotalSeconds:0.0}s");
         return sb.ToString().TrimEnd();
     }
 
@@ -359,7 +423,7 @@ public static partial class TraceQueries
     static async Task<List<JsonElement>> TryCommentsAsync(WorkItems work, string project, int id, CancellationToken ct)
     {
         try { return await work.CommentsAsync(project, id, 30, ct); }
-        catch (AdoApiException) { return []; }
+        catch (Exception e) when (e is AdoApiException or OperationCanceledException) { return []; }
     }
 
     [GeneratedRegex(@"^Merged PR (?<n>\d+)")]

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1 — 2026-10-19
+
+- `ado_trace` always answers: on an item with many links (pull requests, commits, builds, releases) the slow parts
+  stop after 40 seconds and an INCOMPLETE section says what was not checked, instead of the client giving up with a
+  timeout. At most 8 branch and deployment checks run at the same time (more were throttled), and the TFVC branch of
+  changesets is asked once per folder, all at once.
+- `adolens trace <id> --timing`: how long each part took, to find what is slow on a given project.
+
 ## 0.9.0 — 2026-10-18
 
 Improvements from testing on a real project.
