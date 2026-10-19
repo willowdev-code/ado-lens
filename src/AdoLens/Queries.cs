@@ -124,7 +124,7 @@ public static class Queries
     {
         var rules = await session.Work.RequiredRulesAsync(snap, t, ct);
         if (rules.Count == 0) return "";
-        return "required by rules: " + string.Join("; ", rules.Select(r => $"{(snap.Fields.TryGetValue(r.Field, out var f) ? f.Name : r.Field)} ({r.When})")) + "\n";
+        return "also REQUIRED, by rules of the process (the list above does not mark them; ado_create and ado_update check them): " + string.Join("; ", rules.Select(r => $"{(snap.Fields.TryGetValue(r.Field, out var f) ? f.Name : r.Field)} ({r.When})")) + "\n";
     }
 
     public static async Task<string> FieldsAsync(Lens lens, string? connection, string? project, string? type, string? field,

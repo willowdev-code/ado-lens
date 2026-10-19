@@ -134,6 +134,18 @@ public class PrPipelineTests : IDisposable
         Assert.Contains("vstfs:///Git/PullRequestId/p1%2Fr1%2F482", items.Patches.Single(x => x.Id == 2).Body);
         Assert.DoesNotContain(items.Patches, x => x.Id == 1 && x.Body.Contains("PullRequestId"));
 
+        // A required reviewer added later; Anna is already a reviewer, so her vote is kept.
+        Assert.Equal("PR 482 updated: reviewers Anna Nowak (required)",
+            await PullRequestQueries.ActAsync(lens, null, new() { Action = "update", Id = 482, RequiredReviewers = "Anna" }));
+        Assert.Contains("\"isRequired\":true", writes.Last(w => w.Method == "PUT").Body);
+
+        Assert.StartsWith("PR 482 completes automatically when its policies pass, squash",
+            await PullRequestQueries.ActAsync(lens, null, new() { Action = "autocomplete", Id = 482, MergeStrategy = "squash", Text = "Login form (#1)" }));
+        var auto = writes.Last(w => w.Method == "PATCH").Body;
+        Assert.Contains("\"autoCompleteSetBy\":{\"id\":\"me-1\"}", auto);
+        Assert.Contains("\"mergeCommitMessage\":\"Login form (#1)\"", auto);
+        Assert.Equal("PR 482: auto-complete cancelled", await PullRequestQueries.ActAsync(lens, null, new() { Action = "cancel_autocomplete", Id = 482 }));
+
         await Assert.ThrowsAsync<ArgumentException>(() => PullRequestQueries.ActAsync(lens, null, new() { Action = "merge", Id = 482 }));
     }
 

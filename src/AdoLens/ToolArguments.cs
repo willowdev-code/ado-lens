@@ -81,12 +81,32 @@ public static class ToolArguments
         public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options) => writer.WriteBooleanValue(value);
     }
 
+    static IEnumerable<string> Parameters(JsonElement schema) =>
+        schema.TryGetProperty("properties", out var p) && p.ValueKind == JsonValueKind.Object ? p.EnumerateObject().Select(x => x.Name) : [];
+
+    internal static List<string> Unknown(JsonElement schema, IEnumerable<string> given)
+    {
+        var known = Parameters(schema).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return known.Count == 0 ? [] : given.Where(g => !known.Contains(g)).ToList();
+    }
+
     /// <summary>
     /// A failure outside the tool's own code (an argument that cannot be read at all) comes back as text Claude can act
     /// on instead of the SDK's bare "An error occurred".
     /// </summary>
     public static McpRequestFilter<CallToolRequestParams, CallToolResult> Errors => next => async (context, ct) =>
     {
+        // A parameter the tool does not have would be dropped without a word (a session started before an update
+        // still has the old descriptions): say so with the parameters there are.
+        if (context.Params is { Name: { } name, Arguments: { Count: > 0 } args }
+            && context.Server.ServerOptions.ToolCollection?.TryGetPrimitive(name, out var called) == true
+            && Unknown(called.ProtocolTool.InputSchema, args.Keys) is { Count: > 0 } unknown)
+            return new CallToolResult
+            {
+                IsError = true,
+                Content = [new TextContentBlock { Text = $"{name}: no parameter {string.Join(", ", unknown)}; its parameters: {string.Join(", ", Parameters(called.ProtocolTool.InputSchema))}. " +
+                                                         "If ADO Lens was updated during this conversation, a new conversation (or restarting Claude) shows the current ones." }],
+            };
         try { return await next(context, ct); }
         catch (Exception ex) when (ex is ArgumentException or JsonException or FormatException or InvalidOperationException or NotSupportedException)
         {

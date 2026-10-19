@@ -237,8 +237,9 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         {
             // Fields Azure DevOps fills itself (ids from the paths, the creator, dates) are "required" in some processes
             // but cannot be given: never ask for them.
+            var defaults = _defaulted.GetValueOrDefault(s.Project.Id + "|" + type.Ref) ?? [];
             var missing = s.FieldsOf(type.Name)
-                .Where(f => f.Required && string.IsNullOrEmpty(f.Default) && !set.ContainsKey(f.Ref) && !FilledByAzureDevOps(f.Ref)
+                .Where(f => f.Required && string.IsNullOrEmpty(f.Default) && !defaults.Contains(f.Ref) && !set.ContainsKey(f.Ref) && !FilledByAzureDevOps(f.Ref)
                             && !(s.Fields.TryGetValue(f.Ref, out var def) && def.ReadOnly))
                 .Select(f => $"{f.Name} [{f.Ref}]" + (f.Allowed.Count > 0 ? $" ({string.Join(" | ", f.Allowed.Take(10))}{(f.Allowed.Count > 10 ? " | …" : "")})" : ""))
                 .ToList();
@@ -268,6 +269,8 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         public bool Applies(IReadOnlyDictionary<string, object?> set, string? state, bool created) => Conditions.All(c => c.Type switch
         {
             "whenWorkItemIsCreated" => created,
+            // The value before this save: nothing on create.
+            "whenWas" => created ? string.IsNullOrEmpty(c.Value) : false,
             "whenStateChangedTo" => state is not null && string.Equals(state, c.Value, StringComparison.OrdinalIgnoreCase),
             "when" => c.Field is not null && set.TryGetValue(c.Field, out var v) && string.Equals(v?.ToString(), c.Value, StringComparison.OrdinalIgnoreCase),
             "whenNot" => c.Field is not null && set.TryGetValue(c.Field, out var v) && !string.Equals(v?.ToString(), c.Value, StringComparison.OrdinalIgnoreCase),
@@ -276,6 +279,9 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
     }
 
     readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<RequiredRule>> _rules = new();
+
+    /// <summary>Fields a rule of the process gives a default (or copies a value into), per project and type.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<string>> _defaulted = new();
 
     /// <summary>
     /// "Make required" rules of the type in an inherited process; empty for other processes or without permission.
@@ -289,22 +295,35 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         {
             var props = await client.GetAsync($"_apis/projects/{s.Project.Id}/properties?api-version=7.1-preview.1", ct);
             var processId = Json.Arr(props, "value").Where(v => Json.Str(v, "name") == "System.ProcessTemplateType").Select(v => Json.Str(v, "value")).FirstOrDefault();
-            if (processId is not null)
-                foreach (var rule in await client.GetListAsync($"_apis/work/processes/{processId}/workItemTypes/{Uri.EscapeDataString(type.Ref)}/rules", ct))
+            var rules = processId is null ? []
+                : (await client.GetListAsync($"_apis/work/processes/{processId}/workItemTypes/{Uri.EscapeDataString(type.Ref)}/rules", ct))
+                    .Where(rule => !Json.Bool(rule, "isDisabled")).ToList();
+            // The list holds the system rules too ("Area ID required", "Severity required") next to the rules that give
+            // those fields their default ("Business", "3 - Medium"): a field with a default or filled by Azure DevOps
+            // is never asked for.
+            var defaulted = rules.SelectMany(rule => Json.Arr(rule, "actions"))
+                .Where(a => Json.Str(a, "actionType") is { } t && (t.StartsWith("setDefault", StringComparison.OrdinalIgnoreCase) || t.StartsWith("copy", StringComparison.OrdinalIgnoreCase)))
+                .Select(a => Json.Str(a, "targetField")).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            defaulted.UnionWith(s.FieldsOf(type.Name).Where(f => !string.IsNullOrEmpty(f.Default)).Select(f => f.Ref));
+            _defaulted[key] = defaulted;
+            foreach (var rule in rules)
+            {
+                var conditions = Json.Arr(rule, "conditions").Select(c => (Json.Str(c, "conditionType") ?? "", Json.Str(c, "field"), Json.Str(c, "value"))).ToList();
+                var when = conditions.Count == 0 ? "always" : string.Join(" and ", conditions.Select(c => c.Item1 switch
                 {
-                    if (Json.Bool(rule, "isDisabled")) continue;
-                    var conditions = Json.Arr(rule, "conditions").Select(c => (Json.Str(c, "conditionType") ?? "", Json.Str(c, "field"), Json.Str(c, "value"))).ToList();
-                    var when = conditions.Count == 0 ? "always" : string.Join(" and ", conditions.Select(c => c.Item1 switch
-                    {
-                        "whenStateChangedTo" => $"on moving to {c.Item3}",
-                        "whenWorkItemIsCreated" => "on create",
-                        "when" => $"when {c.Item2} = {c.Item3}",
-                        "whenNot" => $"when {c.Item2} is not {c.Item3}",
-                        _ => $"{c.Item1} {c.Item2} {c.Item3}".Trim(),
-                    }));
-                    foreach (var a in Json.Arr(rule, "actions").Where(a => Json.Str(a, "actionType") == "makeRequired"))
-                        if (Json.Str(a, "targetField") is { } field) list.Add(new RequiredRule(field, when, conditions));
-                }
+                    "whenStateChangedTo" => $"on moving to {c.Item3}",
+                    "whenWorkItemIsCreated" => "on create",
+                    "when" => $"when {c.Item2} = {c.Item3}",
+                    "whenNot" => $"when {c.Item2} is not {c.Item3}",
+                    // "whenWas State = (empty)": before the item had any state, i.e. when it is created.
+                    "whenWas" when string.IsNullOrEmpty(c.Item3) => c.Item2 == "System.State" ? "on create" : $"while {c.Item2} was empty",
+                    "whenWas" => $"when {c.Item2} was {c.Item3}",
+                    _ => $"{c.Item1} {c.Item2} {c.Item3}".Trim(),
+                }));
+                foreach (var a in Json.Arr(rule, "actions").Where(a => Json.Str(a, "actionType") == "makeRequired"))
+                    if (Json.Str(a, "targetField") is { } field && !FilledByAzureDevOps(field) && !defaulted.Contains(field))
+                        list.Add(new RequiredRule(field, when, conditions));
+            }
         }
         catch (AdoApiException) { }
         _rules[key] = list;

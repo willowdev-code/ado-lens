@@ -8,7 +8,20 @@ namespace AdoLens;
 /// <summary>Pull requests: lists, one PR with reviewers, policies, work items and human comment threads, and actions.</summary>
 public static partial class PullRequestQueries
 {
-    public static readonly string[] Actions = ["create", "update", "comment", "reply", "resolve", "vote", "tag", "publish", "complete", "abandon"];
+    public static readonly string[] Actions = ["create", "update", "comment", "reply", "resolve", "vote", "tag", "publish", "autocomplete", "cancel_autocomplete", "complete", "abandon"];
+
+    /// <summary>The people of "a; b" as reviewers, required ones marked.</summary>
+    static async Task<List<(Person Who, bool Required)>> ReviewersAsync(Session session, string? optional, string? required, CancellationToken ct)
+    {
+        var list = new List<(Person, bool)>();
+        foreach (var (names, isRequired) in new[] { (required, true), (optional, false) })
+            foreach (var r in (names ?? "").Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var who = await session.People.ResolveAsync(r, ct);
+                if (!list.Any(x => x.Item1.Id == who.Id)) list.Add((who, isRequired));
+            }
+        return list;
+    }
 
     static readonly Dictionary<string, int> Votes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -219,6 +232,7 @@ public static partial class PullRequestQueries
         public int? Thread { get; init; }
         public string? File { get; init; }
         public int? Line { get; init; }
+        public string? RequiredReviewers { get; init; }
         public string? Vote { get; init; }
         public string? Status { get; init; }
         public string? Source { get; init; }
@@ -269,9 +283,7 @@ public static partial class PullRequestQueries
             if (a.Repo is null || a.Source is null || a.Target is null || string.IsNullOrWhiteSpace(a.Title))
                 throw new ArgumentException("create needs repo, source, target and title");
             var repo = await session.Code.RepoAsync(a.Repo, session.Config.Project, ct);
-            var reviewers = new List<object>();
-            foreach (var r in (a.Reviewers ?? "").Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                reviewers.Add(new { id = (await session.People.ResolveAsync(r, ct)).Id });
+            var reviewers = (await ReviewersAsync(session, a.Reviewers, a.RequiredReviewers, ct)).Select(r => (object)new { id = r.Who.Id, isRequired = r.Required }).ToList();
             var body = new Dictionary<string, object?>
             {
                 ["sourceRefName"] = "refs/heads/" + a.Source.Replace("refs/heads/", ""),
@@ -302,8 +314,14 @@ public static partial class PullRequestQueries
                 if (!string.IsNullOrWhiteSpace(a.Title)) changes["title"] = a.Title.Trim();
                 if (a.Text is not null) changes["description"] = await MentionsAsync(session.People, a.Text, ct);
                 var link = WorkQueries.ParseIds(a.WorkItems);
-                if (changes.Count == 0 && link.Count == 0) throw new ArgumentException("update needs title, text or workItems");
+                var people = await ReviewersAsync(session, a.Reviewers, a.RequiredReviewers, ct);
+                if (changes.Count == 0 && link.Count == 0 && people.Count == 0)
+                    throw new ArgumentException("update needs title, text, workItems, reviewers or requiredReviewers");
                 if (changes.Count > 0) await client.SendAsync(HttpMethod.Patch, baseUrl, changes, "application/json", ct);
+                // Adding a reviewer who is already there keeps their vote (only "required" changes).
+                var votes = Json.Arr(current, "reviewers").ToDictionary(x => Json.Str(x, "id") ?? "", x => x.TryGetProperty("vote", out var v) ? v.GetInt32() : 0);
+                foreach (var (who, required) in people)
+                    await client.SendAsync(HttpMethod.Put, $"{baseUrl}/reviewers/{who.Id}", new { vote = votes.GetValueOrDefault(who.Id), isRequired = required }, "application/json", ct);
                 // A work item is linked to a PR by an artifact link on the work item (what the web does).
                 var projectId = Json.Str(Json.Obj(Json.Obj(current, "repository"), "project"), "id");
                 var already = (await client.GetListAsync($"{baseUrl}/workitems", ct)).Select(w => Json.Str(w, "id")).ToHashSet();
@@ -320,6 +338,7 @@ public static partial class PullRequestQueries
                 var parts = new List<string>();
                 if (changes.ContainsKey("title")) parts.Add("title");
                 if (changes.ContainsKey("description")) parts.Add("description");
+                if (people.Count > 0) parts.Add("reviewers " + string.Join(", ", people.Select(p => p.Who.DisplayName + (p.Required ? " (required)" : ""))));
                 if (linked.Count > 0) parts.Add("linked " + string.Join(", ", linked.Select(i => "#" + i)));
                 if (link.Count > linked.Count) parts.Add("already linked " + string.Join(", ", link.Except(linked).Select(i => "#" + i)));
                 var words = Html.Words(a.Text);
@@ -369,6 +388,24 @@ public static partial class PullRequestQueries
                 var now = await SetTagsAsync(client, baseUrl, a.Tags, ct);
                 return $"PR {id} tags: {(now.Count == 0 ? "none" : string.Join("; ", now))}";
             }
+            case "autocomplete":
+            {
+                // Completes by itself once the policies pass, with these options; text is the merge commit message.
+                var (me, _) = await new Boards(session).MeAsync(ct);
+                var options = new Dictionary<string, object?>
+                {
+                    ["deleteSourceBranch"] = a.DeleteSourceBranch,
+                    ["transitionWorkItems"] = false,
+                };
+                if (a.MergeStrategy is not null) options["mergeStrategy"] = a.MergeStrategy;
+                if (!string.IsNullOrWhiteSpace(a.Text)) options["mergeCommitMessage"] = a.Text.Trim();
+                await client.SendAsync(HttpMethod.Patch, baseUrl, new { autoCompleteSetBy = new { id = me }, completionOptions = options }, "application/json", ct);
+                return $"PR {id} completes automatically when its policies pass" +
+                       $"{(a.MergeStrategy is null ? "" : $", {a.MergeStrategy}")}{(a.DeleteSourceBranch ? ", source branch deleted" : "")}";
+            }
+            case "cancel_autocomplete":
+                await client.SendAsync(HttpMethod.Patch, baseUrl, new { autoCompleteSetBy = new { id = "00000000-0000-0000-0000-000000000000" } }, "application/json", ct);
+                return $"PR {id}: auto-complete cancelled";
             case "publish":
                 await client.SendAsync(HttpMethod.Patch, baseUrl, new { isDraft = false }, "application/json", ct);
                 return $"PR {id} is published (no longer a draft)";

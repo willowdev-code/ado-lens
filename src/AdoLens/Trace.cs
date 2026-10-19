@@ -125,10 +125,12 @@ public static partial class TraceQueries
         var changes = new List<(CodeChange Change, int From)>();
         var failed = new List<string>();
         var toRead = links.Where(l => l.Kind != "build/build" && l.Kind != "git/ref").ToList();
-        try
+        // Reading the changes gets part of the time, so builds and deployments are still read when it runs out.
+        using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(dt);
+        readDeadline.CancelAfter(Budget * 0.5);
+        async Task ReadAsync(IEnumerable<Link> batch)
         {
-        await Parallel.ForEachAsync(toRead,
-            new ParallelOptions { MaxDegreeOfParallelism = 6, CancellationToken = dt }, async (l, token) =>
+            await Parallel.ForEachAsync(batch, new ParallelOptions { MaxDegreeOfParallelism = 6, CancellationToken = readDeadline.Token }, async (l, token) =>
             {
                 try
                 {
@@ -137,16 +139,28 @@ public static partial class TraceQueries
                     {
                         "versioncontrol/changeset" => await code.ChangesetAsync(int.Parse(parts[^1], CultureInfo.InvariantCulture), token),
                         "git/commit" => await code.CommitAsync(parts[1], parts[2], token),
-                        _ => await code.PullRequestAsync(parts[1], int.Parse(parts[2], CultureInfo.InvariantCulture), withFiles: false, token),
+                        // The files of a PR from its last iteration: cheap, where the files of its merge commit are a
+                        // diff against the target branch (seconds each in a large repository).
+                        _ => await code.PullRequestAsync(parts[1], int.Parse(parts[2], CultureInfo.InvariantCulture), withFiles: !summary, token),
                     };
                     lock (changes) changes.Add((c, l.From));
                 }
                 catch (AdoApiException ex) { lock (failed) failed.Add($"{l.Kind.Split('/')[^1]} {l.Value.Split('/')[^1]}: {Formatting.Collapse(ex.Message, 100)}"); }
             });
         }
-        catch (Exception e) when (OutOfTime(e))
+        var skipped = 0;
+        try
         {
-            missing.Add($"{toRead.Count - changes.Count - failed.Count} of {toRead.Count} linked changes were not read in time");
+            // Pull requests first: the merge commits Azure DevOps links next to them are then known and not read again.
+            await ReadAsync(toRead.Where(l => l.Kind == "git/pullrequestid"));
+            var merges = changes.Select(x => x.Change.MergeCommit).Where(m => m is not null).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var rest = toRead.Where(l => l.Kind != "git/pullrequestid").ToList();
+            skipped = rest.RemoveAll(l => l.Kind == "git/commit" && merges.Contains(l.Value.Split('/')[^1]));
+            await ReadAsync(rest);
+        }
+        catch (Exception e) when (OutOfTime(e) || e is OperationCanceledException && readDeadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            missing.Add($"{toRead.Count - skipped - changes.Count - failed.Count} of {toRead.Count - skipped} linked changes were not read in time");
         }
         Mark($"{changes.Count} changes");
         changes = Combine(changes.OrderBy(c => c.Change.Date).ToList());
@@ -206,8 +220,13 @@ public static partial class TraceQueries
             signals.Add($"acceptance criteria changed after the first code change ({string.Join(", ", late.Select(x => $"{Date(x.When)} {x.Who}"))}) - check the code against the current version");
         if (changes.Count == 0)
         {
-            var said = string.Join("\n", new[] { WorkItems.DescriptionRef, WorkItems.ReproStepsRef, "Microsoft.VSTS.CMMI.ProposedFix", "Microsoft.VSTS.Common.Resolution",
-                    "Microsoft.VSTS.TCM.SystemInfo" }.Select(f => Html.ToMarkdown(WorkItems.Field(wi, f))))
+            // Every text field (Proposed Fix, Resolution and custom ones), the item's tasks and the comments.
+            static IEnumerable<string> Texts(JsonElement x) => Json.Obj(x, "fields") is { ValueKind: JsonValueKind.Object } f
+                ? f.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String && !p.Name.StartsWith("System.", StringComparison.Ordinal)
+                                                 || p.Name is "System.Description" or "System.Title" or "System.History")
+                    .Select(p => Html.ToMarkdown(p.Value.GetString()))
+                : [];
+            var said = string.Join("\n", Texts(wi).Concat(children.SelectMany(Texts)))
                 + "\n" + string.Join("\n", (await TryCommentsAsync(work, project, id, dt)).Select(c => Html.ToMarkdown(Json.Str(c, "text"))));
             var hints = ConfigWords().Matches(said).Select(m => m.Value.ToLowerInvariant()).Distinct().Take(4).ToList();
             signals.Add(hints.Count > 0
@@ -279,11 +298,23 @@ public static partial class TraceQueries
         async Task<(List<CodeChange> In, List<CodeChange> NotYet, bool Known)> GitStatus(string repo, string target, bool isBranch, DateTime? deployedAt)
         {
             var git = changes.Select(x => x.Change).Where(x => x.Kind != "changeset" && string.Equals(x.RepoId, repo, StringComparison.OrdinalIgnoreCase)).ToList();
-            // A deployment that finished before a change was merged cannot contain it: no need to ask.
+            // Only the newest change of each source -> target pair is asked about: the older ones of the pair are in
+            // the target branch before it, so they are in or out together with it.
+            var newest = git.Where(g => g.LandedCommit is not null).GroupBy(g => (g.Branch, g.TargetBranch, g.Kind == "commit" ? g.Id : null))
+                .Select(grp => grp.OrderByDescending(g => g.Date).First()).ToHashSet();
             var answers = await Task.WhenAll(git.Select(async g =>
                 g.LandedCommit is not { } commit ? (bool?)null
+                // A completed PR into the branch itself: it is there, nothing to ask.
+                : isBranch && g.Kind == "pr" && string.Equals(g.TargetBranch, target, StringComparison.OrdinalIgnoreCase) ? true
+                // A deployment that finished before a change was merged cannot contain it: no need to ask.
                 : deployedAt is { } at && g.Date is { } merged && at < merged ? false
+                : !newest.Contains(g) ? (bool?)null
                 : await Contains(repo, commit, target, isBranch)));
+            // The older changes of a pair follow the answer for its newest one.
+            for (var i = 0; i < git.Count; i++)
+                if (answers[i] is null && git[i].LandedCommit is not null
+                    && git.Select((g, k) => (g, k)).FirstOrDefault(x => newest.Contains(x.g) && x.g.Branch == git[i].Branch && x.g.TargetBranch == git[i].TargetBranch && x.g.Kind == git[i].Kind) is { g: not null } n)
+                    answers[i] = answers[n.k];
             var inside = git.Where((g, i) => answers[i] == true).ToList();
             var known = answers.Any(a => a is not null);
             var notYet = git.Where(g => !inside.Contains(g) && !IsPromotion(g)
@@ -417,7 +448,7 @@ public static partial class TraceQueries
     }
 
     /// <summary>Words of a change made in configuration rather than code (D365 and general, English and Polish).</summary>
-    [GeneratedRegex(@"\b(?:electronic reporting|ER configuration|konfiguracj\w*|configuration|parametr\w*|parameters?|setup|ustawie\w*|data management|DMF|workflow|number sequence|sekwencj\w* numer\w*|batch job)\b", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\b(?:electronic reporting|ER configuration|ER|format\w* ER|mapowani\w*|model mapping|konfiguracj\w*|configuration|parametr\w*|parameters?|setup|ustawie\w*|data management|DMF|workflow|number sequence|sekwencj\w* numer\w*|batch job)\b", RegexOptions.IgnoreCase)]
     private static partial Regex ConfigWords();
 
     static async Task<List<JsonElement>> TryCommentsAsync(WorkItems work, string project, int id, CancellationToken ct)

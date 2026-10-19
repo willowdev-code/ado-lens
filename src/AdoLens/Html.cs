@@ -32,6 +32,9 @@ public static partial class Html
     private static partial Regex BlankLines();
 
     /// <summary>HTML → markdown: headings, lists, bold, links, code, tables as "a | b"; images become "[image]".</summary>
+    [GeneratedRegex(@"\bstart\s*=\s*[""']?(\d+)", RegexOptions.IgnoreCase)]
+    private static partial Regex OlStart();
+
     public static string ToMarkdown(string? html)
     {
         if (string.IsNullOrWhiteSpace(html)) return "";
@@ -59,7 +62,13 @@ public static partial class Html
                 case "ul" or "ol":
                     // Only the outermost list is separated from the text; nested ones continue under their item.
                     if (closing) { if (lists.Count > 0) lists.Pop(); if (lists.Count == 0) sb.Append('\n'); }
-                    else { if (lists.Count == 0) sb.Append('\n'); lists.Push((name == "ol", 0)); }
+                    else
+                    {
+                        if (lists.Count == 0) sb.Append('\n');
+                        // <ol start="4"> continues a numbering broken by text in between.
+                        var first = name == "ol" && OlStart().Match(attrs) is { Success: true } st && int.TryParse(st.Groups[1].Value, out var n) ? n - 1 : 0;
+                        lists.Push((name == "ol", first));
+                    }
                     break;
                 case "li" when !closing:
                     var depth = Math.Max(0, lists.Count - 1);
