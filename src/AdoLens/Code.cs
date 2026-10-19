@@ -162,8 +162,23 @@ public sealed class Code(AdoClient client)
     }
 
     /// <summary>Whether <paramref name="commit"/> is in the history of <paramref name="target"/> (a commit or branch).</summary>
-    public async Task<bool?> ContainsAsync(string repoId, string commit, string target, bool targetIsBranch, CancellationToken ct)
+    public async Task<bool?> ContainsAsync(string repoId, string commit, string target, bool targetIsBranch, CancellationToken ct, DateTime? committed = null)
     {
+        // With the commit's date: the history of the target around that day holds the commit exactly when the target
+        // contains it. One cheap call, where a diff between far-apart commits takes seconds in a large repository.
+        if (committed is { } when)
+        {
+            try
+            {
+                var near = await client.GetListAsync($"_apis/git/repositories/{repoId}/commits?searchCriteria.itemVersion.version={Uri.EscapeDataString(target)}" +
+                    $"&searchCriteria.itemVersion.versionType={(targetIsBranch ? "branch" : "commit")}" +
+                    $"&searchCriteria.fromDate={Uri.EscapeDataString(when.AddDays(-1).ToString("o", CultureInfo.InvariantCulture))}" +
+                    $"&searchCriteria.toDate={Uri.EscapeDataString(when.AddDays(1).ToString("o", CultureInfo.InvariantCulture))}&searchCriteria.$top=1000", ct);
+                if (near.Any(c => string.Equals(Json.Str(c, "commitId"), commit, StringComparison.OrdinalIgnoreCase))) return true;
+                if (near.Count < 1000) return false;
+            }
+            catch (AdoApiException) { }
+        }
         try
         {
             var diff = await client.GetAsync($"_apis/git/repositories/{repoId}/diffs/commits?baseVersion={commit}&baseVersionType=commit" +
