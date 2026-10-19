@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.9.2 — 2026-10-19
+
+Fixes and additions from testing 0.9 on a real project.
+
+- `ado_create`: fields with a default of the process (Value Area, Severity, Triage…) and fields Azure DevOps fills
+  itself (Area ID, Iteration ID, State, Work Item Type) are no longer asked for - the rule check of 0.9.0 took the
+  system rules of the process for fields to give. A rule "required while State was empty" is checked as "on create"
+  instead of ending in a 400 from Azure DevOps.
+- `ado_fields type=<type>`: fields required by rules are named as REQUIRED, and fields that are required but filled by
+  Azure DevOps say so.
+- `ado_trace` much faster on items with many pull requests: the files of a PR come from its last iteration instead of
+  a diff of its merge commit, merge commits of linked PRs are not read twice, a completed PR into a branch answers
+  "is it there" without asking, and only the newest change of each source -> target pair is checked. Reading the
+  changes gets half of the time, so builds and deployments are still read.
+- `ado_trace` with no code linked looks for configuration words in every text field of the item and its tasks.
+- `ado_sprint`: a "Done" state that the process puts in the Resolved category counts as done.
+- `ado_work_item`: names of up to 40 linked releases (was 10); a release deleted by retention or not readable says so.
+- Numbered lists keep their numbering (`<ol start="3">`).
+- `ado_pr_update`: `update` adds reviewers, `requiredReviewers` (on create and update) makes them required,
+  `autocomplete` (merge strategy, delete source branch, text = merge message) and `cancel_autocomplete`.
+- A parameter a tool does not have is reported with the tool's parameters instead of being dropped (a conversation
+  started before an update still sees the old tool descriptions).
+
 ## 0.9.1 — 2026-10-19
 
 - `ado_trace` always answers: on an item with many links (pull requests, commits, builds, releases) the slow parts

@@ -187,15 +187,18 @@ public static class WorkItemFormat
         return parts.Length == 3 ? (parts[0], parts[1], parts[2]) : null;
     }
 
-    /// <summary>Looks up the release stages the items are linked to (at most 10 releases), for <see cref="Artifact"/>.</summary>
+    /// <summary>Looks up the release stages the items are linked to (at most 40 releases), for <see cref="Artifact"/>.</summary>
     public static async Task ReleaseStagesAsync(AdoClient client, IEnumerable<JsonElement> items, CancellationToken ct)
     {
         var wanted = items.SelectMany(w => Json.Arr(w, "relations")).Where(r => Json.Str(r, "rel") == "ArtifactLink")
             .Select(r => ReleaseStage(Json.Str(r, "url") ?? "")).Where(x => x is not null).Select(x => x!.Value)
             .Where(x => !ReleaseStages.ContainsKey($"{x.Release}:{x.Stage}"))
-            .GroupBy(x => x.Release).Take(10).ToList();
+            .Where(x => !ReleaseStages.ContainsKey($"{x.Release}:*"))
+            .GroupBy(x => x.Release).Take(40).ToList();
+        using var gate = new SemaphoreSlim(6);
         await Task.WhenAll(wanted.Select(async g =>
         {
+            await gate.WaitAsync(ct);
             try
             {
                 var release = await client.GetAsync(client.ServiceUrl("vsrm") + $"{g.First().Project}/_apis/release/releases/{g.Key}", ct);
@@ -209,7 +212,12 @@ public static class WorkItemFormat
                         $"{Json.Str(release, "name")} / {Json.Str(env, "name")}: {Json.Str(env, "status")}{date}";
                 }
             }
-            catch (AdoApiException) { }
+            // Old releases are deleted by retention; other failures (permission) are named instead of hidden.
+            catch (AdoApiException ex)
+            {
+                ReleaseStages[$"{g.Key}:*"] = ex.Status == System.Net.HttpStatusCode.NotFound ? "release no longer kept" : $"release not readable ({(int?)ex.Status})";
+            }
+            finally { gate.Release(); }
         }));
     }
 
@@ -224,7 +232,8 @@ public static class WorkItemFormat
             _ when url.Contains("/Git/PullRequestId/", StringComparison.OrdinalIgnoreCase) => $"PR {last}",
             _ when url.Contains("/Git/Commit/", StringComparison.OrdinalIgnoreCase) => $"commit {last}",
             _ when ReleaseStage(url) is { } rs => ReleaseStages.TryGetValue($"{rs.Release}:{rs.Stage}", out var known)
-                ? $"release {known}" : $"release {rs.Release}, stage {rs.Stage}",
+                ? $"release {known}"
+                : $"release {rs.Release}, stage {rs.Stage}" + (ReleaseStages.TryGetValue($"{rs.Release}:*", out var why) ? $" ({why})" : ""),
             _ when url.Contains("/Git/Ref/", StringComparison.OrdinalIgnoreCase) && plain.IndexOf("/GB", StringComparison.Ordinal) is var gb and >= 0 => $"branch {plain[(gb + 3)..]}",
             _ when url.Contains("/Build/Build/", StringComparison.OrdinalIgnoreCase) => $"build {last}",
             _ when url.Contains("/Wiki/", StringComparison.OrdinalIgnoreCase) => "wiki page",

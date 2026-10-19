@@ -86,7 +86,7 @@ public static class Formatting
     {
         var def = s.Fields.GetValueOrDefault(f.Ref);
         var parts = new List<string> { $"{f.Name} ({f.Ref})", TypeName(def) };
-        if (f.Required) parts.Add("required");
+        if (f.Required) parts.Add(WorkItems.FilledByAzureDevOps(f.Ref) ? "required, filled by Azure DevOps" : "required");
         if (def?.ReadOnly == true) parts.Add("read-only");
         if (!string.IsNullOrEmpty(f.Default)) parts.Add($"default {f.Default}");
         var line = string.Join(", ", parts);

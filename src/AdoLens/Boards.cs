@@ -194,7 +194,10 @@ public static partial class BoardQueries
     {
         var type = s.FindType(WorkItems.Field(wi, "System.WorkItemType") ?? "");
         var state = WorkItems.Field(wi, "System.State");
-        return type?.States.FirstOrDefault(x => x.Name.Equals(state, StringComparison.OrdinalIgnoreCase))?.Category
+        var category = type?.States.FirstOrDefault(x => x.Name.Equals(state, StringComparison.OrdinalIgnoreCase))?.Category;
+        // Some processes put "Done" in the Resolved category (waiting for a check); for the people it is done.
+        if (category == "Resolved" && GuessCategory(state) == "Completed") return "Completed";
+        return category
                // A type or state this project does not know (an item of another project in the sprint): any type with that state.
                ?? s.Types.SelectMany(t => t.States).FirstOrDefault(x => x.Name.Equals(state, StringComparison.OrdinalIgnoreCase))?.Category
                ?? GuessCategory(state);

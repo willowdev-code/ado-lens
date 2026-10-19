@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Xml.Linq;
 
 namespace AdoLens.Tests;
@@ -10,6 +11,21 @@ public class ImprovementTests
     [InlineData("  Ben Kowalski (Demo Ltd) ", "Ben Kowalski")]
     public void Display_names_are_compared_without_a_company_suffix(string name, string plain) =>
         Assert.Equal(plain, Identities.Plain(name));
+
+    [Fact]
+    public void Numbered_lists_keep_their_start()
+    {
+        var md = Html.ToMarkdown("<ol><li>one</li><li>two</li></ol><p>between</p><ol start=\"3\"><li>three</li></ol>").Replace("\r", "");
+        Assert.Contains("1. one\n2. two", md);
+        Assert.Contains("3. three", md);
+    }
+
+    [Fact]
+    public void Unknown_tool_parameters_are_named()
+    {
+        var schema = JsonDocument.Parse("""{"type":"object","properties":{"action":{},"id":{},"reviewers":{}}}""").RootElement;
+        Assert.Equal(["requiredReviewers"], ToolArguments.Unknown(schema, ["action", "ID", "requiredReviewers"]));
+    }
 
     [Fact]
     public void A_table_is_shown_as_a_skeleton_of_fields_indexes_and_relations()
@@ -61,6 +77,11 @@ public class ImprovementTests
         var whenBug = new WorkItems.RequiredRule("Custom.Area", "when Custom.Kind = Bug", [("when", "Custom.Kind", "Bug")]);
         Assert.True(whenBug.Applies(new Dictionary<string, object?> { ["Custom.Kind"] = "bug" }, "New", created: true));
         Assert.False(whenBug.Applies(new Dictionary<string, object?>(), "New", created: true));
+
+        // "whenWas State = (empty)": before the item had a state, i.e. on create.
+        var onCreate = new WorkItems.RequiredRule("Custom.Area", "on create", [("whenWas", "System.State", "")]);
+        Assert.True(onCreate.Applies(new Dictionary<string, object?>(), "New", created: true));
+        Assert.False(onCreate.Applies(new Dictionary<string, object?>(), "Active", created: false));
 
         // A condition that cannot be known before saving does not make the field required.
         var unknown = new WorkItems.RequiredRule("Custom.Area", "whenCurrentUserIsMemberOfGroup", [("whenCurrentUserIsMemberOfGroup", null, "g1")]);

@@ -366,7 +366,7 @@ public static class PrReadTools
 public static class PrTools
 {
     [McpServerTool(Name = "ado_pr_update")]
-    [Description("Pull request actions: create (repo, source, target, title, text, workItems, reviewers, draft), update (title, text, workItems: links them), comment (text, file, line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), tag, publish, complete, abandon. @[name] notifies.")]
+    [Description("Pull request actions: create (repo, source, target, title, text, workItems, reviewers, draft), update (title, text, workItems, reviewers), comment (text, file, line), reply (thread, text), resolve (thread, status), vote (approve|suggestions|wait|reject|reset), tag, publish, autocomplete (mergeStrategy, deleteSourceBranch, text = merge message), cancel_autocomplete, complete, abandon. @[name] notifies.")]
     public static Task<string> PrUpdate(Lens lens,
         string action,
         int? id = null,
@@ -382,17 +382,18 @@ public static class PrTools
         string? title = null,
         [Description("Work item ids: 123;456.")] string? workItems = null,
         [Description("Names or e-mails separated by ';'.")] string? reviewers = null,
+        [Description("Reviewers who must approve.")] string? requiredReviewers = null,
         bool draft = false,
         [Description("'a; b' adds, '-c' removes.")] string? tags = null,
         bool deleteSourceBranch = false,
         [Description("noFastForward | squash | rebase | rebaseMerge.")] string? mergeStrategy = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_pr_update", new { action, id, repo, thread, file, line, vote, status, source, target, title, workItems, reviewers, draft, tags, deleteSourceBranch, mergeStrategy, connection },
+        => McpTools.Run("ado_pr_update", new { action, id, repo, thread, file, line, vote, status, source, target, title, workItems, reviewers, requiredReviewers, draft, tags, deleteSourceBranch, mergeStrategy, connection },
             () => PullRequestQueries.ActAsync(lens, connection, new PullRequestQueries.PrAction
             {
                 Action = action, Id = id, Repo = repo, Text = text, Thread = thread, File = file, Line = line, Vote = vote, Status = status,
-                Source = source, Target = target, Title = title, WorkItems = workItems, Reviewers = reviewers, Draft = draft,
+                Source = source, Target = target, Title = title, WorkItems = workItems, Reviewers = reviewers, RequiredReviewers = requiredReviewers, Draft = draft,
                 DeleteSourceBranch = deleteSourceBranch, MergeStrategy = mergeStrategy, Tags = tags,
             }, ct));
 }
