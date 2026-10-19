@@ -287,15 +287,19 @@ public static partial class TraceQueries
         // with several PRs and many release stages).
         var containsCache = new System.Collections.Concurrent.ConcurrentDictionary<(string, string, bool), Task<bool?>>();
         using var gate = new SemaphoreSlim(ParallelChecks);
-        Task<bool?> Contains(string repo, string commit, string target, bool isBranch) =>
-            containsCache.GetOrAdd((commit, target, isBranch), _ => Gated(() => code.ContainsAsync(repo, commit, target, isBranch, dt)));
+        Task<bool?> Contains(string repo, string commit, string target, bool isBranch, DateTime? committed) =>
+            containsCache.GetOrAdd((commit, target, isBranch), _ => Gated(() => code.ContainsAsync(repo, commit, target, isBranch, dt, committed)));
+        // Code moves forward through the environments (dev -> staging -> master): a change merged into a later one is
+        // not in an earlier one, so that is not asked.
+        bool Later(string? changeTarget, string? branch) =>
+            changeTarget is not null && branch is not null && envOrder.TryGetValue(changeTarget, out var a) && envOrder.TryGetValue(branch, out var b) && a > b;
         async Task<bool?> Gated(Func<Task<bool?>> check)
         {
             await gate.WaitAsync(dt);
             try { return await check(); }
             finally { gate.Release(); }
         }
-        async Task<(List<CodeChange> In, List<CodeChange> NotYet, bool Known)> GitStatus(string repo, string target, bool isBranch, DateTime? deployedAt)
+        async Task<(List<CodeChange> In, List<CodeChange> NotYet, bool Known)> GitStatus(string repo, string target, bool isBranch, DateTime? deployedAt, string? targetBranch = null)
         {
             var git = changes.Select(x => x.Change).Where(x => x.Kind != "changeset" && string.Equals(x.RepoId, repo, StringComparison.OrdinalIgnoreCase)).ToList();
             // Only the newest change of each source -> target pair is asked about: the older ones of the pair are in
@@ -308,8 +312,9 @@ public static partial class TraceQueries
                 : isBranch && g.Kind == "pr" && string.Equals(g.TargetBranch, target, StringComparison.OrdinalIgnoreCase) ? true
                 // A deployment that finished before a change was merged cannot contain it: no need to ask.
                 : deployedAt is { } at && g.Date is { } merged && at < merged ? false
+                : Later(g.TargetBranch, isBranch ? target : targetBranch) ? false
                 : !newest.Contains(g) ? (bool?)null
-                : await Contains(repo, commit, target, isBranch)));
+                : await Contains(repo, commit, target, isBranch, g.Date)));
             // The older changes of a pair follow the answer for its newest one.
             for (var i = 0; i < git.Count; i++)
                 if (answers[i] is null && git[i].LandedCommit is not null
@@ -317,8 +322,10 @@ public static partial class TraceQueries
                     answers[i] = answers[n.k];
             var inside = git.Where((g, i) => answers[i] == true).ToList();
             var known = answers.Any(a => a is not null);
+            // Not yet: unless a change from the same source branch is in and no older than a day before it (the same work
+            // merged into each environment by its own PR).
             var notYet = git.Where(g => !inside.Contains(g) && !IsPromotion(g)
-                && !inside.Any(i => i.Branch is not null && i.Branch == g.Branch && i.Date >= g.Date)).ToList();
+                && !inside.Any(i => i.Branch is not null && i.Branch == g.Branch && i.Date >= g.Date?.AddDays(-1))).ToList();
             return (inside, notYet, known);
         }
         static string Names(IEnumerable<CodeChange> list) =>
@@ -351,7 +358,7 @@ public static partial class TraceQueries
             {
                 stageTasks.Add(Task.Run(async () =>
                 {
-                    var (inside, notYet, _) = await GitStatus(repo, deployedCommit, false, d.When);
+                    var (inside, notYet, _) = await GitStatus(repo, deployedCommit, false, d.When, Code.Short(d.Branch));
                     if (inside.Count > 0) anyIn = true;
                     return (string?)(label + (inside.Count > 0
                         ? $"YES - deployed {deployed}: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")

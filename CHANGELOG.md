@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.3 — 2026-10-19
+
+- `ado_trace`: "is the change in this branch / deployment" asks the history of the target around the day the change
+  was merged (one cheap call) instead of a diff between the commits, which took 20-30 seconds each in a large
+  repository; the diff stays as the fallback when the date is unknown.
+- Code moves forward through the environments of the map (dev -> staging -> master): a change merged into a later
+  one is not looked for in an earlier one.
+- "not yet" leaves out a change whose work is already there through another PR from the same source branch (the same
+  work merged into each environment by its own PR).
+
 ## 0.9.2 — 2026-10-19
 
 Fixes and additions from testing 0.9 on a real project.
