@@ -41,6 +41,8 @@ OutputBaseFilename=ado-lens-setup-{#Version}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; Taller and wider than the default: the environments page lists release stages and branches.
+WizardSizePercent=120,130
 UninstallDisplayName=ADO Lens
 UninstallDisplayIcon={app}\bin\adolens.exe
 LicenseFile={#Source}\LICENSE
@@ -88,6 +90,7 @@ en.EnvLater=Later: Start menu > ADO Lens - settings > Environments (change, add,
 en.EnvMine=Save for me only (this computer)
 en.EnvTeam=Save for the whole team (wiki page "ADO Lens" of the project)
 en.EnvSkip=Skip - Claude asks when needed
+en.EnvMore=... and %1 more: Start menu > ADO Lens - settings > Environments.
 en.EnvFailed=Saving the environments did not work:%n%n%1
 en.ReadmeUrl=https://github.com/willowdev-code/ado-lens#readme
 en.IconSettings=ADO Lens - settings
@@ -104,6 +107,7 @@ pl.EnvLater=Później: menu Start > ADO Lens - ustawienia > Środowiska (zmiana,
 pl.EnvMine=Zapisz tylko dla mnie (ten komputer)
 pl.EnvTeam=Zapisz dla całego zespołu (strona wiki "ADO Lens" w projekcie)
 pl.EnvSkip=Pomiń - Claude zapyta, gdy będzie trzeba
+pl.EnvMore=... i jeszcze %1: menu Start > ADO Lens - ustawienia > Środowiska.
 pl.EnvFailed=Nie udało się zapisać środowisk:%n%n%1
 pl.ReadmeUrl=https://github.com/willowdev-code/ado-lens/blob/main/README.pl.md
 pl.IconSettings=ADO Lens - ustawienia
@@ -170,7 +174,8 @@ var
   EnvKeys: TArrayOfString;
   EnvLabels: array of TNewStaticText;
   EnvEdits: array of TNewEdit;
-  EnvMine, EnvTeam, EnvSkip: TNewRadioButton;
+  EnvScope: TNewComboBox;
+  EnvMore: TNewStaticText;
   EnvDetected: Boolean;
 
 function SetEnvironmentVariable(lpName: String; lpValue: String): Boolean;
@@ -384,22 +389,7 @@ begin
   EnvInfo.Width := EnvPage.SurfaceWidth;
   EnvInfo.Height := ScaleY(40);
   EnvInfo.Caption := CustomMessage('EnvDetecting');
-  EnvMine := TNewRadioButton.Create(EnvPage);
-  EnvTeam := TNewRadioButton.Create(EnvPage);
-  EnvSkip := TNewRadioButton.Create(EnvPage);
-  EnvMine.Parent := EnvPage.Surface;
-  EnvTeam.Parent := EnvPage.Surface;
-  EnvSkip.Parent := EnvPage.Surface;
-  EnvMine.Caption := CustomMessage('EnvMine');
-  EnvTeam.Caption := CustomMessage('EnvTeam');
-  EnvSkip.Caption := CustomMessage('EnvSkip');
-  EnvMine.Width := EnvPage.SurfaceWidth;
-  EnvTeam.Width := EnvPage.SurfaceWidth;
-  EnvSkip.Width := EnvPage.SurfaceWidth;
-  EnvMine.Checked := True;
-  EnvMine.Visible := False;
-  EnvTeam.Visible := False;
-  EnvSkip.Visible := False;
+  { One drop-down for where to save, at the bottom above the hint: always visible, whatever the number of rows. }
   EnvLater := TNewStaticText.Create(EnvPage);
   EnvLater.Parent := EnvPage.Surface;
   EnvLater.AutoSize := False;
@@ -408,17 +398,37 @@ begin
   EnvLater.Height := ScaleY(30);
   EnvLater.Caption := CustomMessage('EnvLater');
   EnvLater.Top := EnvPage.SurfaceHeight - EnvLater.Height;
+  EnvScope := TNewComboBox.Create(EnvPage);
+  EnvScope.Parent := EnvPage.Surface;
+  EnvScope.Style := csDropDownList;
+  EnvScope.Width := EnvPage.SurfaceWidth;
+  EnvScope.Items.Add(CustomMessage('EnvMine'));
+  EnvScope.Items.Add(CustomMessage('EnvTeam'));
+  EnvScope.Items.Add(CustomMessage('EnvSkip'));
+  EnvScope.ItemIndex := 0;
+  EnvScope.Top := EnvLater.Top - EnvScope.Height - ScaleY(6);
+  EnvScope.Visible := False;
+  EnvMore := TNewStaticText.Create(EnvPage);
+  EnvMore.Parent := EnvPage.Surface;
+  EnvMore.AutoSize := False;
+  EnvMore.Width := EnvPage.SurfaceWidth;
+  EnvMore.Height := ScaleY(16);
+  EnvMore.Top := EnvScope.Top - EnvMore.Height - ScaleY(2);
+  EnvMore.Visible := False;
 end;
 
 { Fills the environment page from "adolens setup --detect": the map already in use, or one row per stage or branch
   found with a suggested name. }
 procedure DetectEnvironments;
 var
-  Exe, OutFile, Line, Key, Guess: String;
+  Exe, OutFile, Line, Key, Guess, Caption: String;
   Lines: TArrayOfString;
-  I, P, N, Top: Integer;
+  I, P, N, Top, MaxRows, Skipped: Integer;
   Code: Integer;
 begin
+  { As many rows as fit between the text and the drop-down; the rest is named and can be set in the settings later. }
+  MaxRows := (EnvMore.Top - (EnvInfo.Top + EnvInfo.Height + ScaleY(4))) div ScaleY(26);
+  Skipped := 0;
   EnvDetected := True;
   Exe := ExpandConstant('{tmp}\adolens.exe');
   OutFile := ExpandConstant('{tmp}\adolens-envs.txt');
@@ -437,7 +447,9 @@ begin
       EnvInfo.Caption := FmtMessage(CustomMessage('EnvExisting'), [Copy(Line, 1, P - 1), Copy(Line, P + 1, Length(Line))]);
       Exit;
     end;
-    if (Copy(Line, 1, 4) = 'row' + #9) and (N < 8) then
+    if (Copy(Line, 1, 4) = 'row' + #9) and (N >= MaxRows) then
+      Skipped := Skipped + 1
+    else if Copy(Line, 1, 4) = 'row' + #9 then
     begin
       Delete(Line, 1, 4);
       P := Pos(#9, Line);
@@ -459,7 +471,14 @@ begin
       Top := EnvInfo.Top + EnvInfo.Height + ScaleY(4) + (N - 1) * ScaleY(26);
       EnvLabels[N - 1] := TNewStaticText.Create(EnvPage);
       EnvLabels[N - 1].Parent := EnvPage.Surface;
-      EnvLabels[N - 1].Caption := Key;
+      { "D365FO:staging" is the branch staging of the repository D365FO. }
+      Caption := Key;
+      P := Pos(':', Key);
+      if (P > 1) and (Pos('/', Key) = 0) then
+        Caption := Copy(Key, P + 1, Length(Key)) + '  (' + Copy(Key, 1, P - 1) + ')';
+      EnvLabels[N - 1].Caption := Caption;
+      EnvLabels[N - 1].AutoSize := False;
+      EnvLabels[N - 1].Height := ScaleY(18);
       EnvLabels[N - 1].Top := Top + ScaleY(3);
       EnvLabels[N - 1].Width := EnvPage.SurfaceWidth div 2 - ScaleX(8);
       EnvEdits[N - 1] := TNewEdit.Create(EnvPage);
@@ -476,13 +495,12 @@ begin
     Exit;
   end;
   EnvInfo.Caption := CustomMessage('EnvText');
-  Top := EnvInfo.Top + EnvInfo.Height + ScaleY(10) + N * ScaleY(26);
-  EnvMine.Top := Top;
-  EnvTeam.Top := Top + ScaleY(20);
-  EnvSkip.Top := Top + ScaleY(40);
-  EnvMine.Visible := True;
-  EnvTeam.Visible := True;
-  EnvSkip.Visible := True;
+  if Skipped > 0 then
+  begin
+    EnvMore.Caption := FmtMessage(CustomMessage('EnvMore'), [IntToStr(Skipped)]);
+    EnvMore.Visible := True;
+  end;
+  EnvScope.Visible := True;
 end;
 
 { Saves the names typed on the environment page; returns False to stay on the page when it failed. }
@@ -492,7 +510,7 @@ var
   I, Code: Integer;
 begin
   Result := True;
-  if EnvSkip.Checked or (GetArrayLength(EnvKeys) = 0) then Exit;
+  if (EnvScope.ItemIndex = 2) or (GetArrayLength(EnvKeys) = 0) then Exit;
   Env := '';
   for I := 0 to GetArrayLength(EnvKeys) - 1 do
   begin
@@ -506,7 +524,7 @@ begin
     end;
   end;
   if Env = '' then Exit;
-  if EnvTeam.Checked then Scope := 'team' else Scope := 'local';
+  if EnvScope.ItemIndex = 1 then Scope := 'team' else Scope := 'local';
   Code := RunAdoLens(ExpandConstant('{tmp}\adolens.exe'), 'setup --env "' + Env + '" --scope ' + Scope, Output);
   if Code <> 0 then
   begin

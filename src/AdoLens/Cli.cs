@@ -27,6 +27,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           connections     list the connections
           config          show or change settings
                             --connection <name> --project <name> --team <name>   (defaults of a connection)
+                            --code-project <name> (code, pull requests and pipelines in another project; "" clears)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
                             --show-tokens true|false  --tool-loading auto|demand|all  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
                             --language pl|en|auto (settings console and installer texts)
@@ -243,7 +244,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         {
             var pat = CredentialStore.Read(name) is not null ? "PAT stored" : "no stored PAT";
             Console.WriteLine($"{(name.Equals(settings.DefaultConnection, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {name,-16} " +
-                              $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}  team {c.Team ?? "-"}  ({pat})" +
+                              $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}{(c.CodeProject is { } cp ? $"  code in {cp}" : "")}  team {c.Team ?? "-"}  ({pat})" +
                               (c.Environments.Count > 0 ? $"\n  {"",-16} environments: {string.Join(", ", c.Environments.Select(e => $"{e.Key} = {e.Value}"))}" : "") +
                 (c.LabelLanguages.Count > 0 ? $"\n  {"",-16} label languages: {string.Join(", ", c.LabelLanguages)}" : ""));
         }
@@ -262,6 +263,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     throw new ArgumentException($"no connection named '{name}' - add it with 'adolens login --connection {name}'");
                 if (cl.Opt("project") is { } p) { conn.Project = NullIfEmpty(p); changed = true; }
                 if (cl.Opt("team") is { } t) { conn.Team = NullIfEmpty(t); changed = true; }
+                if (cl.Opt("code-project") is { } cp) { conn.CodeProject = NullIfEmpty(cp); changed = true; }
                 while (cl.Opt("env") is { } e)
                 {
                     var eq = e.IndexOf('=');

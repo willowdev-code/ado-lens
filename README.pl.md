@@ -157,6 +157,19 @@ adolens config --connection fabrikam --env "Main-Deploy/Stage 1=UAT + SCM"
 Wtedy `ado_trace` wypisuje etapy w tej kolejności z ich etykietami („UAT (sbx03): YES”), a dla Gita sprawdza też, czy
 praca jest scalona do każdej zmapowanej gałęzi, nawet gdy żaden pipeline jej nie wdraża.
 
+**Kilka repozytoriów.** Ta sama nazwa gałęzi może znaczyć co innego w różnych repozytoriach — albo nic (biblioteka
+scalana prosto do `master`). Klucz `Repozytorium:gałąź` należy do jednego repozytorium; repozytorium z własnymi kluczami
+używa tylko ich, pozostałe — zwykłych kluczy gałęzi. Instalator i `adolens setup` nazywają tak gałęzie, gdy projekt ma
+więcej niż jedno aktywne repozytorium, i pomijają gałęzie robocze (`000000_TestBranch`, `123456_…`):
+
+```powershell
+adolens config --connection contoso --env "ERP:dev=DEV (sbx01)" --env "ERP:staging=UAT (sbx03)" --env "ERP:master=PROD" --env "Common:master=PROD"
+```
+
+**Kod w innym projekcie.** Gdy work itemy są w jednym projekcie, a kod, pull requesty i pipeline'y w innym, ustaw to
+raz: `adolens config --connection contoso --code-project ERP` (albo poproś Claude'a: `ado_settings codeProject=ERP`).
+Wtedy `ado_file`, `ado_search` (kod), `ado_pr`, `ado_pipeline` i `ado_label` szukają tam.
+
 **Jedna mapa dla całego zespołu.** Mapa może mieszkać w samym Azure DevOps: strona „ADO Lens” w wiki projektu z tabelą
 w dwóch kolumnach (gałąź albo etap release'u | środowisko), w kolejności przepływu. Każdy, kto używa ADO Lens w projekcie,
 ją czyta, więc Product Ownerzy niczego nie konfigurują; lokalna mapa (`--env`) nadpisuje ją dla jednej osoby. Zapisują

@@ -25,7 +25,7 @@ public static partial class PipelineQueries
     public static async Task<string> ListAsync(Lens lens, string? connection, string? project, string? definition, string? branch, int top, CancellationToken ct = default)
     {
         var session = lens.For(connection);
-        var name = session.Project(project);
+        var name = session.CodeProject(project);
         var query = new List<string> { $"$top={Math.Clamp(top, 1, 100)}", "queryOrder=queueTimeDescending" };
         if (definition is not null) query.Add("definitions=" + (await DefinitionAsync(session, name, definition, ct)).Id);
         if (branch is not null) query.Add("branchName=" + Uri.EscapeDataString(branch.StartsWith("refs/", StringComparison.Ordinal) || branch.StartsWith("$/", StringComparison.Ordinal) ? branch : "refs/heads/" + branch));
@@ -82,7 +82,7 @@ public static partial class PipelineQueries
         CancellationToken ct = default)
     {
         var session = lens.For(connection);
-        var name = session.Project(project);
+        var name = session.CodeProject(project);
         var vsrm = session.Client.ServiceUrl("vsrm") + Uri.EscapeDataString(name) + "/";
         var filter = "";
         if (!string.IsNullOrWhiteSpace(definition))
@@ -121,7 +121,7 @@ public static partial class PipelineQueries
         CancellationToken ct = default)
     {
         var session = lens.For(connection);
-        var scope = AdoClient.Scope(session.Project(project));
+        var scope = AdoClient.Scope(session.CodeProject(project));
         var list = await session.Client.GetListAsync($"{scope}_apis/build/builds/{build}/artifacts", ct);
         static long? SizeOf(JsonElement a) =>
             long.TryParse(Json.Str(Json.Obj(Json.Obj(a, "resource"), "properties"), "artifactsize"), out var n) ? n : null;
@@ -149,7 +149,7 @@ public static partial class PipelineQueries
     public static async Task<string> BuildAsync(Lens lens, string? connection, string? project, int id, string? detail, CancellationToken ct = default)
     {
         var session = lens.For(connection);
-        var name = session.Project(project);
+        var name = session.CodeProject(project);
         var scope = AdoClient.Scope(name);
         var b = await session.Client.GetAsync($"{scope}_apis/build/builds/{id}", ct);
         var sb = new StringBuilder(Line(b)).AppendLine();
@@ -185,7 +185,7 @@ public static partial class PipelineQueries
     public static async Task<string> RunAsync(Lens lens, string? connection, string? project, string definition, string? branch, string? parameters, CancellationToken ct = default)
     {
         var session = lens.For(connection);
-        var name = session.Project(project);
+        var name = session.CodeProject(project);
         var def = await DefinitionAsync(session, name, definition, ct);
         var body = new Dictionary<string, object?> { ["definition"] = new { id = def.Id } };
         if (branch is not null) body["sourceBranch"] = branch.StartsWith("refs/", StringComparison.Ordinal) || branch.StartsWith("$/", StringComparison.Ordinal) ? branch : "refs/heads/" + branch;

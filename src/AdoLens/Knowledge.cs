@@ -29,8 +29,9 @@ public static partial class Knowledge
         var parts = new List<(string Scope, Task<string> Task)>();
         if (wanted.Contains("work")) parts.Add(("work", Part(() => WorkItemsAsync(session, name, text, top, ct))));
         if (wanted.Contains("wiki")) parts.Add(("wiki", Part(() => WikiAsync(session.Client, name, text, top, ct))));
-        if (wanted.Contains("code")) parts.Add(("code", Part(() => CodeAsync(session.Client, name, text, top, null, ct))));
-        var sb = new StringBuilder($"search '{text}' in {name}\n");
+        var codeIn = project is null ? session.CodeProject(null) : name;
+        if (wanted.Contains("code")) parts.Add(("code", Part(() => CodeAsync(session.Client, codeIn, text, top, null, ct))));
+        var sb = new StringBuilder($"search '{text}' in {name}{(codeIn != name && wanted.Contains("code") ? $" (code in {codeIn})" : "")}\n");
         foreach (var (_, task) in parts) sb.AppendLine(await task);
         return sb.ToString().TrimEnd();
     }
@@ -284,13 +285,16 @@ public static partial class Knowledge
         string? part, bool history, int top, string? detail, CancellationToken ct = default)
     {
         var session = lens.For(connection);
-        var name = session.Project(project);
+        var name = session.CodeProject(project);
         var (file, choices) = await ResolveAsync(session, name, path, repo, ct);
         if (file is null) return choices!;
         // An environment name ("sbx03", "UAT") instead of a branch: the branch of the environment map.
-        if (version is not null && session.Config.Environments.FirstOrDefault(e => !e.Key.Contains('/') &&
-                (e.Value.Equals(version, StringComparison.OrdinalIgnoreCase) || e.Value.Contains(version, StringComparison.OrdinalIgnoreCase))) is { Key: { } branch })
-            version = branch;
+        if (version is not null)
+        {
+            var env = new EnvMap(session.Config.Environments);
+            var named = env.BranchesOf(file.RepoName).Where(e => e.Label.Equals(version, StringComparison.OrdinalIgnoreCase) || e.Label.Contains(version, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (named.Count > 0) version = named[0].Branch;
+        }
         if (history) return await HistoryAsync(session, file, version, top, ct);
         if (path.Trim() == "/" || path.TrimEnd().EndsWith('/')) return $"{path} is a folder: history=true lists its changes";
 

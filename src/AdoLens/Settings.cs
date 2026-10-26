@@ -22,6 +22,12 @@ public sealed class Connection
     /// Empty: every language of the label file is required.
     /// </summary>
     public List<string> LabelLanguages { get; set; } = [];
+
+    /// <summary>
+    /// The project with the code, pull requests and pipelines when it is not the project of the work items (work
+    /// items in "Sales", code in "ERP"). Null: the default project.
+    /// </summary>
+    public string? CodeProject { get; set; }
 }
 
 /// <summary>Non-secret settings (adolens.json in the data folder). PATs live in Windows Credential Manager.</summary>
@@ -163,6 +169,9 @@ public sealed record Config(string Connection, string Organization, string Pat, 
     /// <summary>See <see cref="AdoLens.Connection.LabelLanguages"/>.</summary>
     public IReadOnlyList<string> LabelLanguages { get; init; } = [];
 
+    /// <summary>See <see cref="AdoLens.Connection.CodeProject"/>.</summary>
+    public string? CodeProject { get; init; }
+
     /// <summary>Whether a missing label text in this language is worth reporting.</summary>
     public bool LabelLanguageRequired(string language) =>
         LabelLanguages.Count == 0 || LabelLanguages.Any(l => l.Equals(language, StringComparison.OrdinalIgnoreCase));
@@ -220,9 +229,10 @@ public sealed record Config(string Connection, string Organization, string Pat, 
                     : null,
                 Environments = conn.Environments,
                 LabelLanguages = conn.LabelLanguages ?? [],
+                CodeProject = NullIfEmpty(conn.CodeProject),
             };
         if (envPat.Value is { } pat)
-            return new Config(name, org, pat, project, NullIfEmpty(conn.Team), $"environment variable {envPat.Var}") { Environments = conn.Environments, LabelLanguages = conn.LabelLanguages ?? [] };
+            return new Config(name, org, pat, project, NullIfEmpty(conn.Team), $"environment variable {envPat.Var}") { Environments = conn.Environments, LabelLanguages = conn.LabelLanguages ?? [], CodeProject = NullIfEmpty(conn.CodeProject) };
 
         throw new InvalidOperationException(
             $"no PAT for connection '{name}': run 'adolens login --connection {name}' (stores it in Windows Credential Manager) or set {envVar}");

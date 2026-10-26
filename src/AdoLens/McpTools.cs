@@ -164,14 +164,15 @@ public static class CoreTools
         => McpTools.Run("ado_status", new { connection }, () => Queries.StatusAsync(lens, connection, offline: false, ct));
 
     [McpServerTool(Name = "ado_settings")]
-    [Description("Shows the connection's settings and the environment flow (detected when not set); with environments saves for good what branches and release stages mean, in flow order: \"dev=DEV (sbx01); staging=UAT (sbx03); master=PROD\" (a stage: \"Release/Stage=UAT + SCM\"). scope=team saves it on the project's wiki page for everyone.")]
+    [Description("Shows the connection's settings and the environment flow (detected when not set); with environments saves for good what branches and release stages mean, in flow order: \"dev=DEV (sbx01); staging=UAT (sbx03); master=PROD\" (one repository's branch: \"ERP:staging=UAT\"; a stage: \"Release/Stage=UAT + SCM\"). scope=team saves it on the project's wiki page for everyone.")]
     public static Task<string> Settings(Lens lens,
         string? environments = null,
+        [Description("Project with the code, PRs and pipelines when not the work items' one; '-' clears.")] string? codeProject = null,
         [Description("local (default) | team.")] string? scope = null,
         string? project = null,
         string? connection = null,
         CancellationToken ct = default)
-        => McpTools.Run("ado_settings", new { environments, scope, project, connection }, () => Queries.SettingsAsync(lens, connection, project, environments, scope, ct));
+        => McpTools.Run("ado_settings", new { environments, codeProject, scope, project, connection }, () => Queries.SettingsAsync(lens, connection, project, environments, scope, ct, codeProject));
 
     [McpServerTool(Name = "ado_upgrade")]
     [Description("Checks for a newer ADO Lens; install=true downloads it (SHA-256 checked) and starts its installer in its own window. Only when the user asks.")]

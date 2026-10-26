@@ -74,6 +74,7 @@ public class TeamSettingsTests : IDisposable
                   "release":{"artifacts":[{"definitionReference":{"branch":{"id":"refs/heads/staging"},"sourceVersion":{"id":"x"}}}]}}]}
                 """)
             .On("/contoso/Demo/_apis/git/repositories", """{"value":[{"id":"r1","name":"portal","size":100}]}""")
+            .On("/contoso/_apis/git/repositories/r1/commits", () => "{\"value\":[{\"commitId\":\"c1\",\"committer\":{\"date\":\"" + DateTime.UtcNow.AddDays(-3).ToString("o") + "\"}}]}")
             .On("/contoso/_apis/git/repositories/r1/refs", """{"value":[{"name":"refs/heads/dev"},{"name":"refs/heads/master"},{"name":"refs/heads/feature/x"}]}""");
         settings = new Settings { DefaultConnection = "contoso" };
         settings.Connections["contoso"] = new Connection { Organization = "contoso", Project = "Demo" };

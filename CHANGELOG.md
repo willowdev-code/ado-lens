@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.10.0 — 2026-10-26
+
+Environments per repository, code in another project, a tidier installer page.
+
+- Environment map keys `Repository:branch` ("ERP:staging=UAT (sbx03)"): a repository with keys of its own uses only
+  those, so the same branch name can mean different environments - or none - in different repositories. `ado_trace`
+  no longer reports "NOT merged yet" for branches a repository does not use. Plain keys (`staging=UAT`) work as before.
+- Detecting the flow (installer, `adolens setup`, `ado_settings`): with several repositories each branch is named with
+  its repository; repositories without a commit in the last half year and work branches (`000000_TestBranch`,
+  `123456_LoginForm_…`) are left out.
+- `adolens config --code-project <name>` / `ado_settings codeProject=<name>`: the project with the code, pull requests
+  and pipelines when it is not the work items' one; `ado_file`, the code part of `ado_search`, `ado_pr`,
+  `ado_pr_update`, `ado_pipeline`, `ado_changes` and `ado_label` look there.
+- Installer, environments page: a larger wizard, as many rows as fit (the rest is named, to set later in the settings),
+  the repository shown next to each branch, and one drop-down for where to save instead of three options that did not
+  fit.
+
 ## 0.9.5 — 2026-10-26
 
 - `ado_file` by name works without Code Search (not installed or failing): the file lists of the TFVC Metadata
@@ -14,7 +31,7 @@
 - `ado_trace`: a branch earlier in the environment flow than the one a change was merged into is not reported as
   "NOT merged yet" (a change merged straight into master of a library repository says nothing about its dev branch).
 - Before "not yet", one question per source branch: completed PRs from the same source branch into that branch that
-  are not linked to the item ("merged by PRs not linked to the item: PR 31002 (2021-09-01, staging <- 243623_…)").
+  are not linked to the item ("merged by PRs not linked to the item: PR 31002 (2021-09-01, staging <- 123456_…)").
 
 ## 0.9.3 — 2026-10-19
 
@@ -96,7 +113,7 @@ Fixes from testing on a real project.
   setup EXE already did; `uninstall.ps1` takes it off.
 
 - Tool arguments in another JSON shape are read instead of failing with a bare "An error occurred invoking":
-  `ids=714800` (a number for text), `workItems=[1,2]`, `file=1`, `top="20"`, `draft="true"`. This was behind the failing
+  `ids=123456` (a number for text), `workItems=[1,2]`, `file=1`, `top="20"`, `draft="true"`. This was behind the failing
   `ado_update` (even with only a comment), `ado_pr_update action=create` with work items and `ado_attachments file=<n>`.
   An argument that still cannot be read says which and why.
 - `ado_attachments`: two files with the same name are listed by number to pick one.
