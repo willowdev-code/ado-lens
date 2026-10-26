@@ -583,7 +583,7 @@ public static class WorkTools
             () => WorkTree.CreateAsync(lens, connection, project, parent, items, iteration, area, confirm, ct));
 
     [McpServerTool(Name = "ado_attachments"), Toolset(Toolsets.Code)]
-    [Description("Files of a work item and screenshots pasted into it: the list; file=<name or number> gives a document's text (PDF, Word, Excel, PowerPoint, e-mail, ZIP list, text) or shows images and scanned pages; save=true streams it to disk (any size) and returns the path; add=<local path> attaches a file.")]
+    [Description("Files of a work item and screenshots pasted into it: the list; file=<name or number> gives a document's text (PDF, Word, Excel, PowerPoint, e-mail, ZIP list, text) or shows images and scanned pages, file=all every image at once, file=\"1;3\" several; save=true streams it to disk (any size) and returns the path; add=<local path> attaches a file.")]
     public static async Task<IEnumerable<ModelContextProtocol.Protocol.ContentBlock>> AttachmentsTool(Lens lens, int id,
         string? file = null,
         [Description("PDF pages: 3 or 2-5.")] string? pages = null,

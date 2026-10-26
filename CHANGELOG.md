@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.5 — 2026-10-26
+
+- `ado_file` by name works without Code Search (not installed or failing): the file lists of the TFVC Metadata
+  folders of the branches (also in another project of the organization) and of the Git repositories are searched, and
+  the matches come as full paths ($/…/Main/…, $/…/Release/…) to call again with. Nothing found: an example full path.
+  `ADOLENS_NO_CODE_SEARCH=1` tries this way on purpose.
+- `ado_attachments file=all`: every image of the item (pasted into its text or comments, or attached) in one answer;
+  `file="1;3"` several files by number (e.g. three screenshots all called image.png).
+
 ## 0.9.4 — 2026-10-26
 
 - `ado_trace`: a branch earlier in the environment flow than the one a change was merged into is not reported as
