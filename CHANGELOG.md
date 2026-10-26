@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.0 — 2026-10-26
+
+Settings in a window.
+
+- Start menu *ADO Lens - settings* (or `adolens setup --window`) opens a window instead of a menu in a terminal:
+  - General: who uses it (mode), tools at start, language, download folder;
+  - Connections: the list with their PATs, add one (address or link, PAT, default project - checked before anything
+    is saved), remove, make default, project, team, project with the code, required label languages;
+  - Environments: per connection, the map in flow order as a table (repository, branch or release stage, name),
+    "Find stages and branches", reorder, save for you or for the whole team (wiki page "ADO Lens");
+  - Status: the same check as `adolens status`;
+  - "Open in a terminal" starts the menu of `adolens setup`, which stays as it was.
+- The program is now built for Windows with Windows Forms (net9.0-windows); the program file is larger.
+
 ## 0.10.1 — 2026-10-26
 
 - A Polish installation shows Polish texts people read: the descriptions of the skills in Claude Code and in the ZIPs

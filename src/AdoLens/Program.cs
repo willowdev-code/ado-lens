@@ -74,6 +74,8 @@ try
             return await cli.MyDayAsync();
         case "upgrade":
             return await cli.UpdateCommandAsync();
+        case "setup" when cl.Flag("window"):
+            return SettingsWindow.Run(Settings.DefaultPath, version);
         case "setup":
             return await cli.SetupAsync();
         case "trace":

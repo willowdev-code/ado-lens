@@ -52,8 +52,10 @@ called (for you or the whole team); it installs the skills and registers ADO Len
 English) is chosen at the start and kept for the settings; an update skips the questions. Until the program is signed, Windows SmartScreen may show "Windows protected your PC" for a file downloaded
 in a browser: *More info → Run anyway* (or use the one-line install above, which avoids it).
 
-After installing, the Start menu has an **ADO Lens** folder: *settings* (a menu: mode, environments — change, add,
-remove, for you or the team —, add or remove a connection, status, language), *status* (is everything working) and the skills for Claude Desktop; `adolens` works in
+After installing, the Start menu has an **ADO Lens** folder: *settings* (a window with tabs: mode, tools at start,
+language, download folder; connections — add, remove, default, project, team, project with the code, label languages;
+environments — find, edit, order, save for you or the team; status — and a button to the same menu in a terminal,
+`adolens setup`), *status* (is everything working) and the skills for Claude Desktop; `adolens` works in
 any new terminal. Uninstall from *Settings → Apps → ADO Lens* (or the Start menu): it removes the program, its Claude
 registrations and skills, and asks whether to remove the stored PATs and settings too (by default they stay).
 

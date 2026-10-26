@@ -79,7 +79,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           stats           MCP calls of the last days: answer sizes, times, empty answers   --days 7 --top 10
                             --live: show every call as Claude makes it (tool, tokens, ms), until Ctrl+C
           setup           settings menu: mode, environments (change or add, for you or the team wiki), add or remove a
-                            connection, status;  --wizard: the first-run questions in a row (used by the installer)
+                            connection, status;  --wizard: the first-run questions in a row (used by the installer);
+                            --window: the same in a window (Start menu "ADO Lens - settings")
           upgrade         is there a newer ADO Lens   --install (download, check SHA-256, run its installer)  --pre
           version         print the version
 
