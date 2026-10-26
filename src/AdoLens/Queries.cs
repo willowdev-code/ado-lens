@@ -49,18 +49,18 @@ public static class Queries
     /// Shows the settings of a connection, or replaces its environment map ("dev=DEV (sbx01); staging=UAT; master=PROD",
     /// in flow order; empty clears it). Saved for good, so the question is asked only once.
     /// </summary>
-    public static string SettingsAnswer(Lens lens, string? connection, string? environments)
+    public static string SettingsAnswer(Lens lens, string? connection, string? environments, string? codeProject = null)
     {
         var cfg = lens.For(connection).Config;
         if (!lens.Settings.Connections.TryGetValue(cfg.Connection, out var conn))
             throw new InvalidOperationException($"connection '{cfg.Connection}' comes from environment variables and cannot be changed here");
-        if (environments is not null)
-        {
-            conn.Environments = ParseEnvironments(environments);
-            lens.SaveSettings();
-        }
-        var sb = new StringBuilder(environments is null ? "" : "saved.\n");
-        sb.AppendLine($"connection {cfg.Connection}: https://dev.azure.com/{conn.Organization}, project {conn.Project ?? "-"}, team {conn.Team ?? "-"}, mode {lens.Settings.Mode}");
+        if (environments is not null) conn.Environments = ParseEnvironments(environments);
+        // "-" (or empty) clears it: the code is in the default project again.
+        if (codeProject is not null) conn.CodeProject = codeProject.Trim() is "" or "-" ? null : codeProject.Trim();
+        if (environments is not null || codeProject is not null) lens.SaveSettings();
+        var sb = new StringBuilder(environments is null && codeProject is null ? "" : "saved (new conversations use it).\n");
+        sb.AppendLine($"connection {cfg.Connection}: https://dev.azure.com/{conn.Organization}, project {conn.Project ?? "-"}" +
+                      $"{(conn.CodeProject is { } cp ? $" (code, pull requests and pipelines in {cp})" : "")}, team {conn.Team ?? "-"}, mode {lens.Settings.Mode}");
         sb.Append(conn.Environments.Count == 0 ? "local environments: not set"
             : "environments (in flow order): " + string.Join(" -> ", conn.Environments.Select(e => Flow(e.Key, e.Value))));
         return sb.ToString();
@@ -70,7 +70,8 @@ public static class Queries
     /// The settings and the environment flow of a project: saved locally or (scope=team) on the project's wiki page for
     /// everyone; without a map, the flow detected from releases and branches, so Claude can ask the user once.
     /// </summary>
-    public static async Task<string> SettingsAsync(Lens lens, string? connection, string? project, string? environments, string? scope, CancellationToken ct = default)
+    public static async Task<string> SettingsAsync(Lens lens, string? connection, string? project, string? environments, string? scope, CancellationToken ct = default,
+        string? codeProject = null)
     {
         var team = (scope ?? "local").Trim().ToLowerInvariant() switch
         {
@@ -87,8 +88,8 @@ public static class Queries
             return $"saved for the whole team on the wiki page \"{TeamSettings.PagePath}\" of {name}: " +
                    string.Join(" -> ", map.Select(e => Flow(e.Key, e.Value))) + $"\n{url}";
         }
-        var text = SettingsAnswer(lens, connection, environments);
-        if (environments is not null) return text;
+        var text = SettingsAnswer(lens, connection, environments, codeProject);
+        if (environments is not null || codeProject is not null) return text;
 
         var s = lens.For(connection);
         var p = s.Project(project);
@@ -105,7 +106,9 @@ public static class Queries
 
     /// <summary>"UAT (sbx03) = branch staging", "UAT + SCM = release stage Main-Deploy/Stage 1": the name, then what it is.</summary>
     internal static string Flow(string key, string name) =>
-        $"{name} = {(key.Contains('/') ? "release stage" : "branch")} {key}";
+        EnvMap.IsStage(key) ? $"{name} = release stage {key}"
+        : EnvMap.RepoOf(key) is { } repo ? $"{name} = branch {EnvMap.BranchOf(key)} of {repo}"
+        : $"{name} = branch {key}";
 
     static Dictionary<string, string> ParseEnvironments(string environments)
     {

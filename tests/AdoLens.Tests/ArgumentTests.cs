@@ -9,8 +9,8 @@ public class ArgumentTests
     [Fact]
     public void Arguments_in_another_JSON_shape_are_still_read()
     {
-        // Claude sends ids=714800 or workItems=[1,2] for text parameters, numbers and yes/no as text.
-        Assert.Equal("714800", Read<string>("714800"));
+        // Claude sends ids=123456 or workItems=[1,2] for text parameters, numbers and yes/no as text.
+        Assert.Equal("123456", Read<string>("123456"));
         Assert.Equal("1;2", Read<string>("[1, 2]"));
         Assert.Equal("a;b", Read<string>("[\"a\", \"b\"]"));
         Assert.Equal("true", Read<string>("true"));

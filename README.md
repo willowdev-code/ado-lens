@@ -156,6 +156,19 @@ adolens config --connection fabrikam --env "Main-Deploy/Stage 1=UAT + SCM"
 `ado_trace` then lists the stages in that order with their labels ("UAT (sbx03): YES") and, for Git, also checks whether
 the work is merged into each mapped branch even when no release pipeline deploys it.
 
+**Several repositories.** The same branch name can mean different things in different repositories — or nothing (a
+library merged straight into `master`). A key `Repository:branch` belongs to one repository; a repository with keys of
+its own uses only those, the others use the plain branch keys. The installer and `adolens setup` name branches this way
+when a project has more than one active repository, and leave out work branches (`000000_TestBranch`, `123456_…`):
+
+```powershell
+adolens config --connection contoso --env "ERP:dev=DEV (sbx01)" --env "ERP:staging=UAT (sbx03)" --env "ERP:master=PROD" --env "Common:master=PROD"
+```
+
+**Code in another project.** When the work items live in one project and the code, pull requests and pipelines in
+another, set it once: `adolens config --connection contoso --code-project ERP` (or ask Claude: `ado_settings
+codeProject=ERP`). `ado_file`, `ado_search` (code), `ado_pr`, `ado_pipeline` and `ado_label` then look there.
+
 **One map for the whole team.** The map can live in Azure DevOps itself: a page "ADO Lens" in the project wiki with a
 two-column table (branch or release stage | environment), in flow order. Everyone using ADO Lens on the project reads
 it, so Product Owners configure nothing; a local map (`--env`) overrides it for one person. The installer, `adolens

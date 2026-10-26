@@ -13,6 +13,53 @@ public class ImprovementTests
         Assert.Equal(plain, Identities.Plain(name));
 
     [Fact]
+    public void A_repository_with_its_own_keys_uses_only_those()
+    {
+        var env = new EnvMap(new Dictionary<string, string>
+        {
+            ["dev"] = "DEV", ["portal:staging"] = "UAT", ["staging"] = "UAT-old", ["Deploy/Stage 1"] = "UAT + SCM", ["portal:master"] = "PROD", ["lib:master"] = "PROD",
+        });
+        Assert.Equal("portal:staging", env.BranchKey("portal", "staging"));
+        Assert.Null(env.BranchKey("portal", "dev"));            // portal has keys of its own: "dev" means nothing there
+        Assert.Equal("dev", env.BranchKey("other", "dev"));      // a repository without own keys reads the shared ones
+        Assert.Equal("staging", env.BranchKey(null, "staging"));
+        Assert.Equal(["master"], env.BranchesOf("lib").Select(b => b.Branch));
+        Assert.Equal(["staging", "master"], env.BranchesOf("portal").Select(b => b.Branch));
+        Assert.Equal(["dev", "staging"], env.BranchesOf("other").Select(b => b.Branch));
+        Assert.True(env.Order("portal:staging") < env.Order("portal:master"));
+        Assert.Equal("UAT = branch staging of portal", Queries.Flow("portal:staging", "UAT"));
+        Assert.Equal("UAT + SCM = release stage Deploy/Stage 1", Queries.Flow("Deploy/Stage 1", "UAT + SCM"));
+    }
+
+    [Fact]
+    public void Code_can_live_in_another_project_than_the_work_items()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"adolens-cp-{Guid.NewGuid():N}");
+        try
+        {
+            var s = new Settings { DefaultConnection = "contoso" };
+            s.Connections["contoso"] = new Connection { Organization = "contoso", Project = "Demo", CodeProject = "ERP" };
+            var session = new Lens(s, "0.0.0", dir, _ => null, _ => "pat", _ => new FakeAdo().Client()).For(null);
+            Assert.Equal("Demo", session.Project(null));
+            Assert.Equal("ERP", session.CodeProject(null));
+            Assert.Equal("Other", session.CodeProject("Other"));
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Work_branches_are_not_environments()
+    {
+        var flow = TraceQueries.ProposeFlow(["portal:dev", "portal:000000_TestBranch", "123456_LoginForm_AB", "portal:master", "lib:staging"]);
+        Assert.Equal(["portal:dev", "lib:staging", "portal:master"], flow.Select(f => f.Key));
+        Assert.Equal("UAT", flow.Single(f => f.Key == "lib:staging").Guess);
+    }
+
+    [Fact]
     public void Numbered_lists_keep_their_start()
     {
         var md = Html.ToMarkdown("<ol><li>one</li><li>two</li></ol><p>between</p><ol start=\"3\"><li>three</li></ol>").Replace("\r", "");

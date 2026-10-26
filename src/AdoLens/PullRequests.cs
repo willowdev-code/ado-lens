@@ -56,7 +56,7 @@ public static partial class PullRequestQueries
     public static async Task<string> ListAsync(Lens lens, string? connection, string? project, string? list, CancellationToken ct = default)
     {
         var session = lens.For(connection);
-        var name = session.Project(project);
+        var name = session.CodeProject(project);
         var (me, meName) = await new Boards(session).MeAsync(ct);
         var all = await session.Client.GetListAsync($"{AdoClient.Scope(name)}_apis/git/pullrequests?searchCriteria.status=active&$top=200", ct);
         var which = (list ?? "review").Trim().ToLowerInvariant();
@@ -84,7 +84,7 @@ public static partial class PullRequestQueries
         CancellationToken ct = default)
     {
         var session = lens.For(connection);
-        var name = session.Project(project);
+        var name = session.CodeProject(project);
         var target = branch.StartsWith("refs/", StringComparison.Ordinal) ? branch : "refs/heads/" + branch.Trim();
         var from = since is null ? (DateTime?)null : Formatting.ParseSince(since);
         top = Math.Clamp(top, 1, 200);
@@ -134,7 +134,7 @@ public static partial class PullRequestQueries
 
     static async Task<JsonElement> GetAsync(Session session, string? repo, int id, CancellationToken ct)
     {
-        var repoId = repo is null ? null : (await session.Code.RepoAsync(repo, session.Config.Project, ct)).Id;
+        var repoId = repo is null ? null : (await session.Code.RepoAsync(repo, session.CodeProject(null), ct)).Id;
         return await session.Client.GetAsync(repoId is null ? $"_apis/git/pullrequests/{id}" : $"_apis/git/repositories/{repoId}/pullrequests/{id}", ct);
     }
 
@@ -155,7 +155,7 @@ public static partial class PullRequestQueries
         var pr = await GetAsync(session, repo, id, ct);
         var repoEl = Json.Obj(pr, "repository");
         var repoId = Json.Str(repoEl, "id")!;
-        var project = Json.Str(Json.Obj(repoEl, "project"), "name") ?? session.Project(null);
+        var project = Json.Str(Json.Obj(repoEl, "project"), "name") ?? session.CodeProject(null);
         var projectId = Json.Str(Json.Obj(repoEl, "project"), "id");
         var baseUrl = $"_apis/git/repositories/{repoId}/pullRequests/{id}";
 
@@ -282,7 +282,7 @@ public static partial class PullRequestQueries
         {
             if (a.Repo is null || a.Source is null || a.Target is null || string.IsNullOrWhiteSpace(a.Title))
                 throw new ArgumentException("create needs repo, source, target and title");
-            var repo = await session.Code.RepoAsync(a.Repo, session.Config.Project, ct);
+            var repo = await session.Code.RepoAsync(a.Repo, session.CodeProject(null), ct);
             var reviewers = (await ReviewersAsync(session, a.Reviewers, a.RequiredReviewers, ct)).Select(r => (object)new { id = r.Who.Id, isRequired = r.Required }).ToList();
             var body = new Dictionary<string, object?>
             {

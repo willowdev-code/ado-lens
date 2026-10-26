@@ -8,9 +8,9 @@ using ModelContextProtocol.Server;
 namespace AdoLens;
 
 /// <summary>
-/// How tool arguments are read. Claude does not always send the JSON type of the schema: ids=714800 for a text
+/// How tool arguments are read. Claude does not always send the JSON type of the schema: ids=123456 for a text
 /// parameter, workItems=[1,2], file=1, top="20", draft="true". Without this the MCP SDK fails before the tool runs and
-/// Claude only gets "An error occurred invoking …". A number or a list given for text becomes that text ("714800",
+/// Claude only gets "An error occurred invoking …". A number or a list given for text becomes that text ("123456",
 /// "1;2"), a number given as text is read as a number, "true"/"false" as a yes/no.
 /// </summary>
 public static class ToolArguments

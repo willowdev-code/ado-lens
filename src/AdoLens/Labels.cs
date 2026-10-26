@@ -75,7 +75,7 @@ public static partial class Labels
     {
         if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("give the text of the message (as seen on screen) or a label id like @Model:Id");
         var session = lens.For(connection);
-        var name = session.Project(project);
+        var name = session.CodeProject(project);
         var client = session.Client;
         var asId = LabelId().Match(text.Trim()) is { Success: true } m && (text.Contains(':') || text.TrimStart().StartsWith('@') || !text.Contains(' ')) ? m : null;
         var query = asId is not null ? asId.Groups["id"].Value : SearchWords(text);
