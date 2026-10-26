@@ -52,6 +52,13 @@ public static class Attachments
         return found;
     }
 
+    /// <summary>At most this many files in one answer (file=all or a list of numbers).</summary>
+    const int MaxMany = 8;
+
+    static bool IsImage(Attached a) =>
+        a.Comment?.StartsWith("pasted", StringComparison.Ordinal) == true
+        || Path.GetExtension(a.Name).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp";
+
     static string Size(long? bytes) => bytes is not { } b ? "" : b < 1024 ? $" ({b} B)" : b < 1024 * 1024 ? $" ({b / 1024} KB)" : $" ({b / 1024.0 / 1024:0.#} MB)";
 
     /// <summary>
@@ -71,7 +78,35 @@ public static class Attachments
         if (list.Count == 0) return ($"{head}: no attachments and no pasted images", []);
         if (string.IsNullOrWhiteSpace(file))
             return ($"{head}: {list.Count} file(s)\n" + string.Join('\n', list.Select((a, i) => $"{i + 1}. {a.Name}{Size(a.Size)}{(a.Comment is { Length: > 0 } c ? $" - {c}" : "")}")) +
-                    "\nfile=<name or number> reads one (documents as text, images and scans shown); save=true saves it to disk (any size).", []);
+                    "\nfile=<name or number> reads one (documents as text, images and scans shown), file=all shows every image, file=\"1;3\" several; save=true saves it to disk (any size).", []);
+
+        // Several at once: file=all (every image, pasted or attached) or numbers "1;3;4".
+        var many = file.Trim().ToLowerInvariant() is "all" or "images" ? list.Where(IsImage).ToList()
+            : file.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) is { Length: > 1 } numbers
+                ? numbers.Select(x => int.TryParse(x, out var k) && k >= 1 && k <= list.Count ? list[k - 1] : null).OfType<Attached>().ToList()
+                : null;
+        if (many is not null)
+        {
+            if (many.Count == 0) return ($"{head}: no images among its {list.Count} file(s)", []);
+            var shown = new StringBuilder($"{head}: {Math.Min(many.Count, MaxMany)} of {many.Count} file(s)");
+            var images = new List<(byte[] Bytes, string Mime)>();
+            foreach (var a in many.Take(MaxMany))
+            {
+                var url = a.Url + (a.Url.Contains('?') ? "&" : "?") + "download=true";
+                try
+                {
+                    var data = await session.Client.GetBytesAsync(url, MaxDownload, ct);
+                    var read = Documents.Read(a.Name, data, pages, part);
+                    images.AddRange(read.Images);
+                    shown.Append($"\n- {a.Name} ({Documents.Size(data.Length)}{(a.Comment is { Length: > 0 } c ? $", {c}" : "")})")
+                         .Append(read.Images.Count > 0 ? $": {read.Images.Count} image(s)" : "")
+                         .Append(read.Text is { Length: > 0 } t ? "\n" + Documents.Fit(t, MaxText / MaxMany, false) : "");
+                }
+                catch (AdoApiException ex) { shown.Append($"\n- {a.Name}: not read ({Formatting.Collapse(ex.Message, 80)})"); }
+            }
+            if (many.Count > MaxMany) shown.Append($"\n… {many.Count - MaxMany} more: file=<numbers> for the rest");
+            return (shown.ToString(), images);
+        }
 
         var same = list.Select((a, i) => (a, i)).Where(x => x.a.Name.Equals(file.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
         if (same.Count > 1)

@@ -18,6 +18,46 @@ public class AttachmentTests
     }
 
     [Fact]
+    public async Task All_images_of_an_item_come_in_one_answer()
+    {
+        var items = new DemoItems();
+        var rel = (string id) => new System.Text.Json.Nodes.JsonObject
+        {
+            ["rel"] = "AttachedFile",
+            ["url"] = $"https://dev.azure.com/contoso/_apis/wit/attachments/{id}?fileName=image.png",
+            ["attributes"] = new System.Text.Json.Nodes.JsonObject { ["name"] = "image.png", ["resourceSize"] = 9 },
+        };
+        items.Items[1]["relations"] = new System.Text.Json.Nodes.JsonArray(rel("a1"), rel("a2"), new System.Text.Json.Nodes.JsonObject
+        {
+            ["rel"] = "AttachedFile", ["url"] = "https://dev.azure.com/contoso/_apis/wit/attachments/a3?fileName=spec.txt",
+            ["attributes"] = new System.Text.Json.Nodes.JsonObject { ["name"] = "spec.txt", ["resourceSize"] = 4 },
+        });
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0];
+        var ado = items.Routes(new DemoProject().Routes(new FakeAdo()))
+            .On("/contoso/_apis/wit/attachments/", _ => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(png) });
+        var dir = Path.Combine(Path.GetTempPath(), $"adolens-att-{Guid.NewGuid():N}");
+        try
+        {
+            var s = new Settings { DefaultConnection = "contoso" };
+            s.Connections["contoso"] = new Connection { Organization = "contoso", Project = "Demo" };
+            var lens = new Lens(s, "0.0.0", dir, _ => null, _ => "pat", _ => ado.Client());
+
+            var (text, images) = await Attachments.ReadAsync(lens, null, 1, "all", null);
+            Assert.Contains("2 of 2 file(s)", text);
+            Assert.Equal(2, images.Count);
+
+            // Two files with one name: a list of numbers takes both.
+            var (_, picked) = await Attachments.ReadAsync(lens, null, 1, "1;2", null);
+            Assert.Equal(2, picked.Count);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Word_documents_become_markdown_like_text()
     {
         var docx = Zip(("word/document.xml", """

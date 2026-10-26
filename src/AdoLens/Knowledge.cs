@@ -143,6 +143,78 @@ public static partial class Knowledge
 
     sealed record FileRef(bool Tfvc, string Path, string? RepoId, string? RepoName, string Project);
 
+    /// <summary>File lists already read in this process: TFVC folder or Git repository → its file paths.</summary>
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<string>> Listings = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Files whose path ends with <paramref name="path"/> (a name with or without ".xml"), from the file lists of the
+    /// TFVC Metadata folders (found under $/project, a few levels deep) and of up to five Git repositories; and an
+    /// example full path to suggest when nothing matches.
+    /// </summary>
+    static async Task<(List<CodeHit> Hits, string? Hint)> ListingAsync(Session session, string project, string path, string? repo, CancellationToken ct)
+    {
+        var client = session.Client;
+        var tail = "/" + path.TrimStart('/');
+        bool Match(string p) => p.EndsWith(tail, StringComparison.OrdinalIgnoreCase) || p.EndsWith(tail + ".xml", StringComparison.OrdinalIgnoreCase);
+        var hits = new List<CodeHit>();
+        string? hint = null;
+
+        // TFVC: the Metadata folders of the branches ($/Project/Trunk/Main/Metadata, $/Project/Release/Metadata, ...).
+        var metadata = new List<string>();
+        // The project's own TFVC first; code kept in another project of the organization is found from $/.
+        foreach (var start in new[] { $"$/{project}", "$/" })
+        {
+            if (metadata.Count > 0) break;
+        try
+        {
+            var level = new List<string> { start };
+            for (var depth = 0; depth < (start == "$/" ? 5 : 4) && level.Count > 0 && metadata.Count < 6; depth++)
+            {
+                var next = new List<string>();
+                foreach (var folder in level.Take(15))
+                {
+                    var children = (await client.GetListAsync($"_apis/tfvc/items?scopePath={Uri.EscapeDataString(folder)}&recursionLevel=OneLevel", ct))
+                        .Where(i => Json.Bool(i, "isFolder")).Select(i => Json.Str(i, "path") ?? "").Where(p => p.Length > 0 && !p.Equals(folder, StringComparison.OrdinalIgnoreCase)).ToList();
+                    foreach (var c in children)
+                        if (c.EndsWith("/Metadata", StringComparison.OrdinalIgnoreCase)) metadata.Add(c);
+                        else next.Add(c);
+                }
+                level = next;
+            }
+        }
+        catch (AdoApiException) { }
+        }
+        foreach (var root in metadata.Take(6))
+        {
+            try
+            {
+                if (!Listings.TryGetValue(root, out var files))
+                    Listings[root] = files = (await client.GetListAsync($"_apis/tfvc/items?scopePath={Uri.EscapeDataString(root)}&recursionLevel=Full", ct))
+                        .Where(i => !Json.Bool(i, "isFolder")).Select(i => Json.Str(i, "path") ?? "").ToList();
+                hits.AddRange(files.Where(Match).Select(p => new CodeHit("", p, null, 1, true)));
+            }
+            catch (AdoApiException) { }
+        }
+        if (metadata.Count > 0) hint = $"{metadata[0]}/<Model>/<Model>/AxClass/{path.Trim('/')}{(path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) ? "" : ".xml")}";
+
+        // Git: the repositories of the project (or the one given).
+        try
+        {
+            var repos = repo is not null ? [Json.Str(await client.GetAsync($"{AdoClient.Scope(project)}_apis/git/repositories/{Uri.EscapeDataString(repo)}", ct), "name") ?? repo]
+                : (await client.GetListAsync($"{AdoClient.Scope(project)}_apis/git/repositories", ct)).Select(r => Json.Str(r, "name") ?? "").Where(n => n.Length > 0).Take(5).ToList();
+            foreach (var r in repos)
+            {
+                if (!Listings.TryGetValue($"git:{project}/{r}", out var files))
+                    Listings[$"git:{project}/{r}"] = files = (await client.GetListAsync($"{AdoClient.Scope(project)}_apis/git/repositories/{Uri.EscapeDataString(r)}/items?scopePath=/&recursionLevel=Full", ct))
+                        .Where(i => !Json.Bool(i, "isFolder")).Select(i => Json.Str(i, "path") ?? "").ToList();
+                hits.AddRange(files.Where(Match).Select(p => new CodeHit(r, p, null, 1, false)));
+                hint ??= $"repo={r} path=/<path>/{path.Trim('/')}";
+            }
+        }
+        catch (AdoApiException) { }
+        return (hits.Take(20).ToList(), hint);
+    }
+
     /// <summary>
     /// A TFVC path ($/…), a Git path with its repository, or only a file name: then Code Search finds it (several
     /// matches are listed for the caller to choose).
@@ -176,12 +248,25 @@ public static partial class Knowledge
         }
         var name = path[(path.LastIndexOf('/') + 1)..];
         List<CodeHit> hits;
-        try { (hits, _) = await CodeHitsAsync(session.Client, project, $"file:{name}", 20, repo, ct); }
+        try
+        {
+            // ADOLENS_NO_CODE_SEARCH=1 tries the way without Code Search (diagnostics).
+            if (Environment.GetEnvironmentVariable("ADOLENS_NO_CODE_SEARCH") == "1") throw new AdoApiException("Code Search turned off by ADOLENS_NO_CODE_SEARCH");
+            (hits, _) = await CodeHitsAsync(session.Client, project, $"file:{name}", 20, repo, ct);
+        }
         catch (AdoApiException ex)
         {
-            throw new InvalidOperationException($"give the full path ($/… for TFVC, or the path with repo= for Git): finding files by name needs Code Search ({ex.Message})");
+            // Without Code Search (not installed, or failing): the file lists of the TFVC Metadata folders and of the
+            // Git repositories, read once per session.
+            var (listed, hint) = await ListingAsync(session, project, path, repo, ct);
+            if (listed.Count == 0)
+                throw new InvalidOperationException($"Code Search failed ({Formatting.Collapse(ex.Message, 120)}) and no file '{path}' is in the file lists either; " +
+                                                    $"give the full path{(hint is null ? " ($/… for TFVC, or the path with repo= for Git)" : $", e.g. {hint}")}");
+            hits = listed;
         }
-        var matching = hits.Where(h => h.Path.EndsWith(path.StartsWith('/') ? path : "/" + path, StringComparison.OrdinalIgnoreCase)).ToList();
+        var wanted = path.StartsWith('/') ? path : "/" + path;
+        // An X++ object may be named without ".xml".
+        var matching = hits.Where(h => h.Path.EndsWith(wanted, StringComparison.OrdinalIgnoreCase) || h.Path.EndsWith(wanted + ".xml", StringComparison.OrdinalIgnoreCase)).ToList();
         if (matching.Count == 1)
         {
             var h = matching[0];
