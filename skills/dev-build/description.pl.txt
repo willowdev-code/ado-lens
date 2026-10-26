@@ -1,0 +1,1 @@
+Diagnozuje nieudany build albo release dla programisty - który krok padł, prawdziwe linie błędów, kod za nimi i propozycja poprawki. Użyj, gdy ktoś mówi „build jest czerwony”, „dlaczego padł build 900”, „pipeline się wysypał”, „co zepsuło build”. Wymaga serwera MCP ado-lens.

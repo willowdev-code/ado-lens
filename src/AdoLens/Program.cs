@@ -92,6 +92,7 @@ try
             return await cli.SearchAsync();
         case "skills":
             Console.WriteLine(Skills.Sync(Settings.Load(Settings.DefaultPath).Mode));
+            if (Skills.DesktopZips(Ui.Polish) is { Length: > 0 } zips) Console.WriteLine(zips);
             return 0;
         case "review":
             return await cli.ReviewAsync();
@@ -169,7 +170,10 @@ async Task<int> RunServerAsync()
                 return next(context, ct);
             })
             .AddCallToolFilter(ToolArguments.Errors))
-        .WithPrompts(Prompts.TypesFor(lens.Settings));
+        ;
+    // Prompts one by one (not WithPrompts) so a Polish installation gets Polish titles and descriptions.
+    foreach (var method in Prompts.Methods(lens.Settings))
+        builder.Services.AddSingleton(sp => Prompts.Create(method, sp, Ui.Polish));
     await builder.Build().RunAsync();
     return 0;
 }

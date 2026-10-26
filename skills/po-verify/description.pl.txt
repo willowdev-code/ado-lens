@@ -1,0 +1,1 @@
+Sprawdza, czy work item zrobiono tak, jak proszono, i gdzie jest zmiana (DEV / UAT / PROD), dla Product Ownera. Użyj, gdy ktoś pyta „czy zrobili to, o co prosiłem”, „czy #123 jest zrobione dobrze”, „czy to już jest na UAT”, „czy mogę to zamknąć”, albo chce odbioru historyjki, błędu czy taska w Azure DevOps. Wymaga serwera MCP ado-lens.

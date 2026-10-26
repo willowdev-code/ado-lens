@@ -257,7 +257,10 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
             else ops.Add(new { op = "add", path = "/fields/" + reference, value });
         }
         if (r.Parent is { } parent)
+        {
             ops.Add(new { op = "add", path = "/relations/-", value = new { rel = "System.LinkTypes.Hierarchy-Reverse", url = $"{WebBase}_apis/wit/workItems/{parent}" } });
+            if (await OddParentAsync(s, type, parent, ct) is { } odd) notes.Add(odd);
+        }
 
         Lengths(type, r, notes, Has(s, type, AcceptanceRef));
         return ops;
@@ -328,6 +331,25 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
         catch (AdoApiException) { }
         _rules[key] = list;
         return list;
+    }
+
+    /// <summary>
+    /// A note when the parent is of a lower or the same backlog level (a requirement under a task, a task under a task):
+    /// the link is still made - some teams do it on purpose - but it is usually a mistaken id.
+    /// </summary>
+    async Task<string?> OddParentAsync(Snapshot s, TypeInfo child, int parent, CancellationToken ct)
+    {
+        static int? Rank(string level) => level switch { Levels.Portfolio => 0, Levels.Requirement or Levels.Bug => 1, Levels.Task => 2, _ => null };
+        if (Rank(child.Level) is not { } c) return null;
+        List<JsonElement> found;
+        try { found = await GetAsync([parent], relations: false, ["System.Id", "System.WorkItemType"], ct); }
+        catch (AdoApiException) { return null; }
+        if (found.Count == 0) return $"parent #{parent} was not found (missing, deleted or not visible with this PAT)";
+        var parentType = Field(found[0], "System.WorkItemType") ?? "";
+        if (s.FindType(parentType) is not { } pt || Rank(pt.Level) is not { } p) return null;
+        // Same level: fine for portfolio (Epic > Feature) and for a bug under a requirement.
+        var odd = p > c || p == c && child.Level != Levels.Portfolio && !(child.Level == Levels.Bug && pt.Level == Levels.Requirement);
+        return odd ? $"unusual parent: #{parent} is a {parentType} ({pt.Level}) and this is a {child.Name} ({child.Level}) - check the parent id" : null;
     }
 
     /// <summary>Fields set by Azure DevOps on every save, never by the caller.</summary>

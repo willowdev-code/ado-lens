@@ -1,0 +1,1 @@
+Rozpoczyna pracę programisty nad work itemem - co jest do zrobienia (kryteria z elementu i jego rodzica, załączniki), gdzie w kodzie to wypada, plan na każde kryterium, otwarte pytania. Użyj, gdy programista mówi „zaczynam #123”, „co mam zrobić w tym tasku”, „zaplanuj tę historyjkę”, „gdzie to zmienić”. Wymaga serwera MCP ado-lens.

@@ -1,0 +1,1 @@
+Pisze albo aktualizuje stronę dokumentacji na wiki projektu dla Product Ownera - jak działa funkcja, co dostarczona zmiana znaczy dla użytkowników, opis procesu - z work itemów, załączników i kodu. Użyj, gdy ktoś prosi „udokumentuj to”, „napisz stronę wiki”, „zaktualizuj dokumentację po tej historyjce”, „opisz proces dla nowych osób”. Wymaga serwera MCP ado-lens.

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.1 — 2026-10-26
+
+- A Polish installation shows Polish texts people read: the descriptions of the skills in Claude Code and in the ZIPs
+  for Claude Desktop (from `description.pl.txt` next to each skill; the instructions for Claude stay in English), and
+  the titles and descriptions of the prompts. `adolens skills` writes both - the installer and `install.ps1` call it,
+  and changing the language in the settings menu writes them again.
+- `ado_create` / `ado_update` with a parent: a parent of a lower or the same backlog level (a requirement under a task,
+  a task under a task) gets a note "unusual parent" - the link is still made, but it is usually a mistaken id.
+- A test for the warning about a required label language without a label file.
+
 ## 0.10.0 — 2026-10-26
 
 Environments per repository, code in another project, a tidier installer page.

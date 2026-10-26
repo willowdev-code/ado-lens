@@ -147,17 +147,9 @@ Head '5/6 Skills for Claude'
 # Settings -> Capabilities -> Skills, so the ZIPs are prepared next to the program.
 $skillSrc = Join-Path $InstallDir 'skills'
 if (Test-Path $skillSrc) {
-    $desktopZips = Join-Path $InstallDir 'skills-for-claude-desktop'
-    New-Item -ItemType Directory -Force -Path $desktopZips | Out-Null
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    foreach ($skill in Get-ChildItem $skillSrc -Directory) {
-        $zip = Join-Path $desktopZips "$($skill.Name).zip"
-        if (Test-Path $zip) { Remove-Item $zip -Force }
-        [IO.Compression.ZipFile]::CreateFromDirectory($skill.FullName, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
-    }
-    # Claude Code loads every installed skill in each session: only the skills of the mode go there.
+    # Claude Code loads every installed skill in each session: only the skills of the mode go there. The ZIPs for
+    # Claude Desktop are written next to the program; both with descriptions in the language of the installation.
     Say (& $exe skills | Out-String).Trim()
-    Say "Claude Desktop: upload the ZIPs you want from $desktopZips in Settings -> Capabilities -> Skills"
 }
 else { Say 'no skills in this package' }
 

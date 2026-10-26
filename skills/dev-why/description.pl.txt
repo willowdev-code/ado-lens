@@ -1,0 +1,1 @@
+Wyjaśnia, dlaczego kod wygląda tak, a nie inaczej - historia pliku albo obiektu X++, zmiany, które go ukształtowały, work itemy i decyzje za nimi. Użyj, gdy programista pyta „czemu to tak jest”, „kto to zmienił i po co”, „do czego to było”, „czy mogę to usunąć”. Wymaga serwera MCP ado-lens.

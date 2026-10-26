@@ -84,4 +84,12 @@ public class LabelTests
         Assert.True(some.LabelLanguageRequired("pl"));
         Assert.False(some.LabelLanguageRequired("de-DE"));
     }
+
+    [Fact]
+    public void A_required_language_without_a_label_file_is_reported()
+    {
+        var missing = Review.MissingLanguageFiles(["en-US", "pl", "de-DE"], ["en-US", "PL"], "Demo").ToList();
+        Assert.Equal(["de-DE: no label file Demo.de-DE.label.txt in the model - none of its labels are translated"], missing);
+        Assert.Empty(Review.MissingLanguageFiles([], ["en-US"], "Demo"));
+    }
 }

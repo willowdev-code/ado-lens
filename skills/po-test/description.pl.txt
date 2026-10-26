@@ -1,0 +1,1 @@
+Pisze przypadki testowe akceptacji z kryteriów work itemu i pokazuje stan jego testów, dla Product Ownera albo testera. Użyj, gdy ktoś prosi „napisz przypadki testowe”, „przygotuj scenariusze UAT”, „jak to przetestować”, „czy to jest przetestowane”, „co nie przeszło w testach”. Wymaga serwera MCP ado-lens.

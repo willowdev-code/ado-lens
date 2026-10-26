@@ -1,0 +1,1 @@
+Podsumowuje sprint albo okres dla Product Ownera i interesariuszy - postęp, ryzyka, co dostarczono i gdzie jest wdrożone - oraz pisze release notes. Użyj, gdy ktoś pyta „jak idzie sprint”, „przygotuj sprint review”, „co dostarczyliśmy”, „release notes”, „status dla interesariuszy”, „co nowego dzisiaj”. Wymaga serwera MCP ado-lens.

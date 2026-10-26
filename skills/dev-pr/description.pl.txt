@@ -1,0 +1,1 @@
+Pisze opis pull requesta na podstawie work itemu albo przegląda pull request względem kryteriów akceptacji work itemu i kontroli projektu. Użyj, gdy programista prosi „napisz opis PR”, „otwórz PR dla #123”, „zrób review PR 482”, „czy ten PR jest gotowy”. Wymaga serwera MCP ado-lens.
