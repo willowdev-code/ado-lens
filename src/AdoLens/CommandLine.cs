@@ -13,7 +13,7 @@ public sealed partial class CommandLine
     {
         ["mcp"] = [],
         ["upgrade"] = ["install", "pre"],
-        ["setup"] = ["mode=", "connection=", "detect", "out=", "env=", "scope=", "wizard"],
+        ["setup"] = ["mode=", "connection=", "detect", "out=", "env=", "scope=", "wizard", "window"],
         ["login"] = ["connection=", "org=", "project=", "team=", "pat-stdin", "pat-env=", "default"],
         ["tests"] = ["connection=", "team=", "detail="],
         ["test-create"] = ["connection=", "file=", "plan=", "suite="],

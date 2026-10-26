@@ -61,7 +61,9 @@ Source: "{#DesktopSkills}\*.zip"; DestDir: "{app}\skills-for-claude-desktop"; Fl
 
 [Icons]
 ; Start menu: settings and status open in a console that stays open (adolens commands work there too).
-Name: "{group}\{cm:IconSettings}"; Filename: "{cmd}"; Parameters: "/k """"{app}\bin\adolens.exe"" setup"""; WorkingDir: "{app}"; IconFilename: "{app}\bin\adolens.exe"
+; The settings window; its button "Open in a terminal" starts the menu of 'adolens setup'. Minimized: the console the
+; program starts with is closed at once, so it does not flash.
+Name: "{group}\{cm:IconSettings}"; Filename: "{app}\bin\adolens.exe"; Parameters: "setup --window"; WorkingDir: "{app}"; Flags: runminimized
 Name: "{group}\{cm:IconStatus}"; Filename: "{cmd}"; Parameters: "/k """"{app}\bin\adolens.exe"" status"""; WorkingDir: "{app}"; IconFilename: "{app}\bin\adolens.exe"
 Name: "{group}\{cm:IconSkills}"; Filename: "{app}\skills-for-claude-desktop"
 Name: "{group}\{cm:UninstallProgram,ADO Lens}"; Filename: "{uninstallexe}"; IconFilename: "{app}\bin\adolens.exe"

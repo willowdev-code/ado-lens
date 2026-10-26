@@ -53,8 +53,10 @@ starcie i zostaje też dla ustawień; aktualizacja pomija pytania. Dopóki
 program nie jest podpisany, Windows SmartScreen może przy pliku pobranym przeglądarką pokazać „System Windows ochronił
 ten komputer”: *Więcej informacji → Uruchom mimo to* (albo użyj instalacji jedną linijką powyżej, która tego unika).
 
-Po instalacji w menu Start jest folder **ADO Lens**: *ustawienia* (menu: tryb, środowiska — zmiana, dodanie, usunięcie,
-dla ciebie lub zespołu —, dodanie lub usunięcie połączenia, status, język), *status* (czy wszystko działa) i skille dla Claude Desktop; `adolens` działa w każdym nowym terminalu.
+Po instalacji w menu Start jest folder **ADO Lens**: *ustawienia* (okno z zakładkami: tryb, narzędzia na start,
+język, folder pobierania; połączenia — dodanie, usunięcie, domyślne, projekt, zespół, projekt z kodem, języki etykiet;
+środowiska — wykrycie, edycja, kolejność, zapis dla ciebie lub zespołu; status — oraz przycisk do tego samego menu w
+terminalu, `adolens setup`), *status* (czy wszystko działa) i skille dla Claude Desktop; `adolens` działa w każdym nowym terminalu.
 Odinstalowanie: *Ustawienia → Aplikacje → ADO Lens* (albo z menu Start) — usuwa program, jego rejestracje w Claudzie
 i skille, i pyta, czy usunąć też zapisane PAT-y i ustawienia (domyślnie zostają).
 

@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <!-- The settings window (adolens setup with the window flag); the program stays a console program for the CLI and MCP. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>adolens</AssemblyName>
@@ -23,7 +25,7 @@
     <AssemblyTitle>ADO Lens for Azure DevOps</AssemblyTitle>
     <Description>Azure DevOps (work items, boards, wiki, Git and TFVC, pipelines) served to AI assistants over MCP</Description>
     <Copyright>Copyright © 2026 WillowDev</Copyright>
-    <Version>0.10.1</Version>
+    <Version>0.11.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
