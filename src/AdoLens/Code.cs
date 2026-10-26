@@ -189,6 +189,19 @@ public sealed class Code(AdoClient client)
         catch (AdoApiException) { return null; }
     }
 
+    /// <summary>Completed PRs from <paramref name="source"/> into <paramref name="target"/>: "PR 123 (09-25, staging <- feature/x)".</summary>
+    public async Task<List<string>> CompletedPullRequestsAsync(string repoId, string source, string target, CancellationToken ct)
+    {
+        try
+        {
+            var list = await client.GetListAsync($"_apis/git/repositories/{repoId}/pullrequests?searchCriteria.status=completed" +
+                $"&searchCriteria.sourceRefName={Uri.EscapeDataString("refs/heads/" + source)}&searchCriteria.targetRefName={Uri.EscapeDataString("refs/heads/" + target)}&$top=10", ct);
+            return list.Select(p => $"PR {(p.TryGetProperty("pullRequestId", out var id) ? id.GetInt32() : 0)} " +
+                                    $"({Date(Json.Str(p, "closedDate"))?.ToLocalTime():yyyy-MM-dd}, {target} <- {source})").ToList();
+        }
+        catch (AdoApiException) { return []; }
+    }
+
     /// <summary>A build, or null when it is gone (builds are deleted by retention).</summary>
     public async Task<JsonElement?> BuildAsync(string project, int id, CancellationToken ct)
     {

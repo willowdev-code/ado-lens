@@ -312,7 +312,7 @@ public static partial class TraceQueries
                 : isBranch && g.Kind == "pr" && string.Equals(g.TargetBranch, target, StringComparison.OrdinalIgnoreCase) ? true
                 // A deployment that finished before a change was merged cannot contain it: no need to ask.
                 : deployedAt is { } at && g.Date is { } merged && at < merged ? false
-                : Later(g.TargetBranch, isBranch ? target : targetBranch) ? false
+                : Later(g.TargetBranch, isBranch ? target : targetBranch) ? (bool?)null
                 : !newest.Contains(g) ? (bool?)null
                 : await Contains(repo, commit, target, isBranch, g.Date)));
             // The older changes of a pair follow the answer for its newest one.
@@ -324,7 +324,7 @@ public static partial class TraceQueries
             var known = answers.Any(a => a is not null);
             // Not yet: unless a change from the same source branch is in and no older than a day before it (the same work
             // merged into each environment by its own PR).
-            var notYet = git.Where(g => !inside.Contains(g) && !IsPromotion(g)
+            var notYet = git.Where(g => !inside.Contains(g) && !IsPromotion(g) && !Later(g.TargetBranch, isBranch ? target : targetBranch)
                 && !inside.Any(i => i.Branch is not null && i.Branch == g.Branch && i.Date >= g.Date?.AddDays(-1))).ToList();
             return (inside, notYet, known);
         }
@@ -376,9 +376,18 @@ public static partial class TraceQueries
                 {
                     var (inside, notYet, known) = await GitStatus(group.Key, branch, true, null);
                     if (!known) return null;
-                    if (inside.Count > 0) anyIn = true;
+                    // Work often reaches a branch by its own PR from the same source branch that nobody linked to the
+                    // item: one cheap question per source branch before saying "not yet".
+                    var unlinked = new List<string>();
+                    foreach (var source in notYet.Select(n => n.Branch).Where(b => b is not null).Distinct(StringComparer.OrdinalIgnoreCase))
+                        unlinked.AddRange(await code.CompletedPullRequestsAsync(group.Key, source!, branch, dt));
+                    if (unlinked.Count > 0)
+                        notYet = notYet.Where(n => !unlinked.Any(u => u.EndsWith($"<- {n.Branch})", StringComparison.OrdinalIgnoreCase))).ToList();
+                    if (inside.Count > 0 || unlinked.Count > 0) anyIn = true;
+                    var also = unlinked.Count > 0 ? $"merged by PRs not linked to the item: {string.Join(", ", unlinked.Distinct())}" : null;
                     return (string?)($"- {envLabel} = branch {branch} ({repoName}): " + (inside.Count > 0
-                        ? $"merged: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
+                        ? $"merged: {Names(inside.Where(x => !IsPromotion(x)).DefaultIfEmpty(inside[0]))}" + (also is null ? "" : "; " + also) + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
+                        : also is not null ? also + (notYet.Count > 0 ? $"; not yet: {Names(notYet)}" : "")
                         : "NOT merged yet"));
                 }, dt));
             }

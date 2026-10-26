@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.4 — 2026-10-26
+
+- `ado_trace`: a branch earlier in the environment flow than the one a change was merged into is not reported as
+  "NOT merged yet" (a change merged straight into master of a library repository says nothing about its dev branch).
+- Before "not yet", one question per source branch: completed PRs from the same source branch into that branch that
+  are not linked to the item ("merged by PRs not linked to the item: PR 31002 (2021-09-01, staging <- 243623_…)").
+
 ## 0.9.3 — 2026-10-19
 
 - `ado_trace`: "is the change in this branch / deployment" asks the history of the target around the day the change
