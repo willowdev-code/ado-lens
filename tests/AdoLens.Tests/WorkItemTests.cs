@@ -183,6 +183,17 @@ public class WorkItemTests : IDisposable
     }
 
     [Fact]
+    public async Task A_parent_of_a_lower_level_is_noted()
+    {
+        // A backlog item under a task (#2): made, with a note - usually a mistaken id.
+        var odd = await WorkQueries.CreateAsync(lens, null, null, "Product Backlog Item", new WriteRequest { Title = "Export", Parent = 2 });
+        Assert.Contains("unusual parent: #2 is a Task", odd);
+        // Under a feature (#3): as it should be.
+        var fine = await WorkQueries.CreateAsync(lens, null, null, "Product Backlog Item", new WriteRequest { Title = "Export", Parent = 3 });
+        Assert.DoesNotContain("unusual parent", fine);
+    }
+
+    [Fact]
     public async Task Criteria_go_into_the_description_when_the_type_has_no_field()
     {
         var text = await WorkQueries.CreateAsync(lens, null, null, "Task", new WriteRequest { Title = "Form", AcceptanceCriteria = "- saves" });

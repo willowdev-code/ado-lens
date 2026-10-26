@@ -619,7 +619,8 @@ begin
     RunAdoLens(Exe, 'config --mode ' + Mode, Output);
   end
   else Mode := SavedMode;
-  InstallCodeSkills(Mode);
+  { The skills of the mode for Claude Code and the ZIPs for Claude Desktop, with descriptions in the chosen language. }
+  if RunAdoLens(Exe, 'skills', Output) <> 0 then InstallCodeSkills(Mode);
   { 7: Claude Desktop is running and would write its old configuration back. }
   Code := RunAdoLens(Exe, 'register', Output);
   while (Code = 7) and not WizardSilent do

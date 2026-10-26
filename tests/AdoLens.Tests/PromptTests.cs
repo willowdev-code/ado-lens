@@ -48,6 +48,41 @@ public class PromptTests : IDisposable
     }
 
     [Fact]
+    public void A_Polish_installation_gets_Polish_skill_descriptions_and_prompt_titles()
+    {
+        var skills = Prompts.SkillsDir()!;
+        foreach (var dir in Directory.GetDirectories(skills).Where(d => File.Exists(Path.Combine(d, "SKILL.md"))))
+        {
+            var pl = Path.Combine(dir, "description.pl.txt");
+            Assert.True(File.Exists(pl), Path.GetFileName(dir));
+            // The description stays one plain YAML line: no ": " that would start a mapping.
+            Assert.DoesNotContain(": ", File.ReadAllText(pl));
+            var text = Skills.Text(dir, polish: true);
+            Assert.Contains("description: " + File.ReadAllText(pl).Trim(), text);
+            Assert.Equal(File.ReadAllText(Path.Combine(dir, "SKILL.md")), Skills.Text(dir, polish: false));
+        }
+        // Every prompt has its Polish title and description.
+        var names = Prompts.Methods(new Settings { Mode = "full" })
+            .Select(m => ((McpServerPromptAttribute)m.GetCustomAttributes(typeof(McpServerPromptAttribute), false)[0]).Name).ToList();
+        Assert.All(names, n => Assert.True(Prompts.Polish.ContainsKey(n!), n));
+    }
+
+    [Fact]
+    public void Claude_Desktop_gets_one_zip_per_skill_in_the_language_of_the_installation()
+    {
+        var source = Path.Combine(dir, "skills");
+        Directory.CreateDirectory(Path.Combine(source, "po-verify"));
+        File.WriteAllText(Path.Combine(source, "po-verify", "SKILL.md"), "---\nname: po-verify\ndescription: Checks work.\n---\n# Steps\n");
+        File.WriteAllText(Path.Combine(source, "po-verify", "description.pl.txt"), "Sprawdza pracę.");
+        var zips = Path.Combine(dir, "zips");
+        Assert.Contains("1 skill ZIP(s)", Skills.DesktopZips(polish: true, source, zips));
+        using var zip = System.IO.Compression.ZipFile.OpenRead(Path.Combine(zips, "po-verify.zip"));
+        Assert.Equal(["po-verify/SKILL.md"], zip.Entries.Select(e => e.FullName));
+        using var reader = new StreamReader(zip.Entries[0].Open());
+        Assert.Contains("description: Sprawdza pracę.", reader.ReadToEnd());
+    }
+
+    [Fact]
     public void Claude_Code_gets_only_the_skills_of_the_mode()
     {
         var source = Path.Combine(dir, "skills");

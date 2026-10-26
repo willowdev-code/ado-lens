@@ -795,6 +795,9 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
                     settings.Language = l?.Trim() switch { "1" => "pl", "2" => "en", "3" => null, _ => settings.Language };
                     settings.Save(SettingsPath);
                     Ui.Polish = settings.Language == "pl" || settings.Language is null && Ui.Polish;
+                    // Skill descriptions follow the language.
+                    Console.WriteLine("  " + Skills.Sync(settings.Mode));
+                    if (Skills.DesktopZips(Ui.Polish) is { Length: > 0 } zips) Console.WriteLine("  " + zips);
                     break;
                 case "9":
                     Console.WriteLine(Ui.T("  1. auto - on demand in Claude Code, all at start in other clients (Claude Desktop)",

@@ -1,0 +1,1 @@
+Wyjaśnia językiem biznesu, jak działa funkcja i dlaczego tak działa - z work itemów, wiki i kodu w Azure DevOps. Użyj, gdy ktoś pyta „jak działa X”, „co się dzieje, gdy…”, „czemu system robi…”, „gdzie to jest opisane”, albo potrzebuje opisu funkcji dla użytkowników, testerów czy nowej osoby w zespole. Wymaga serwera MCP ado-lens.

@@ -117,9 +117,7 @@ public static partial class Review
             var folder = folders.GetValueOrDefault(fileId) ?? await FindFolderAsync(session, c, fileId, ct);
             if (folder is null) continue; // a label file of another model (Microsoft's): not checked
             var languages = await LanguageFilesAsync(session, c, folder, fileId, ct);
-            // A required language with no label file at all: every label is missing in it.
-            foreach (var lang in session.Config.LabelLanguages.Where(l => !languages.Any(x => x.Language.Equals(l, StringComparison.OrdinalIgnoreCase))))
-                missing.Add($"{lang}: no label file {fileId}.{lang}.label.txt in the model - none of its labels are translated");
+            missing.AddRange(MissingLanguageFiles(session.Config.LabelLanguages, languages.Select(x => x.Language), fileId));
             foreach (var (lang, path) in languages)
             {
                 if (!session.Config.LabelLanguageRequired(lang)) continue;
@@ -134,6 +132,13 @@ public static partial class Review
         if (todos.Count > 0) { sb.AppendLine("- CHECK TODO left:"); foreach (var t in todos.Take(10)) sb.AppendLine("  " + t); issues++; }
         if (issues == 0) sb.AppendLine($"- OK: work item {string.Join(", ", linked.Select(i => "#" + i))}, labels in all languages, messages from labels, no TODO");
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>A required language with no label file at all: every label is missing in it.</summary>
+    internal static IEnumerable<string> MissingLanguageFiles(IEnumerable<string> required, IEnumerable<string> present, string fileId)
+    {
+        var have = present.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return required.Where(l => !have.Contains(l)).Select(l => $"{l}: no label file {fileId}.{l}.label.txt in the model - none of its labels are translated");
     }
 
     static void Add(Dictionary<string, HashSet<string>> map, string file, string id)

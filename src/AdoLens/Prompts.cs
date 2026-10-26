@@ -14,6 +14,37 @@ public static class Prompts
 {
     /// <summary>The prompt classes of a mode: developer prompts (dev_*) only in the dev and full modes.</summary>
     /// IEnumerable on purpose: an array would bind to the generic WithPrompts&lt;T&gt;(target) and register nothing.
+    /// <summary>Title and description of each prompt for a Polish installation (what people see in the prompt list).</summary>
+    public static readonly Dictionary<string, (string Title, string Description)> Polish = new()
+    {
+        ["verify"] = ("Sprawdź work item: czy zrobione jak trzeba i gdzie jest", "Czy work item zrobiono tak, jak proszono, i gdzie jest (DEV / UAT / PROD) - kryterium po kryterium."),
+        ["explain"] = ("Wyjaśnij, jak działa funkcja", "Jak działa funkcja i dlaczego, językiem biznesu, ze źródłami."),
+        ["story"] = ("Napisz work item", "Wymaganie, błąd albo task - krótko i kompletnie, z kryteriami akceptacji; zakładany po twojej zgodzie."),
+        ["sprint"] = ("Stan sprintu albo review", "Jak idzie sprint, co jest zagrożone, co dostarczono i gdzie to jest."),
+        ["refine"] = ("Refinement backlogu", "Co w backlogu trzeba poprawić przed planowaniem: brak kryteriów, estymacji, za duże elementy, pytania do zespołu."),
+        ["test"] = ("Przypadki testowe z kryteriów akceptacji", "Przypadki testowe napisane z kryteriów akceptacji work itemu i stan jego testów."),
+        ["wiki"] = ("Napisz stronę dokumentacji", "Strona wiki o funkcji albo dostarczonej zmianie, na podstawie work itemów i kodu."),
+        ["label"] = ("Skąd jest ten komunikat", "Komunikat D365 wklejony tak, jak widać go na ekranie: jego etykieta, tłumaczenia oraz gdzie i w jakim procesie się pojawia."),
+        ["dev_start"] = ("Zacznij pracę nad work itemem", "Programista: co zrobić, gdzie w kodzie, plan z kryteriów akceptacji."),
+        ["dev_pr"] = ("Przygotuj albo sprawdź pull request", "Programista: opis PR z work itemu albo przegląd PR względem jego work itemu."),
+        ["dev_build"] = ("Dlaczego build jest czerwony", "Programista: błędy nieudanego builda i propozycja poprawki."),
+        ["dev_why"] = ("Dlaczego ten kod tak wygląda", "Programista: historia pliku albo obiektu - kto zmieniał, kiedy, dla jakich work itemów i po co."),
+    };
+
+    /// <summary>The prompt methods of the mode.</summary>
+    public static IEnumerable<System.Reflection.MethodInfo> Methods(Settings settings) =>
+        TypesFor(settings).SelectMany(t => t.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+            .Where(m => m.GetCustomAttributes(typeof(McpServerPromptAttribute), false).Length > 0);
+
+    /// <summary>A prompt, with its Polish title and description when the installation is Polish.</summary>
+    public static McpServerPrompt Create(System.Reflection.MethodInfo method, IServiceProvider services, bool polish)
+    {
+        var name = ((McpServerPromptAttribute)method.GetCustomAttributes(typeof(McpServerPromptAttribute), false)[0]).Name ?? method.Name;
+        var options = new McpServerPromptCreateOptions { Services = services };
+        if (polish && Polish.TryGetValue(name, out var pl)) { options.Title = pl.Title; options.Description = pl.Description; }
+        return McpServerPrompt.Create(method, options: options);
+    }
+
     public static IEnumerable<Type> TypesFor(Settings settings) =>
         settings.Mode == "po" ? [typeof(Prompts)] : [typeof(Prompts), typeof(DevPrompts)];
 
