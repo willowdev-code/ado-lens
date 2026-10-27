@@ -678,11 +678,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Console.WriteLine(Ui.T($"{name} / {project}: code goes {string.Join(" -> ", effective.Values)} ({source}).",
                                    $"{name} / {project}: kod trafia kolejno na {string.Join(" -> ", effective.Values)} ({source})."));
         if (effective.Count > 0 && !change) return;
-        var detected = await EnvironmentFlow.DetectAsync(session, project, default);
-        // Rows: the current map in its order, then what was found and is not in it yet.
-        var rows = effective.Select(e => (e.Key, Guess: (string?)e.Value))
-            .Concat(detected.Where(d => !effective.ContainsKey(d.Key))).ToList();
-        if (rows.Count == 0 || !interactive)
+        var found = (await EnvironmentFlow.DetectAsync(session, project, default)).Where(d => !effective.ContainsKey(d.Key)).ToList();
+        if ((effective.Count == 0 && found.Count == 0) || !interactive)
         {
             Console.WriteLine(Ui.T($"{name} / {project}: no release stages or long-lived branches found - Claude will ask when needed.",
                                    $"{name} / {project}: nie znaleziono etapów release'ów ani gałęzi - Claude zapyta, gdy będzie trzeba."));
@@ -690,15 +687,40 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         }
         Console.WriteLine(Ui.T($"{name} / {project}: where does code go before it reaches production?",
                                $"{name} / {project}: przez jakie środowiska przechodzi kod, zanim trafi na produkcję?"));
-        Console.WriteLine(Ui.T("Name each as people say it (e.g. UAT (sbx03)); Enter keeps [the name], '-' leaves it out.",
-                               "Nadaj każdemu nazwę, której używacie (np. UAT (sbx03)); Enter zostawia [nazwę], '-' pomija."));
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, guess) in rows)
+        // 1. The map in use: Enter keeps a name, '-' removes it.
+        if (effective.Count > 0)
+            Console.WriteLine(Ui.T("In use - Enter keeps [the name], '-' removes it:", "W użyciu - Enter zostawia [nazwę], '-' usuwa:"));
+        foreach (var (key, current) in effective)
         {
-            var label = Prompt($"  {key}{(guess is null ? "" : $" [{guess}]")}: ");
+            var label = Prompt($"  {key} [{current}]: ");
             if (label == "-") continue;
-            var value = string.IsNullOrWhiteSpace(label) ? guess : label.Trim();
-            if (value is not null) map[key] = value;
+            map[key] = string.IsNullOrWhiteSpace(label) ? current : label.Trim();
+        }
+        // 2. What was found, as in the settings window: no name until given, so a project with many repositories does
+        // not save every branch. Many rows: narrow them down first.
+        if (found.Count > 8)
+        {
+            var repos = found.Select(f => EnvMap.RepoOf(f.Key)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+            Console.WriteLine(Ui.T($"Found {found.Count}: {found.Count(f => EnvMap.RepoOf(f.Key) is null)} TFVC branches or release stages, the rest in {repos.Count} repositories ({string.Join(", ", repos.Take(12))}{(repos.Count > 12 ? ", …" : "")}).",
+                                   $"Znaleziono {found.Count}: gałęzie TFVC lub etapy release'ów: {found.Count(f => EnvMap.RepoOf(f.Key) is null)}, reszta w {repos.Count} repozytoriach ({string.Join(", ", repos.Take(12))}{(repos.Count > 12 ? ", …" : "")})."));
+            var only = Prompt(Ui.T("  go through: Enter = all, '-' = only TFVC branches and release stages, or repositories / text (e.g. D365FO): ",
+                                   "  które przejrzeć: Enter = wszystkie, '-' = tylko gałęzie TFVC i etapy, albo repozytoria / tekst (np. D365FO): "))?.Trim();
+            if (only == "-") found = found.Where(f => EnvMap.RepoOf(f.Key) is null).ToList();
+            else if (!string.IsNullOrEmpty(only))
+            {
+                var words = only.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries);
+                found = found.Where(f => words.Any(w => f.Key.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
+            }
+        }
+        if (found.Count > 0)
+            Console.WriteLine(Ui.T("Found - type the name as people say it (e.g. UAT (sbx03)), '+' takes the hint, Enter skips:",
+                                   "Znalezione - wpisz nazwę, jakiej używacie (np. UAT (sbx03)), '+' przyjmuje podpowiedź, Enter pomija:"));
+        foreach (var (key, hint) in found)
+        {
+            var label = Prompt($"  {key}{(hint is null ? "" : Ui.T($" (looks like {hint})", $" (wygląda na {hint})"))}: ")?.Trim();
+            if (label == "+" && hint is not null) map[key] = hint;
+            else if (!string.IsNullOrEmpty(label) && label != "+" && label != "-") map[key] = label;
         }
         // Something the search did not find (a release stage that has not run yet, a branch in another project).
         while (Prompt(Ui.T("  another one (branch or Release/Stage=name, Enter = done): ", "  kolejne (gałąź albo Release/Etap=nazwa, Enter = koniec): ")) is { Length: > 0 } extra)
