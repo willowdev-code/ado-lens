@@ -16,37 +16,57 @@ public static class EnvironmentFlow
         return (new Dictionary<string, string>(), "none");
     }
 
+    /// <summary>
+    /// Release stages and long-lived branches of the project with the code (the connection's code project, when the
+    /// code lives elsewhere than the work items) and of <paramref name="project"/> itself.
+    /// </summary>
     public static async Task<List<(string Key, string? Guess)>> DetectAsync(Session session, string project, CancellationToken ct)
     {
+        var projects = new[] { session.Config.CodeProject, project }.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var keys = new List<string>();
-        foreach (var d in await session.Code.DeploymentsAsync(project, ct))
-        {
-            if (d.When is not { } when || when < DateTime.UtcNow.AddDays(-183)) continue;
-            keys.Add(d.Branch?.StartsWith("$/", StringComparison.Ordinal) == true ? $"{d.Definition}/{d.Stage}" : Code.Short(d.Branch) ?? $"{d.Definition}/{d.Stage}");
-        }
         // Long-lived branches of the repositories in use (a commit in the last half year); feature and work branches are
         // filtered by ProposeFlow. With several repositories each branch is named with its repository ("D365FO:staging"),
         // since the same branch name can mean different environments - or none - in different repositories.
-        try
+        var active = new List<(string Id, string Name)>();
+        foreach (var p in projects)
         {
-            var repos = await session.Client.GetListAsync($"{AdoClient.Scope(project)}_apis/git/repositories", ct);
-            var active = new List<(string Id, string Name)>();
-            foreach (var repo in repos.Where(r => !Json.Bool(r, "isDisabled") && r.TryGetProperty("size", out var s) && s.GetInt64() > 0).Take(30))
+            try
             {
-                var id = Json.Str(repo, "id") ?? "";
-                var last = await session.Client.GetListAsync($"_apis/git/repositories/{id}/commits?searchCriteria.$top=1", ct);
-                if (last.Count > 0 && DateTime.TryParse(Json.Str(Json.Obj(last[0], "committer"), "date"), System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.AdjustToUniversal, out var when) && when > DateTime.UtcNow.AddDays(-183))
-                    active.Add((id, Json.Str(repo, "name") ?? id));
+                var repos = await session.Client.GetListAsync($"{AdoClient.Scope(p)}_apis/git/repositories", ct);
+                foreach (var repo in repos.Where(r => !Json.Bool(r, "isDisabled") && r.TryGetProperty("size", out var s) && s.GetInt64() > 0).Take(30))
+                {
+                    var id = Json.Str(repo, "id") ?? "";
+                    var last = await session.Client.GetListAsync($"_apis/git/repositories/{id}/commits?searchCriteria.$top=1", ct);
+                    if (last.Count > 0 && DateTime.TryParse(Json.Str(Json.Obj(last[0], "committer"), "date"), System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.AdjustToUniversal, out var when) && when > DateTime.UtcNow.AddDays(-183))
+                        active.Add((id, Json.Str(repo, "name") ?? id));
+                }
             }
-            foreach (var (id, name) in active)
+            catch (AdoApiException) { } // no Git, or no Code (Read) scope
+        }
+        var several = active.Count > 1;
+        foreach (var (id, name) in active)
+        {
+            try
             {
                 var refs = await session.Client.GetListAsync($"_apis/git/repositories/{id}/refs?filter=heads/&$top=200", ct);
                 keys.AddRange(refs.Select(r => Code.Short(Json.Str(r, "name")) ?? "").Where(n => n.Length > 0 && !n.Contains('/'))
-                    .Select(n => active.Count > 1 ? $"{name}:{n}" : n));
+                    .Select(n => several ? $"{name}:{n}" : n));
             }
+            catch (AdoApiException) { }
         }
-        catch (AdoApiException) { } // no Git, or no Code (Read) scope
+        // Release stages deployed in the last half year; a Git stage is named by its branch (with its repository when
+        // there are several), a TFVC one as "Definition/Stage".
+        foreach (var p in projects)
+            foreach (var d in await session.Code.DeploymentsAsync(p, ct))
+            {
+                if (d.When is not { } when || when < DateTime.UtcNow.AddDays(-183)) continue;
+                var branch = Code.Short(d.Branch);
+                var repo = active.FirstOrDefault(a => string.Equals(a.Id, d.Repository, StringComparison.OrdinalIgnoreCase)).Name;
+                keys.Add(d.Branch?.StartsWith("$/", StringComparison.Ordinal) == true || branch is null ? $"{d.Definition}/{d.Stage}"
+                    : several && repo is not null ? $"{repo}:{branch}" : branch);
+            }
         return TraceQueries.ProposeFlow(keys.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 }

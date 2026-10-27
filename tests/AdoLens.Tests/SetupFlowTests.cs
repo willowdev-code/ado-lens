@@ -73,6 +73,9 @@ public class TeamSettingsTests : IDisposable
                 {"value":[{"releaseDefinition":{"name":"Shop"},"releaseEnvironment":{"name":"lcs"},"completedOn":"2099-01-01T00:00:00Z",
                   "release":{"artifacts":[{"definitionReference":{"branch":{"id":"refs/heads/staging"},"sourceVersion":{"id":"x"}}}]}}]}
                 """)
+            .On("/contoso/ERP/_apis/git/repositories", """{"value":[{"id":"r2","name":"erp","size":100}]}""")
+            .On("/contoso/_apis/git/repositories/r2/commits", () => "{\"value\":[{\"commitId\":\"c2\",\"committer\":{\"date\":\"" + DateTime.UtcNow.AddDays(-1).ToString("o") + "\"}}]}")
+            .On("/contoso/_apis/git/repositories/r2/refs", """{"value":[{"name":"refs/heads/staging"},{"name":"refs/heads/123456_LoginForm_AB"}]}""")
             .On("/contoso/Demo/_apis/git/repositories", """{"value":[{"id":"r1","name":"portal","size":100}]}""")
             .On("/contoso/_apis/git/repositories/r1/commits", () => "{\"value\":[{\"commitId\":\"c1\",\"committer\":{\"date\":\"" + DateTime.UtcNow.AddDays(-3).ToString("o") + "\"}}]}")
             .On("/contoso/_apis/git/repositories/r1/refs", """{"value":[{"name":"refs/heads/dev"},{"name":"refs/heads/master"},{"name":"refs/heads/feature/x"}]}""");
@@ -85,6 +88,17 @@ public class TeamSettingsTests : IDisposable
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+    }
+
+    [Fact]
+    public async Task With_the_code_in_another_project_its_branches_are_found_too()
+    {
+        settings.Connections["contoso"].CodeProject = "ERP";
+        var keys = (await EnvironmentFlow.DetectAsync(lens.For(null), "Demo", default)).Select(d => d.Key).ToList();
+        // Two repositories, one per project: each branch with its repository; work branches left out.
+        Assert.Contains("erp:staging", keys);
+        Assert.Contains("portal:dev", keys);
+        Assert.DoesNotContain(keys, k => k.Contains("LoginForm"));
     }
 
     [Fact]
