@@ -589,7 +589,7 @@ begin
   end;
 end;
 
-{ Files of {app}\bin matching Pattern get the suffix .<time>.old. The names are collected first: renaming while
+{ Files of the program's bin folder matching Pattern get the suffix .<time>.old. The names are collected first: renaming while
   enumerating could give a file twice. }
 procedure RenameInUse(Pattern: String);
 var
