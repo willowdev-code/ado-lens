@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.4 — 2026-10-27
+
+The environments are set the same way in the window, the terminal and the installer.
+
+- `adolens setup` (terminal): names in use are kept with Enter and removed with '-'; what was found gets no name until
+  one is typed - '+' takes the hint ("looks like DEV"), Enter skips. With more than 8 found, it first asks which to go
+  through: all, only TFVC branches and release stages ('-'), or repositories / text.
+- Installer, environments page: found rows start empty with the hint next to them ("Main   [DEV]"), a repository
+  filter (all / TFVC branches and release stages / one repository) and "Use the hints for the rows shown". Rows hidden
+  by the filter keep what was typed and are saved too.
+
 ## 0.11.3 — 2026-10-27
 
 - Finding the environments includes TFVC branches ($/Project/Trunk/Main, Release, SIT…) with a changeset in the last

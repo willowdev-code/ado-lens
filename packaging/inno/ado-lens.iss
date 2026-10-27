@@ -84,7 +84,7 @@ Filename: "{cm:ReadmeUrl}"; Description: "{cm:OpenReadme}"; Flags: postinstall s
 [CustomMessages]
 en.EnvTitle=Environments
 en.EnvSub=Where code goes before it reaches production
-en.EnvText=ADO Lens found these release stages and branches. Name each environment the way your team says it (for example UAT (sbx03)); leave a field empty to skip it.
+en.EnvText=ADO Lens found these release stages and branches; [DEV] is a hint. Name the ones that are environments the way your team says it (for example UAT (sbx03)); an empty field is skipped.
 en.EnvDetecting=Looking for release stages and branches...
 en.EnvNone=No release stages or long-lived branches were found. Claude will ask about environments when it needs them.
 en.EnvExisting=Environments are already set: %1 (%2).
@@ -93,6 +93,9 @@ en.EnvMine=Save for me only (this computer)
 en.EnvTeam=Save for the whole team (wiki page "ADO Lens" of the project)
 en.EnvSkip=Skip - Claude asks when needed
 en.EnvMore=... and %1 more: Start menu > ADO Lens - settings > Environments.
+en.EnvAll=(all)
+en.EnvNoRepo=(TFVC branches and release stages)
+en.EnvHints=Use the hints for the rows shown
 en.EnvFailed=Saving the environments did not work:%n%n%1
 en.ReadmeUrl=https://github.com/willowdev-code/ado-lens#readme
 en.IconSettings=ADO Lens - settings
@@ -101,7 +104,7 @@ en.IconSkills=ADO Lens - skills for Claude Desktop
 en.RemoveData=Also remove the stored personal access tokens (Windows Credential Manager) and the settings and cache of ADO Lens?%n%nChoose No to keep them for a later installation.
 pl.EnvTitle=Środowiska
 pl.EnvSub=Gdzie trafia kod, zanim dojdzie na produkcję
-pl.EnvText=ADO Lens znalazł te etapy release'ów i gałęzie. Nazwij każde środowisko tak, jak mówi o nim zespół (np. UAT (sbx03)); puste pole = pomiń.
+pl.EnvText=ADO Lens znalazł te etapy release'ów i gałęzie; [DEV] to podpowiedź. Nazwij te, które są środowiskami, tak jak mówi o nich zespół (np. UAT (sbx03)); puste pole = pomiń.
 pl.EnvDetecting=Szukam etapów release'ów i gałęzi...
 pl.EnvNone=Nie znaleziono etapów release'ów ani gałęzi. Claude zapyta o środowiska, gdy będą potrzebne.
 pl.EnvExisting=Środowiska są już ustawione: %1 (%2).
@@ -110,6 +113,9 @@ pl.EnvMine=Zapisz tylko dla mnie (ten komputer)
 pl.EnvTeam=Zapisz dla całego zespołu (strona wiki "ADO Lens" w projekcie)
 pl.EnvSkip=Pomiń - Claude zapyta, gdy będzie trzeba
 pl.EnvMore=... i jeszcze %1: menu Start > ADO Lens - ustawienia > Środowiska.
+pl.EnvAll=(wszystkie)
+pl.EnvNoRepo=(gałęzie TFVC i etapy release'ów)
+pl.EnvHints=Użyj podpowiedzi dla widocznych
 pl.EnvFailed=Nie udało się zapisać środowisk:%n%n%1
 pl.ReadmeUrl=https://github.com/willowdev-code/ado-lens/blob/main/README.pl.md
 pl.IconSettings=ADO Lens - ustawienia
@@ -173,7 +179,10 @@ var
   HasConnection: Boolean;
   EnvPage: TWizardPage;
   EnvInfo, EnvLater: TNewStaticText;
-  EnvKeys: TArrayOfString;
+  EnvKeys, EnvGuess, EnvRepo: TArrayOfString;
+  EnvFilter: TNewComboBox;
+  EnvHints: TNewButton;
+  EnvRowsTop: Integer;
   EnvLabels: array of TNewStaticText;
   EnvEdits: array of TNewEdit;
   EnvScope: TNewComboBox;
@@ -419,25 +428,94 @@ begin
   EnvMore.Visible := False;
 end;
 
+{ Shows the rows that match the filter, as many as fit between the filter and the drop-down; the rest is counted.
+  Hidden rows keep what was typed and are saved too. }
+procedure LayoutEnvRows;
+var
+  I, Shown, Hidden, MaxRows: Integer;
+  Match: Boolean;
+begin
+  MaxRows := (EnvMore.Top - EnvRowsTop) div ScaleY(26);
+  Shown := 0;
+  Hidden := 0;
+  for I := 0 to GetArrayLength(EnvKeys) - 1 do
+  begin
+    if EnvFilter.ItemIndex <= 0 then Match := True
+    else if EnvFilter.ItemIndex = 1 then Match := EnvRepo[I] = ''
+    else Match := CompareText(EnvRepo[I], EnvFilter.Items[EnvFilter.ItemIndex]) = 0;
+    if Match and (Shown < MaxRows) then
+    begin
+      EnvLabels[I].Top := EnvRowsTop + Shown * ScaleY(26) + ScaleY(3);
+      EnvEdits[I].Top := EnvRowsTop + Shown * ScaleY(26);
+      EnvLabels[I].Visible := True;
+      EnvEdits[I].Visible := True;
+      Shown := Shown + 1;
+    end
+    else
+    begin
+      if Match then Hidden := Hidden + 1;
+      EnvLabels[I].Visible := False;
+      EnvEdits[I].Visible := False;
+    end;
+  end;
+  EnvMore.Visible := Hidden > 0;
+  if Hidden > 0 then EnvMore.Caption := FmtMessage(CustomMessage('EnvMore'), [IntToStr(Hidden)]);
+end;
+
+procedure EnvFilterChange(Sender: TObject);
+begin
+  LayoutEnvRows;
+end;
+
+{ As in the settings window: a row found gets no name until given; the hint is shown next to it. }
+procedure EnvHintsClick(Sender: TObject);
+var
+  I: Integer;
+begin
+  for I := 0 to GetArrayLength(EnvKeys) - 1 do
+    if EnvEdits[I].Visible and (Trim(EnvEdits[I].Text) = '') and (EnvGuess[I] <> '') then
+      EnvEdits[I].Text := EnvGuess[I];
+end;
+
 { Fills the environment page from "adolens setup --detect": the map already in use, or one row per stage or branch
-  found with a suggested name. }
+  found, with its hint. }
 procedure DetectEnvironments;
 var
-  Exe, OutFile, Line, Key, Guess, Caption: String;
+  Exe, OutFile, Line, Key, Guess, Caption, Repo: String;
   Lines: TArrayOfString;
-  I, P, N, Top, MaxRows, Skipped: Integer;
+  I, P, N, Repos: Integer;
   Code: Integer;
 begin
-  { As many rows as fit between the text and the drop-down; the rest is named and can be set in the settings later. }
-  MaxRows := (EnvMore.Top - (EnvInfo.Top + EnvInfo.Height + ScaleY(4))) div ScaleY(26);
-  Skipped := 0;
   EnvDetected := True;
   Exe := ExpandConstant('{tmp}\adolens.exe');
   OutFile := ExpandConstant('{tmp}\adolens-envs.txt');
   DeleteFile(OutFile);
   Exec(Exe, 'setup --detect --out "' + OutFile + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
   if not LoadStringsFromFile(OutFile, Lines) then SetArrayLength(Lines, 0);
+
+  { The filter and the hints button, under the text. }
+  EnvFilter := TNewComboBox.Create(EnvPage);
+  EnvFilter.Parent := EnvPage.Surface;
+  EnvFilter.Style := csDropDownList;
+  EnvFilter.Top := EnvInfo.Top + EnvInfo.Height + ScaleY(2);
+  EnvFilter.Width := EnvPage.SurfaceWidth div 2 - ScaleX(8);
+  EnvFilter.Items.Add(CustomMessage('EnvAll'));
+  EnvFilter.Items.Add(CustomMessage('EnvNoRepo'));
+  EnvFilter.OnChange := @EnvFilterChange;
+  EnvFilter.Visible := False;
+  EnvHints := TNewButton.Create(EnvPage);
+  EnvHints.Parent := EnvPage.Surface;
+  EnvHints.Caption := CustomMessage('EnvHints');
+  EnvHints.Left := EnvPage.SurfaceWidth div 2;
+  EnvHints.Top := EnvFilter.Top;
+  EnvHints.Width := EnvPage.SurfaceWidth div 2;
+  EnvHints.Height := EnvFilter.Height;
+  EnvHints.OnClick := @EnvHintsClick;
+  EnvHints.Visible := False;
+  EnvRowsTop := EnvFilter.Top + EnvFilter.Height + ScaleY(6);
+
   N := 0;
+  Repos := 0;
   SetArrayLength(EnvKeys, 0);
   for I := 0 to GetArrayLength(Lines) - 1 do
   begin
@@ -449,9 +527,7 @@ begin
       EnvInfo.Caption := FmtMessage(CustomMessage('EnvExisting'), [Copy(Line, 1, P - 1), Copy(Line, P + 1, Length(Line))]);
       Exit;
     end;
-    if (Copy(Line, 1, 4) = 'row' + #9) and (N >= MaxRows) then
-      Skipped := Skipped + 1
-    else if Copy(Line, 1, 4) = 'row' + #9 then
+    if (Copy(Line, 1, 4) = 'row' + #9) and (N < 80) then
     begin
       Delete(Line, 1, 4);
       P := Pos(#9, Line);
@@ -465,30 +541,41 @@ begin
         Key := Line;
         Guess := '';
       end;
-      N := N + 1;
-      SetArrayLength(EnvKeys, N);
-      SetArrayLength(EnvLabels, N);
-      SetArrayLength(EnvEdits, N);
-      EnvKeys[N - 1] := Key;
-      Top := EnvInfo.Top + EnvInfo.Height + ScaleY(4) + (N - 1) * ScaleY(26);
-      EnvLabels[N - 1] := TNewStaticText.Create(EnvPage);
-      EnvLabels[N - 1].Parent := EnvPage.Surface;
       { "D365FO:staging" is the branch staging of the repository D365FO. }
+      Repo := '';
       Caption := Key;
       P := Pos(':', Key);
       if (P > 1) and (Pos('/', Key) = 0) then
-        Caption := Copy(Key, P + 1, Length(Key)) + '  (' + Copy(Key, 1, P - 1) + ')';
+      begin
+        Repo := Copy(Key, 1, P - 1);
+        Caption := Copy(Key, P + 1, Length(Key)) + '  (' + Repo + ')';
+        if EnvFilter.Items.IndexOf(Repo) < 0 then
+        begin
+          EnvFilter.Items.Add(Repo);
+          Repos := Repos + 1;
+        end;
+      end;
+      if Guess <> '' then Caption := Caption + '   [' + Guess + ']';
+      N := N + 1;
+      SetArrayLength(EnvKeys, N);
+      SetArrayLength(EnvGuess, N);
+      SetArrayLength(EnvRepo, N);
+      SetArrayLength(EnvLabels, N);
+      SetArrayLength(EnvEdits, N);
+      EnvKeys[N - 1] := Key;
+      EnvGuess[N - 1] := Guess;
+      EnvRepo[N - 1] := Repo;
+      EnvLabels[N - 1] := TNewStaticText.Create(EnvPage);
+      EnvLabels[N - 1].Parent := EnvPage.Surface;
       EnvLabels[N - 1].Caption := Caption;
       EnvLabels[N - 1].AutoSize := False;
       EnvLabels[N - 1].Height := ScaleY(18);
-      EnvLabels[N - 1].Top := Top + ScaleY(3);
       EnvLabels[N - 1].Width := EnvPage.SurfaceWidth div 2 - ScaleX(8);
       EnvEdits[N - 1] := TNewEdit.Create(EnvPage);
       EnvEdits[N - 1].Parent := EnvPage.Surface;
       EnvEdits[N - 1].Left := EnvPage.SurfaceWidth div 2;
-      EnvEdits[N - 1].Top := Top;
       EnvEdits[N - 1].Width := EnvPage.SurfaceWidth div 2;
-      EnvEdits[N - 1].Text := Guess;
+      EnvEdits[N - 1].Text := '';
     end;
   end;
   if N = 0 then
@@ -497,11 +584,14 @@ begin
     Exit;
   end;
   EnvInfo.Caption := CustomMessage('EnvText');
-  if Skipped > 0 then
-  begin
-    EnvMore.Caption := FmtMessage(CustomMessage('EnvMore'), [IntToStr(Skipped)]);
-    EnvMore.Visible := True;
-  end;
+  { With several repositories, start with the TFVC branches and release stages when there are any. }
+  EnvFilter.ItemIndex := 0;
+  if Repos > 0 then
+    for I := 0 to N - 1 do
+      if EnvRepo[I] = '' then EnvFilter.ItemIndex := 1;
+  EnvFilter.Visible := True;
+  EnvHints.Visible := True;
+  LayoutEnvRows;
   EnvScope.Visible := True;
 end;
 
