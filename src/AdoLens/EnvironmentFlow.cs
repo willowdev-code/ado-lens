@@ -20,15 +20,29 @@ public static class EnvironmentFlow
     /// Release stages and long-lived branches of the project with the code (the connection's code project, when the
     /// code lives elsewhere than the work items) and of <paramref name="project"/> itself.
     /// </summary>
-    public static async Task<List<(string Key, string? Guess)>> DetectAsync(Session session, string project, CancellationToken ct)
+    public static async Task<List<(string Key, string? Guess)>> DetectAsync(Session session, string project, CancellationToken ct) =>
+        (await DetectWithSourcesAsync(session, project, ct)).Select(d => (d.Key, d.Guess)).ToList();
+
+    /// <summary>
+    /// As <see cref="DetectAsync"/>, with where each one comes from ("$/Project/Trunk/Main, last changeset 2026-10-20";
+    /// "release Deploy, stage 1, deployed 2026-10-24 from …"), so two of the same name can be told apart.
+    /// </summary>
+    public static async Task<List<(string Key, string? Guess, string Source)>> DetectWithSourcesAsync(Session session, string project, CancellationToken ct)
     {
+        var sources = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        void From(string key, string source)
+        {
+            if (!sources.TryGetValue(key, out var list)) sources[key] = list = [];
+            if (!list.Contains(source)) list.Add(source);
+        }
+        static string Day(DateTime? d) => d?.ToLocalTime().ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "?";
         var projects = new[] { session.Config.CodeProject, project }.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var keys = new List<string>();
         // Long-lived branches of the repositories in use (a commit in the last half year); feature and work branches are
         // filtered by ProposeFlow. With several repositories each branch is named with its repository ("D365FO:staging"),
         // since the same branch name can mean different environments - or none - in different repositories.
-        var active = new List<(string Id, string Name)>();
+        var active = new List<(string Id, string Name, string Project, DateTime Last)>();
         foreach (var p in projects)
         {
             try
@@ -40,19 +54,24 @@ public static class EnvironmentFlow
                     var last = await session.Client.GetListAsync($"_apis/git/repositories/{id}/commits?searchCriteria.$top=1", ct);
                     if (last.Count > 0 && DateTime.TryParse(Json.Str(Json.Obj(last[0], "committer"), "date"), System.Globalization.CultureInfo.InvariantCulture,
                             System.Globalization.DateTimeStyles.AdjustToUniversal, out var when) && when > DateTime.UtcNow.AddDays(-183))
-                        active.Add((id, Json.Str(repo, "name") ?? id));
+                        active.Add((id, Json.Str(repo, "name") ?? id, p, when));
                 }
             }
             catch (AdoApiException) { } // no Git, or no Code (Read) scope
         }
         var several = active.Count > 1;
-        foreach (var (id, name) in active)
+        foreach (var (id, name, inProject, last) in active)
         {
             try
             {
                 var refs = await session.Client.GetListAsync($"_apis/git/repositories/{id}/refs?filter=heads/&$top=200", ct);
-                keys.AddRange(refs.Select(r => Code.Short(Json.Str(r, "name")) ?? "").Where(n => n.Length > 0 && !n.Contains('/'))
-                    .Select(n => several ? $"{name}:{n}" : n));
+                foreach (var n in refs.Select(r => Code.Short(Json.Str(r, "name")) ?? "").Where(n => n.Length > 0 && !n.Contains('/')))
+                {
+                    var key = several ? $"{name}:{n}" : n;
+                    keys.Add(key);
+                    From(key, Ui.T($"Git: branch {n} of repository {name} ({inProject}; last commit in the repository {Day(last)})",
+                                    $"Git: gałąź {n} repozytorium {name} ({inProject}; ostatni commit w repozytorium {Day(last)})"));
+                }
             }
             catch (AdoApiException) { }
         }
@@ -67,11 +86,13 @@ public static class EnvironmentFlow
                 {
                     var path = Json.Str(b, "path") ?? "";
                     var name = path[(path.LastIndexOf('/') + 1)..];
-                    if (name.Length == 0 || tfvc.Any(t => t.Key.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (name.Length == 0) continue;
                     var last = await session.Client.GetListAsync($"_apis/tfvc/changesets?searchCriteria.itemPath={Uri.EscapeDataString(path)}&$top=1", ct);
                     if (last.Count == 0 || !DateTime.TryParse(Json.Str(last[0], "createdDate"), System.Globalization.CultureInfo.InvariantCulture,
                             System.Globalization.DateTimeStyles.AdjustToUniversal, out var when) || when < DateTime.UtcNow.AddDays(-183)) continue;
-                    tfvc.Add((name, TfvcGuess(name)));
+                    // Two branches with one name (Main in two projects) are one key: ado_trace knows a TFVC branch by its last part.
+                    From(name, Ui.T($"TFVC: {path} (last changeset {Day(when)})", $"TFVC: {path} (ostatni changeset {Day(when)})"));
+                    if (!tfvc.Any(t => t.Key.Equals(name, StringComparison.OrdinalIgnoreCase))) tfvc.Add((name, TfvcGuess(name)));
                 }
             }
             catch (AdoApiException) { } // no TFVC, or no Code (Read) scope
@@ -85,13 +106,18 @@ public static class EnvironmentFlow
                 if (d.When is not { } when || when < DateTime.UtcNow.AddDays(-183)) continue;
                 var branch = Code.Short(d.Branch);
                 var repo = active.FirstOrDefault(a => string.Equals(a.Id, d.Repository, StringComparison.OrdinalIgnoreCase)).Name;
-                keys.Add(d.Branch?.StartsWith("$/", StringComparison.Ordinal) == true || branch is null ? $"{d.Definition}/{d.Stage}"
-                    : several && repo is not null ? $"{repo}:{branch}" : branch);
+                var key = d.Branch?.StartsWith("$/", StringComparison.Ordinal) == true || branch is null ? $"{d.Definition}/{d.Stage}"
+                    : several && repo is not null ? $"{repo}:{branch}" : branch;
+                keys.Add(key);
+                From(key, Ui.T($"release {d.Definition}, stage {d.Stage}: deployed {Day(d.When)}", $"release {d.Definition}, etap {d.Stage}: wdrożony {Day(d.When)}")
+                          + (d.Branch is { } from ? Ui.T($" from {from}", $" z {from}") : "") + $" ({p})");
             }
         var git = TraceQueries.ProposeFlow(keys.Distinct(StringComparer.OrdinalIgnoreCase));
         var order = new[] { "DEV", "UAT", "PROD" };
         return tfvc.OrderBy(t => t.Guess is null ? 3 : Array.IndexOf(order, t.Guess)).ThenBy(t => t.Key, StringComparer.OrdinalIgnoreCase)
-            .Concat(git.Where(g => !tfvc.Any(t => t.Key.Equals(g.Key, StringComparison.OrdinalIgnoreCase)))).ToList();
+            .Concat(git.Where(g => !tfvc.Any(t => t.Key.Equals(g.Key, StringComparison.OrdinalIgnoreCase))))
+            .Select(k => (k.Key, k.Guess, string.Join("; ", sources.GetValueOrDefault(k.Key) ?? [])))
+            .DistinctBy(k => k.Key, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>A TFVC branch and the branches under it.</summary>

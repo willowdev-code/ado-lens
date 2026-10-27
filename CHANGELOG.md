@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.5 — 2026-10-27
+
+- Fixed: the Environments tab of the settings window showed every row twice (two loads at once: choosing the
+  connection and opening the tab). Only the last load fills the table now.
+- Environments: a column "Where from" (and a tooltip) with where each row comes from - the TFVC path and its last
+  changeset, the repository and its project, or the release, stage, date and branch it was deployed from - so a "Main"
+  or "Release" can be told from another. The terminal menu shows it under each row; `adolens setup --detect --sources`
+  prints it.
+
 ## 0.11.4 — 2026-10-27
 
 The environments are set the same way in the window, the terminal and the installer.

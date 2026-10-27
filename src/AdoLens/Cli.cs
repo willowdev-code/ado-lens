@@ -602,6 +602,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             var lines = new List<string>();
             var (effective, source) = await EnvironmentFlow.EffectiveAsync(session, project, default);
             if (effective.Count > 0) lines.Add($"existing\t{string.Join(" -> ", effective.Values)}\t{source}");
+            // --sources adds where each comes from (the installer reads three columns only).
+            else if (cl.Flag("sources")) lines.AddRange((await EnvironmentFlow.DetectWithSourcesAsync(session, project, default)).Select(d => $"row\t{d.Key}\t{d.Guess}\t{d.Source}"));
             else lines.AddRange((await EnvironmentFlow.DetectAsync(session, project, default)).Select(d => $"row\t{d.Key}\t{d.Guess}"));
             if (cl.Opt("out") is { } file)
             {
@@ -678,7 +680,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             Console.WriteLine(Ui.T($"{name} / {project}: code goes {string.Join(" -> ", effective.Values)} ({source}).",
                                    $"{name} / {project}: kod trafia kolejno na {string.Join(" -> ", effective.Values)} ({source})."));
         if (effective.Count > 0 && !change) return;
-        var found = (await EnvironmentFlow.DetectAsync(session, project, default)).Where(d => !effective.ContainsKey(d.Key)).ToList();
+        var found = (await EnvironmentFlow.DetectWithSourcesAsync(session, project, default)).Where(d => !effective.ContainsKey(d.Key)).ToList();
         if ((effective.Count == 0 && found.Count == 0) || !interactive)
         {
             Console.WriteLine(Ui.T($"{name} / {project}: no release stages or long-lived branches found - Claude will ask when needed.",
@@ -716,8 +718,10 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (found.Count > 0)
             Console.WriteLine(Ui.T("Found - type the name as people say it (e.g. UAT (sbx03)), '+' takes the hint, Enter skips:",
                                    "Znalezione - wpisz nazwę, jakiej używacie (np. UAT (sbx03)), '+' przyjmuje podpowiedź, Enter pomija:"));
-        foreach (var (key, hint) in found)
+        foreach (var (key, hint, from) in found)
         {
+            // Where it comes from: two "Main" or "Release" are told apart by their path or release.
+            if (from.Length > 0) Console.WriteLine($"    ({from})");
             var label = Prompt($"  {key}{(hint is null ? "" : Ui.T($" (looks like {hint})", $" (wygląda na {hint})"))}: ")?.Trim();
             if (label == "+" && hint is not null) map[key] = hint;
             else if (!string.IsNullOrEmpty(label) && label != "+" && label != "-") map[key] = label;
