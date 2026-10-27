@@ -51,6 +51,15 @@ public class ImprovementTests
         }
     }
 
+    [Theory]
+    [InlineData("Main", "DEV")]
+    [InlineData("SIT", "UAT")]
+    [InlineData("Release", "PROD")]
+    [InlineData("SIT_20261021", null)]
+    [InlineData("joma", null)]
+    public void Tfvc_branches_get_a_first_guess(string branch, string? guess) =>
+        Assert.Equal(guess, EnvironmentFlow.TfvcGuess(branch));
+
     [Fact]
     public void Work_branches_are_not_environments()
     {

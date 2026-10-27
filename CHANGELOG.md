@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.3 — 2026-10-27
+
+- Finding the environments includes TFVC branches ($/Project/Trunk/Main, Release, SIT…) with a changeset in the last
+  half year, named by the last part of their path as `ado_trace` reads them; Main is offered as DEV, a test branch as
+  UAT, Release as PROD.
+- Settings window, Environments: a filter (text, repository - or only TFVC branches and release stages - and "named
+  only"). Rows that were found get no name yet, only a hint in the column "Looks like"; "Use the hints for the rows
+  shown" fills the names of the rows left after filtering, so a project with many repositories does not save every
+  branch of every one.
+
 ## 0.11.2 — 2026-10-27
 
 - Fixed: finding the environments (settings window, `adolens setup`, `ado_settings`, the SETUP hint of `ado_trace`)

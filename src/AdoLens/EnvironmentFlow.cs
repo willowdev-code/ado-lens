@@ -56,6 +56,27 @@ public static class EnvironmentFlow
             }
             catch (AdoApiException) { }
         }
+        // TFVC branches ($/Project/Trunk/Main): named by the last part of their path, as ado_trace reads them. Only
+        // branches with a changeset in the last half year; they come first, in their own flow order.
+        var tfvc = new List<(string Key, string? Guess)>();
+        foreach (var p in projects)
+        {
+            try
+            {
+                foreach (var b in Flatten(await session.Client.GetListAsync($"{AdoClient.Scope(p)}_apis/tfvc/branches?includeChildren=true&includeDeleted=false", ct)))
+                {
+                    var path = Json.Str(b, "path") ?? "";
+                    var name = path[(path.LastIndexOf('/') + 1)..];
+                    if (name.Length == 0 || tfvc.Any(t => t.Key.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+                    var last = await session.Client.GetListAsync($"_apis/tfvc/changesets?searchCriteria.itemPath={Uri.EscapeDataString(path)}&$top=1", ct);
+                    if (last.Count == 0 || !DateTime.TryParse(Json.Str(last[0], "createdDate"), System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.AdjustToUniversal, out var when) || when < DateTime.UtcNow.AddDays(-183)) continue;
+                    tfvc.Add((name, TfvcGuess(name)));
+                }
+            }
+            catch (AdoApiException) { } // no TFVC, or no Code (Read) scope
+        }
+
         // Release stages deployed in the last half year; a Git stage is named by its branch (with its repository when
         // there are several), a TFVC one as "Definition/Stage".
         foreach (var p in projects)
@@ -67,8 +88,33 @@ public static class EnvironmentFlow
                 keys.Add(d.Branch?.StartsWith("$/", StringComparison.Ordinal) == true || branch is null ? $"{d.Definition}/{d.Stage}"
                     : several && repo is not null ? $"{repo}:{branch}" : branch);
             }
-        return TraceQueries.ProposeFlow(keys.Distinct(StringComparer.OrdinalIgnoreCase));
+        var git = TraceQueries.ProposeFlow(keys.Distinct(StringComparer.OrdinalIgnoreCase));
+        var order = new[] { "DEV", "UAT", "PROD" };
+        return tfvc.OrderBy(t => t.Guess is null ? 3 : Array.IndexOf(order, t.Guess)).ThenBy(t => t.Key, StringComparer.OrdinalIgnoreCase)
+            .Concat(git.Where(g => !tfvc.Any(t => t.Key.Equals(g.Key, StringComparison.OrdinalIgnoreCase)))).ToList();
     }
+
+    /// <summary>A TFVC branch and the branches under it.</summary>
+    static IEnumerable<JsonElement> Flatten(IEnumerable<JsonElement> branches)
+    {
+        foreach (var b in branches)
+        {
+            yield return b;
+            foreach (var c in Flatten(Json.Arr(b, "children"))) yield return c;
+        }
+    }
+
+    /// <summary>
+    /// A first guess for a TFVC branch of a D365 project: Main (or Trunk, Dev) is where development goes in, Release is
+    /// production; a test branch (SIT, UAT, Test) in between. Dated copies (SIT_20261021) and personal branches get none.
+    /// </summary>
+    internal static string? TfvcGuess(string name) => name.ToLowerInvariant() switch
+    {
+        "main" or "trunk" or "dev" or "develop" or "development" => "DEV",
+        "sit" or "uat" or "test" or "qa" or "staging" or "preprod" => "UAT",
+        "release" or "prod" or "production" or "live" => "PROD",
+        _ => null,
+    };
 }
 
 /// <summary>
