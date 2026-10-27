@@ -589,16 +589,40 @@ begin
   end;
 end;
 
-{ A running adolens.exe (an open Claude session) cannot be overwritten but can be renamed; the server removes *.old
-  files when it starts. }
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+{ Files of the program's bin folder matching Pattern get the suffix .<time>.old. The names are collected first: renaming while
+  enumerating could give a file twice. }
+procedure RenameInUse(Pattern: String);
 var
-  Exe: String;
+  Bin, Stamp: String;
+  Found: TFindRec;
+  Names: TArrayOfString;
+  I: Integer;
+begin
+  Bin := ExpandConstant('{app}\bin\');
+  Stamp := GetDateTimeString('yyyymmddhhnnss', #0, #0);
+  if FindFirst(Bin + Pattern, Found) then
+  try
+    repeat
+      if (Found.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+      begin
+        SetArrayLength(Names, GetArrayLength(Names) + 1);
+        Names[GetArrayLength(Names) - 1] := Found.Name;
+      end;
+    until not FindNext(Found);
+  finally
+    FindClose(Found);
+  end;
+  for I := 0 to GetArrayLength(Names) - 1 do
+    RenameFile(Bin + Names[I], Bin + Names[I] + '.' + Stamp + '.old');
+end;
+
+{ A running adolens.exe (an open Claude session) and the SQLite library it loaded (e_sqlite3.dll) cannot be
+  overwritten but can be renamed; the program removes *.old files when it starts. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
-  Exe := ExpandConstant('{app}\bin\adolens.exe');
-  if FileExists(Exe) then
-    RenameFile(Exe, Exe + '.' + GetDateTimeString('yyyymmddhhnnss', #0, #0) + '.old');
+  RenameInUse('*.exe');
+  RenameInUse('*.dll');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

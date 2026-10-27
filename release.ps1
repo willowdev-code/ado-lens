@@ -247,7 +247,7 @@ $archive = [IO.Compression.ZipFile]::OpenRead($zip)
 $entries = @($archive.Entries | ForEach-Object { $_.FullName })
 $archive.Dispose()
 Remove-Item $tmp -Recurse -Force
-foreach ($e in 'ado-lens/install.ps1', 'ado-lens/bin/adolens.exe', 'ado-lens/CHANGELOG.md', 'ado-lens/SECURITY.md') {
+foreach ($e in 'ado-lens/install.ps1', 'ado-lens/bin/adolens.exe', 'ado-lens/bin/e_sqlite3.dll', 'ado-lens/CHANGELOG.md', 'ado-lens/SECURITY.md') {
     if ($entries -notcontains $e) { Fail "$asset has no $e (entries: $($entries -join ', '))" }
 }
 Ok "${asset}: SHA-256 matches, layout ok, $(if ($Pre) { 'test release' } else { 'regular release' })"

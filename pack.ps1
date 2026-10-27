@@ -33,7 +33,9 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 $publishArgs = @(
     'publish', $proj, '-c', 'Release', '-r', 'win-x64', '-o', (Join-Path $stage 'bin'), '--nologo',
-    '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
+    # Native libraries (SQLite: e_sqlite3.dll) stay next to the exe instead of being extracted to TEMP at start: the TEMP
+    # of a remote desktop session (Temp\<n>) may no longer exist, and the exe would not start at all (Start menu, cmd).
+    '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=false',
     '-p:EnableCompressionInSingleFile=true', '-p:PublishReadyToRun=true',
     # No debug information: a release build would otherwise carry the local path of its .pdb file.
     '-p:DebugType=None', '-p:DebugSymbols=false'
