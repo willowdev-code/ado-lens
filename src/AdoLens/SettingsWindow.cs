@@ -283,6 +283,13 @@ public sealed class SettingsWindow : Form
         envGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = Ui.T("Environment, as people say it (empty = skip)", "Środowisko, jak o nim mówicie (puste = pomiń)"), FillWeight = 35 });
         envGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "hint", HeaderText = Ui.T("Looks like", "Wygląda na"), FillWeight = 12, ReadOnly = true,
             DefaultCellStyle = new DataGridViewCellStyle { ForeColor = SystemColors.GrayText } });
+        // Where a row comes from: two "Main" or "Release" rows are told apart by their path, repository or release.
+        envGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "source", HeaderText = Ui.T("Where from", "Skąd"), FillWeight = 45, ReadOnly = true,
+            DefaultCellStyle = new DataGridViewCellStyle { ForeColor = SystemColors.GrayText } });
+        envGrid.CellToolTipTextNeeded += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && envGrid.Rows[e.RowIndex].Cells[4].Value is string { Length: > 0 } source) e.ToolTipText = source.Replace("; ", "\n");
+        };
         envConnection.SelectedIndexChanged += async (_, _) => await LoadEnvironmentsAsync(detect: false);
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
@@ -346,9 +353,13 @@ public sealed class SettingsWindow : Form
         envGrid.CurrentCell = row.Cells[0];
     }
 
+    /// <summary>Each load gets a number; only the last one fills the table (two loads at once doubled every row).</summary>
+    int envLoad;
+
     async Task LoadEnvironmentsAsync(bool detect)
     {
         if (envConnection.SelectedItem is not string name) return;
+        var load = ++envLoad;
         UseWaitCursor = true;
         envInfo.Text = detect ? Ui.T("Looking for release stages and branches...", "Szukam etapów release'ów i gałęzi...") : "";
         try
@@ -357,13 +368,15 @@ public sealed class SettingsWindow : Form
             var session = lens.For(name);
             var project = session.Project(null);
             var (map, source) = await EnvironmentFlow.EffectiveAsync(session, project, default);
-            envGrid.Rows.Clear();
-            foreach (var (key, label) in map) AddRow(key, label, null);
-            var found = 0;
             // Found rows get no name yet, only the hint: with many repositories, saving would otherwise take them all.
-            if (detect || map.Count == 0)
-                foreach (var (key, guess) in await EnvironmentFlow.DetectAsync(session, project, default))
-                    if (!map.ContainsKey(key)) { AddRow(key, "", guess); found++; }
+            var detected = detect || map.Count == 0 ? await EnvironmentFlow.DetectWithSourcesAsync(session, project, default) : [];
+            if (load != envLoad) return;   // a newer load is on its way
+            envGrid.Rows.Clear();
+            foreach (var (key, label) in map)
+                AddRow(key, label, null, detected.FirstOrDefault(d => d.Key.Equals(key, StringComparison.OrdinalIgnoreCase)).Source);
+            var found = 0;
+            foreach (var (key, guess, from) in detected)
+                if (!map.ContainsKey(key)) { AddRow(key, "", guess, from); found++; }
             FillRepositories();
             var code = session.Config.CodeProject is { } cp && !cp.Equals(project, StringComparison.OrdinalIgnoreCase) ? Ui.T($" (code in {cp})", $" (kod w {cp})") : "";
             envInfo.Text = $"{project}{code}: " + (map.Count > 0 ? Ui.T($"in use: {source}", $"w użyciu: {source}") : Ui.T("no map yet", "brak mapy"))
@@ -378,8 +391,8 @@ public sealed class SettingsWindow : Form
         finally { UseWaitCursor = false; }
     }
 
-    void AddRow(string key, string label, string? hint) =>
-        envGrid.Rows.Add(EnvMap.RepoOf(key) ?? "", EnvMap.BranchOf(key), label, hint ?? "");
+    void AddRow(string key, string label, string? hint, string? source = null) =>
+        envGrid.Rows.Add(EnvMap.RepoOf(key) ?? "", EnvMap.BranchOf(key), label, hint ?? "", source ?? "");
 
     const int AllRepositories = 0, NoRepository = 1;
 
