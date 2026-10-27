@@ -27,6 +27,9 @@ public sealed class SettingsWindow : Form
         AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, SelectionMode = DataGridViewSelectionMode.FullRowSelect, BackgroundColor = SystemColors.Window,
     };
     readonly Label envInfo = new() { Dock = DockStyle.Fill, AutoEllipsis = true };
+    readonly TextBox envFilter = new() { Width = 160 };
+    readonly ComboBox envRepo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
+    readonly CheckBox envNamed = new() { AutoSize = true };
 
     readonly TextBox status = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false, Dock = DockStyle.Fill, Font = new Font(FontFamily.GenericMonospace, 9) };
 
@@ -278,6 +281,8 @@ public sealed class SettingsWindow : Form
         envGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "repo", HeaderText = Ui.T("Repository (empty = all)", "Repozytorium (puste = wszystkie)"), FillWeight = 25 });
         envGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "key", HeaderText = Ui.T("Branch or release stage (Definition/Stage)", "Gałąź albo etap release'u (Definicja/Etap)"), FillWeight = 40 });
         envGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = Ui.T("Environment, as people say it (empty = skip)", "Środowisko, jak o nim mówicie (puste = pomiń)"), FillWeight = 35 });
+        envGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "hint", HeaderText = Ui.T("Looks like", "Wygląda na"), FillWeight = 12, ReadOnly = true,
+            DefaultCellStyle = new DataGridViewCellStyle { ForeColor = SystemColors.GrayText } });
         envConnection.SelectedIndexChanged += async (_, _) => await LoadEnvironmentsAsync(detect: false);
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
@@ -289,11 +294,31 @@ public sealed class SettingsWindow : Form
         top.Controls.Add(Button("↓", () => MoveRow(+1)));
         top.Controls.Add(Button(Ui.T("Remove row", "Usuń wiersz"), () => { foreach (DataGridViewRow r in envGrid.SelectedRows) if (!r.IsNewRow) envGrid.Rows.Remove(r); }));
 
+        // Many repositories give many rows: narrow them down, then fill the names of the rows left.
+        var filter = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        filter.Controls.Add(new Label { Text = Ui.T("Filter:", "Filtr:"), AutoSize = true, Padding = new Padding(0, 6, 0, 0) });
+        filter.Controls.Add(envFilter);
+        filter.Controls.Add(new Label { Text = Ui.T("Repository:", "Repozytorium:"), AutoSize = true, Padding = new Padding(8, 6, 0, 0) });
+        filter.Controls.Add(envRepo);
+        envNamed.Text = Ui.T("named only", "tylko nazwane");
+        envNamed.Padding = new Padding(8, 4, 0, 0);
+        filter.Controls.Add(envNamed);
+        filter.Controls.Add(Button(Ui.T("Use the hints for the rows shown", "Użyj podpowiedzi dla widocznych"), () =>
+        {
+            foreach (DataGridViewRow row in envGrid.Rows)
+                if (!row.IsNewRow && row.Visible && string.IsNullOrWhiteSpace(row.Cells[2].Value as string) && row.Cells[3].Value is string { Length: > 0 } hint)
+                    row.Cells[2].Value = hint;
+        }));
+        envFilter.TextChanged += (_, _) => ApplyFilter();
+        envRepo.SelectedIndexChanged += (_, _) => ApplyFilter();
+        envNamed.CheckedChanged += (_, _) => ApplyFilter();
+
         var bottom = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         bottom.Controls.Add(Button(Ui.T("Save for me", "Zapisz dla mnie"), async () => await SaveEnvironmentsAsync(team: false)));
         bottom.Controls.Add(Button(Ui.T("Save for the whole team (wiki page \"ADO Lens\")", "Zapisz dla zespołu (strona wiki \"ADO Lens\")"), async () => await SaveEnvironmentsAsync(team: true)));
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6 };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -302,9 +327,10 @@ public sealed class SettingsWindow : Form
         layout.Controls.Add(top, 0, 0);
         layout.Controls.Add(Note(Ui.T("In flow order: DEV first, production last. A repository with rows of its own uses only those (the same branch may mean something else, or nothing, in another repository).",
                                       "W kolejności przepływu: najpierw DEV, na końcu produkcja. Repozytorium z własnymi wierszami używa tylko ich (ta sama gałąź w innym repozytorium może znaczyć co innego albo nic).")), 0, 1);
-        layout.Controls.Add(envGrid, 0, 2);
-        layout.Controls.Add(envInfo, 0, 3);
-        layout.Controls.Add(bottom, 0, 4);
+        layout.Controls.Add(filter, 0, 2);
+        layout.Controls.Add(envGrid, 0, 3);
+        layout.Controls.Add(envInfo, 0, 4);
+        layout.Controls.Add(bottom, 0, 5);
         return Page(Ui.T("Environments", "Środowiska"), layout);
     }
 
@@ -332,24 +358,60 @@ public sealed class SettingsWindow : Form
             var project = session.Project(null);
             var (map, source) = await EnvironmentFlow.EffectiveAsync(session, project, default);
             envGrid.Rows.Clear();
-            foreach (var (key, label) in map) AddRow(key, label);
+            foreach (var (key, label) in map) AddRow(key, label, null);
             var found = 0;
+            // Found rows get no name yet, only the hint: with many repositories, saving would otherwise take them all.
             if (detect || map.Count == 0)
                 foreach (var (key, guess) in await EnvironmentFlow.DetectAsync(session, project, default))
-                    if (!map.ContainsKey(key)) { AddRow(key, guess ?? ""); found++; }
+                    if (!map.ContainsKey(key)) { AddRow(key, "", guess); found++; }
+            FillRepositories();
             var code = session.Config.CodeProject is { } cp && !cp.Equals(project, StringComparison.OrdinalIgnoreCase) ? Ui.T($" (code in {cp})", $" (kod w {cp})") : "";
             envInfo.Text = $"{project}{code}: " + (map.Count > 0 ? Ui.T($"in use: {source}", $"w użyciu: {source}") : Ui.T("no map yet", "brak mapy"))
-                           + (found > 0 ? Ui.T($"; {found} found (check the names)", $"; znalezione: {found} (sprawdź nazwy)") : "");
+                           + (found > 0 ? Ui.T($"; {found} found - name the ones that are environments (or filter, then use the hints)",
+                                                  $"; znalezione: {found} - nazwij te, które są środowiskami (albo przefiltruj i użyj podpowiedzi)") : "");
         }
         catch (Exception ex) when (ex is InvalidOperationException or AdoApiException or HttpRequestException)
         {
             envInfo.Text = ex.Message;
+            FillRepositories();
         }
         finally { UseWaitCursor = false; }
     }
 
-    void AddRow(string key, string label) =>
-        envGrid.Rows.Add(EnvMap.RepoOf(key) ?? "", EnvMap.BranchOf(key), label);
+    void AddRow(string key, string label, string? hint) =>
+        envGrid.Rows.Add(EnvMap.RepoOf(key) ?? "", EnvMap.BranchOf(key), label, hint ?? "");
+
+    const int AllRepositories = 0, NoRepository = 1;
+
+    /// <summary>The repository filter: everything, the rows without a repository (TFVC branches, release stages), each repository.</summary>
+    void FillRepositories()
+    {
+        var keep = envRepo.SelectedItem as string;
+        envRepo.Items.Clear();
+        envRepo.Items.Add(Ui.T("(all)", "(wszystkie)"));
+        envRepo.Items.Add(Ui.T("(none: TFVC branches, release stages)", "(bez: gałęzie TFVC, etapy release'ów)"));
+        envRepo.Items.AddRange(envGrid.Rows.Cast<DataGridViewRow>().Where(r => !r.IsNewRow).Select(r => r.Cells[0].Value as string)
+            .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).Cast<object>().ToArray());
+        envRepo.SelectedIndex = keep is not null && envRepo.Items.IndexOf(keep) is var i and >= 0 ? i : AllRepositories;
+        ApplyFilter();
+    }
+
+    /// <summary>Hides the rows that do not match; hidden rows keep their names and are saved like the others.</summary>
+    void ApplyFilter()
+    {
+        var text = envFilter.Text.Trim();
+        envGrid.CurrentCell = null;
+        foreach (DataGridViewRow row in envGrid.Rows)
+        {
+            if (row.IsNewRow) continue;
+            var repo = row.Cells[0].Value as string ?? "";
+            var cells = string.Join(" ", row.Cells.Cast<DataGridViewCell>().Select(c => c.Value as string));
+            var index = envRepo.SelectedIndex;
+            var inRepo = index <= AllRepositories || (index == NoRepository ? repo.Length == 0 : repo.Equals(envRepo.SelectedItem as string, StringComparison.OrdinalIgnoreCase));
+            row.Visible = (text.Length == 0 || cells.Contains(text, StringComparison.OrdinalIgnoreCase)) && inRepo
+                && (!envNamed.Checked || !string.IsNullOrWhiteSpace(row.Cells[2].Value as string));
+        }
+    }
 
     /// <summary>The rows as a map in their order; a row without a name is left out.</summary>
     internal static Dictionary<string, string> MapOf(IEnumerable<(string? Repo, string? Key, string? Name)> rows)
