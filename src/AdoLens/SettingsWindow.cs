@@ -337,7 +337,8 @@ public sealed class SettingsWindow : Form
             if (detect || map.Count == 0)
                 foreach (var (key, guess) in await EnvironmentFlow.DetectAsync(session, project, default))
                     if (!map.ContainsKey(key)) { AddRow(key, guess ?? ""); found++; }
-            envInfo.Text = $"{project}: " + (map.Count > 0 ? Ui.T($"in use: {source}", $"w użyciu: {source}") : Ui.T("no map yet", "brak mapy"))
+            var code = session.Config.CodeProject is { } cp && !cp.Equals(project, StringComparison.OrdinalIgnoreCase) ? Ui.T($" (code in {cp})", $" (kod w {cp})") : "";
+            envInfo.Text = $"{project}{code}: " + (map.Count > 0 ? Ui.T($"in use: {source}", $"w użyciu: {source}") : Ui.T("no map yet", "brak mapy"))
                            + (found > 0 ? Ui.T($"; {found} found (check the names)", $"; znalezione: {found} (sprawdź nazwy)") : "");
         }
         catch (Exception ex) when (ex is InvalidOperationException or AdoApiException or HttpRequestException)

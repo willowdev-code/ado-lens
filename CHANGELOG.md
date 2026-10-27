@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.2 — 2026-10-27
+
+- Fixed: finding the environments (settings window, `adolens setup`, `ado_settings`, the SETUP hint of `ado_trace`)
+  looked only in the project of the work items, not in the project with the code set with `--code-project`. It now
+  looks in both: the repositories, branches and release stages of the code project are offered too. The settings
+  window says which project the code is in.
+
 ## 0.11.1 — 2026-10-27
 
 - Fixed: the program did not start ("Failed to determine default extraction location") when TEMP pointed to a folder
