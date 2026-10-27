@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.1 — 2026-10-27
+
+- Fixed: the program did not start ("Failed to determine default extraction location") when TEMP pointed to a folder
+  that no longer exists - the Temp\<n> folder of a remote desktop session after a clean-up - e.g. from the Start menu
+  or cmd (PowerShell creates that folder again, so it worked there). The SQLite library (e_sqlite3.dll) is now next
+  to adolens.exe instead of being extracted to TEMP at start, and the installer renames it to *.old like a running
+  adolens.exe when an open Claude session holds it. Images of attachments saved by the CLI create the TEMP folder
+  when it is missing.
+
 ## 0.11.0 — 2026-10-26
 
 Settings in a window.

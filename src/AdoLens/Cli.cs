@@ -935,6 +935,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         foreach (var i in images)
         {
             // A terminal cannot show images: they are written to the temporary folder.
+            // TEMP of a remote desktop session may be gone: create it.
+            Directory.CreateDirectory(Path.GetTempPath());
             var path = Path.Combine(Path.GetTempPath(), $"adolens-{id}-{Guid.NewGuid():N}"[..24] + (i.Mime == "image/jpeg" ? ".jpg" : "." + i.Mime[6..]));
             await File.WriteAllBytesAsync(path, i.Bytes);
             Console.WriteLine($"image: {path}");
