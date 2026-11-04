@@ -33,7 +33,8 @@ Azure DevOps is a trademark of Microsoft.
 
 ## Installing
 
-**The easy way — one line.** In a regular PowerShell window (not as administrator) paste:
+**The easy way — one line.** In a regular PowerShell window (Start menu → Windows PowerShell; not as administrator, not
+a terminal inside Claude) paste:
 
 ```powershell
 irm https://raw.githubusercontent.com/willowdev-code/ado-lens/main/get.ps1 | iex
@@ -96,7 +97,10 @@ The installer, in six steps with a default for every question (Enter accepts it)
 6. registers the `ado-lens` server in Claude Desktop and Claude Code.
 
 Questions are in Polish on a Polish Windows, in English otherwise. When the registration has to change while Claude Desktop runs, it asks you to quit Claude, waits and starts it
-again. Running `install.ps1` from a newer package updates the program and keeps settings, PATs and metadata; an
+again. While it waits it names what is still running (PID and path, to find in Task Manager → Details); only your own
+Windows session counts, so other people's Claude on a shared server does not hold it up. **S** skips the registration
+(register later with `adolens register`), and after 10 minutes it is skipped by itself. Run from a terminal inside
+Claude, it installs the program and tells you to register it from a regular window. Running `install.ps1` from a newer package updates the program and keeps settings, PATs and metadata; an
 `adolens.exe` used by an open session is renamed to `*.old`, so that session keeps working.
 
 Useful parameters:

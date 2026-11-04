@@ -33,9 +33,26 @@ param(
 $ErrorActionPreference = 'Stop'
 function Say($m) { Write-Host "  $m" }
 function Head($m) { Write-Host "`n$m" -ForegroundColor Cyan }
+# Claude Desktop of this Windows session only: on a server with remote desktop sessions other people's Claude runs too
+# (and an elevated window sees their paths). The Claude Code CLI is also claude.exe, also under the Claude folders
+# (...\claude-code\...), but it is not the desktop app and does not need to be closed.
+$mySession = (Get-Process -Id $PID).SessionId
+function Test-DesktopPath([string] $path) {
+    $path -and $path -notlike '*\claude-code\*' -and ($path -like '*\WindowsApps\Claude_*' -or $path -like '*\AnthropicClaude\*')
+}
 function Get-ClaudeDesktop {
-    Get-Process -Name claude -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -like '*\WindowsApps\Claude_*' -or $_.Path -like '*\AnthropicClaude\*' }
+    Get-Process -Name claude -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $mySession -and (Test-DesktopPath $_.Path) }
+}
+# Run from a terminal inside Claude (e.g. its Code tab): Claude cannot be closed without closing this script too.
+function Test-InsideClaude {
+    $id = $PID
+    for ($i = 0; $i -lt 15 -and $id; $i++) {
+        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
+        if (-not $p) { break }
+        if ($p.Name -ieq 'claude.exe' -and (Test-DesktopPath $p.ExecutablePath)) { return $true }
+        $id = $p.ParentProcessId
+    }
+    return $false
 }
 function Start-ClaudeDesktop {
     $pkg = Get-AppxPackage -Name Claude -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -63,13 +80,42 @@ else {
     $needsRegister = ($LASTEXITCODE -eq 3)
 }
 $closedClaude = $false
+$skippedRegister = $false
 if ($needsRegister -and (Get-ClaudeDesktop)) {
     Write-Host '  The Claude registration has to change and Claude Desktop is running.' -ForegroundColor Yellow
-    Write-Host '  Quit Claude now: tray icon (next to the clock) -> right click -> Quit. Waiting...' -ForegroundColor Yellow
-    while (Get-ClaudeDesktop) { Start-Sleep -Seconds 1 }
-    Start-Sleep -Seconds 2
-    $closedClaude = $true
-    Say 'Claude is closed'
+    if (Test-InsideClaude) {
+        Write-Host '  This window runs inside Claude, which cannot be closed while it runs this script.' -ForegroundColor Yellow
+        Write-Host '  The program is installed now; to register it, quit Claude and run in a regular PowerShell window:' -ForegroundColor Yellow
+        Write-Host "    & `"$exe`" register"
+        $needsRegister = $false
+        $skippedRegister = $true
+    }
+    else {
+        Write-Host '  Quit Claude now: tray icon (next to the clock) -> right click -> Quit.' -ForegroundColor Yellow
+        Write-Host '  Waiting... (S = skip the registration now and register later with: adolens register)' -ForegroundColor Yellow
+        $waited = 0
+        while (Get-ClaudeDesktop) {
+            # Every 20 seconds: what is still running, so it can be found in Task Manager (Details tab, by PID).
+            if ($waited % 20 -eq 0) {
+                foreach ($p in Get-ClaudeDesktop) { Say "still running: PID $($p.Id)  $($p.Path)" }
+            }
+            $key = $null
+            try { if ([Console]::KeyAvailable) { $key = [Console]::ReadKey($true).Key } } catch { }
+            if ($key -eq 'S' -or $waited -ge 600) {
+                if ($waited -ge 600) { Say 'Claude is still running after 10 minutes - skipping the registration' }
+                $needsRegister = $false
+                $skippedRegister = $true
+                break
+            }
+            Start-Sleep -Seconds 1
+            $waited++
+        }
+        if (-not $skippedRegister) {
+            Start-Sleep -Seconds 2
+            $closedClaude = $true
+            Say 'Claude is closed'
+        }
+    }
 }
 
 Head "2/6 Copying files to $InstallDir"
@@ -160,6 +206,9 @@ if ($needsRegister) {
 }
 elseif ($NoRegister) {
     Say "skipped (-NoRegister). Later: `"$exe`" register"
+}
+elseif ($skippedRegister) {
+    Write-Host "  skipped - quit Claude Desktop, then run: & `"$exe`" register" -ForegroundColor Yellow
 }
 else {
     Say 'already registered'

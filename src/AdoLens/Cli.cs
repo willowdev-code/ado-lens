@@ -402,7 +402,8 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         if (pending.Any(t => t.IsDesktop) && !cl.Flag("force") && ClaudeConfigs.IsClaudeDesktopRunning())
         {
             Console.Error.WriteLine("Claude Desktop is running and would overwrite the change. Quit it (tray icon -> Quit) and run this again,");
-            Console.Error.WriteLine("or use install.ps1, which waits for Claude to close and starts it again.");
+            Console.Error.WriteLine("or use install.ps1, which waits for Claude to close and starts it again. Still running in this session:");
+            foreach (var (pid, file) in ClaudeConfigs.ClaudeDesktopProcesses()) Console.Error.WriteLine($"  PID {pid}  {file}");
             return ClaudeRunning;
         }
 
