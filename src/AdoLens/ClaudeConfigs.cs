@@ -10,20 +10,35 @@ public static class ClaudeConfigs
     public const string DefaultServerName = "ado-lens";
     static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
 
-    /// <summary>Claude Desktop config files: %APPDATA%\Claude and, for the Microsoft Store (MSIX) app, its private copy of AppData.</summary>
-    public static List<string> DesktopConfigPaths()
+    /// <summary>
+    /// Claude Desktop config files. Newer versions keep their data in %LOCALAPPDATA%\Claude-Data\&lt;app id&gt;\ and leave
+    /// only a marker (.user-data-left.*) in %APPDATA%\Claude, which they no longer read; older ones use %APPDATA%\Claude,
+    /// and the Microsoft Store (MSIX) app of that time its private copy of AppData.
+    /// </summary>
+    public static List<string> DesktopConfigPaths() => DesktopConfigPaths(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+    internal static List<string> DesktopConfigPaths(string appData, string localAppData)
     {
         var list = new List<string>();
-        var roaming = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Claude", "claude_desktop_config.json");
-        if (File.Exists(roaming) || Directory.Exists(Path.GetDirectoryName(roaming)))
+        const string File_ = "claude_desktop_config.json";
+        var data = Path.Combine(localAppData, "Claude-Data");
+        if (Directory.Exists(data))
+            foreach (var app in Directory.EnumerateDirectories(data))
+                list.Add(Path.Combine(app, File_));
+
+        var roamingDir = Path.Combine(appData, "Claude");
+        var roaming = Path.Combine(roamingDir, File_);
+        var moved = Directory.Exists(roamingDir) && Directory.EnumerateFiles(roamingDir, ".user-data-left.*").Any();
+        if (File.Exists(roaming) && !moved || Directory.Exists(roamingDir) && !moved && list.Count == 0)
             list.Add(roaming);
 
-        var packages = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages");
+        var packages = Path.Combine(localAppData, "Packages");
         if (Directory.Exists(packages))
             foreach (var pkg in Directory.EnumerateDirectories(packages, "Claude_*"))
             {
-                var p = Path.Combine(pkg, "LocalCache", "Roaming", "Claude", "claude_desktop_config.json");
-                if (File.Exists(p)) list.Add(p);
+                var p = Path.Combine(pkg, "LocalCache", "Roaming", "Claude", File_);
+                if (File.Exists(p) && !moved) list.Add(p);
             }
         return list;
     }

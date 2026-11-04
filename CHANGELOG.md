@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.2 — 2026-11-04
+
+- Fixed: newer Claude Desktop versions keep their configuration in `%LOCALAPPDATA%\Claude-Data\<app>\` and leave only a
+  marker in `%APPDATA%\Claude`. ADO Lens looked in the old place, so every install found the registration "to be
+  changed", asked to quit Claude, waited, and then wrote where Claude Desktop no longer reads - on a new installation
+  of Claude, ADO Lens never appeared in Claude Desktop. The new place is used now, and the old one is skipped when it
+  was left. (The Microsoft Store copy of AppData is still used for older versions.)
+
 ## 0.12.1 — 2026-11-04
 
 - Fixed: the install (`get.ps1` / `install.ps1`) could wait for Claude Desktop to close forever, although it was

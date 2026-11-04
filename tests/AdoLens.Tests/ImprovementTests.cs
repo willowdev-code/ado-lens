@@ -51,6 +51,30 @@ public class ImprovementTests
         }
     }
 
+    [Fact]
+    public void The_Claude_Desktop_config_is_found_where_the_installed_version_keeps_it()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"adolens-claude-{Guid.NewGuid():N}");
+        var appData = Path.Combine(root, "Roaming");
+        var local = Path.Combine(root, "Local");
+        try
+        {
+            // An older Claude Desktop: %APPDATA%\Claude.
+            Directory.CreateDirectory(Path.Combine(appData, "Claude"));
+            Assert.Equal([Path.Combine(appData, "Claude", "claude_desktop_config.json")], ClaudeConfigs.DesktopConfigPaths(appData, local));
+
+            // A newer one moved its data to %LOCALAPPDATA%\Claude-Data\<app> and left a marker: the old place is not read.
+            Directory.CreateDirectory(Path.Combine(local, "Claude-Data", "claude_abc"));
+            File.WriteAllText(Path.Combine(appData, "Claude", ".user-data-left.claude_abc"), "{}");
+            File.WriteAllText(Path.Combine(appData, "Claude", "claude_desktop_config.json"), "{}");
+            Assert.Equal([Path.Combine(local, "Claude-Data", "claude_abc", "claude_desktop_config.json")], ClaudeConfigs.DesktopConfigPaths(appData, local));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData(@"C:\Program Files\WindowsApps\Claude_4.1_x64__abc\app\Claude.exe", true)]
     [InlineData(@"C:\Users\x\AppData\Local\AnthropicClaude\app-1.2.3\claude.exe", true)]
