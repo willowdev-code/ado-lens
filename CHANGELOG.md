@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.12.0 — 2026-11-04
+
+Comments can be fixed and removed, and any change can be undone.
+
+- `ado_comment edit=<comment id>` replaces a comment's text (markdown and `@[name]` mentions as when adding);
+  `edit=last` takes your own latest comment on the item - fixing what was just written without looking for its id.
+  The old text goes into the audit log, so `ado_undo` puts it back (unless someone changed the comment since).
+- `ado_comment delete=<comment id>`: a preview first (author, date, start of the text), then `confirm=<token>`;
+  `ado_undo` adds the text back as a new comment (Azure DevOps gives it a new id and today's date). Only the author can
+  change or delete a comment in Azure DevOps; the error says so.
+- `ado_work_item include=comments` shows each comment's id (`[comment 123]`).
+- `ado_undo item=<n>` reverts change n of the numbered `list=true`, `id=<work item>` the latest change on that item;
+  the preview names later changes on the same items. A confirm token always reverts what its preview showed.
+- Fixed: a DELETE answered with an empty body (204) was reported as a failure ("The input does not contain any JSON
+  tokens") although it had worked - e.g. `ado_undo` of a comment. Every empty answer is now a success.
+- CLI: `adolens comment <id> <text> --edit <id>|last`, `--delete <id> --confirm <token>`; `adolens undo --item <n> --id <work item>`.
+
 ## 0.11.5 — 2026-10-27
 
 - Fixed: the Environments tab of the settings window showed every row twice (two loads at once: choosing the

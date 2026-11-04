@@ -254,7 +254,9 @@ public static class WorkItemFormat
             var who = Json.Str(Json.Obj(c, "createdBy"), "displayName");
             var when = Date(Json.Str(c, "createdDate"));
             var text = Html.ToMarkdown(Json.Str(c, "text"));
-            sb.AppendLine($"- {when} {who}: {Formatting.Collapse(text, 800)}");
+            // The id is what ado_comment edit= and delete= take.
+            var id = c.TryGetProperty("id", out var cid) ? $" [comment {cid}]" : "";
+            sb.AppendLine($"- {when} {who}{id}: {Formatting.Collapse(text, 800)}");
         }
         return sb.ToString().TrimEnd();
     }

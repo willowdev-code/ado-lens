@@ -187,8 +187,16 @@ public sealed class AdoClient(HttpClient http, string organization)
             }
             await EnsureSuccessAsync(res, ct);
             var etag = res.Headers.ETag?.Tag ?? (res.Headers.TryGetValues("ETag", out var tags) ? tags.FirstOrDefault() : null);
+            // No content (204, or an empty body without a length - a DELETE): done, nothing to read.
+            if (res.StatusCode == HttpStatusCode.NoContent || res.Content.Headers.ContentLength == 0) return (default, etag);
+            if (res.Content.Headers.ContentLength is null)
+            {
+                var bytes = await res.Content.ReadAsByteArrayAsync(ct);
+                if (bytes.AsSpan().Trim(" \r\n\t"u8).Length == 0) return (default, etag);
+                using var small = JsonDocument.Parse(bytes);
+                return (small.RootElement.Clone(), etag);
+            }
             await using var stream = await res.Content.ReadAsStreamAsync(ct);
-            if (res.Content.Headers.ContentLength == 0) return (default, etag);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             return (doc.RootElement.Clone(), etag);
         }

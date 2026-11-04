@@ -28,7 +28,7 @@ public sealed partial class CommandLine
         ["query"] = ["connection=", "project=", "wiql=", "query=", "top="],
         ["create"] = ["connection=", "project=", "type=", "title=", "description=", "criteria=", "assign=", "parent=", "iteration=", "area=", "tags=", "state=", "field=", "template="],
         ["update"] = ["connection=", "ids=", "wiql=", "state=", "reason=", "title=", "description=", "criteria=", "assign=", "iteration=", "area=", "tags=", "field=", "comment=", "confirm="],
-        ["comment"] = ["connection="],
+        ["comment"] = ["connection=", "edit=", "delete=", "confirm="],
         ["sprint"] = ["connection=", "project=", "team=", "detail="],
         ["board"] = ["connection=", "project=", "team=", "detail=", "move=", "column="],
         ["backlog"] = ["connection=", "project=", "team=", "level=", "top=", "move=", "above=", "below="],
@@ -52,7 +52,7 @@ public sealed partial class CommandLine
         ["metrics"] = ["connection=", "project=", "team=", "sprints="],
         ["health"] =["connection=", "project=", "team="],
         ["release-notes"] = ["connection=", "project=", "team=", "since=", "until="],
-        ["undo"] = ["connection=", "confirm=", "list"],
+        ["undo"] = ["connection=", "confirm=", "list", "item=", "id="],
         ["recipe"] = ["connection=", "file=", "param=", "confirm=", "yes"],
     };
 

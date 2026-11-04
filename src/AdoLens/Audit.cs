@@ -13,7 +13,7 @@ public sealed record AuditEntry
 {
     public string Batch { get; init; } = "";
     public DateTime Utc { get; init; }
-    /// <summary>update | create | comment | link-add | link-remove | undone (Batch: the batch reverted).</summary>
+    /// <summary>update | create | comment | comment-edit | comment-delete | link-add | link-remove | undone (Batch: the batch reverted).</summary>
     public string Kind { get; init; } = "";
     public int Id { get; init; }
     public string? Project { get; init; }
@@ -22,6 +22,9 @@ public sealed record AuditEntry
     public Dictionary<string, string?>? Before { get; init; }
     public Dictionary<string, string?>? After { get; init; }
     public int? CommentId { get; init; }
+    /// <summary>A comment's text (HTML) before and after an edit; before a delete.</summary>
+    public string? BeforeText { get; init; }
+    public string? AfterText { get; init; }
     public string? Rel { get; init; }
     public int? Target { get; init; }
     public string? Tool { get; init; }
@@ -108,7 +111,7 @@ public static class Audit
     public static int? TargetOf(string? url) =>
         url is not null && int.TryParse(url[(url.LastIndexOf('/') + 1)..], out var t) ? t : null;
 
-    static string Token(string batch) =>
+    internal static string Token(string batch) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("undo:" + batch)))[..8].ToLowerInvariant();
 
     static string Describe(AuditEntry e) => e.Kind switch
@@ -117,6 +120,8 @@ public static class Audit
             $"{kv.Key.Split('.')[^1]} {Formatting.Collapse(e.After!.GetValueOrDefault(kv.Key) ?? "-", 30)} -> {Formatting.Collapse(kv.Value ?? "-", 30)}")),
         "create" => $"#{e.Id} {e.Title}: created -> set to a removed state",
         "comment" => $"#{e.Id} {e.Title}: comment {e.CommentId} deleted",
+        "comment-edit" => $"#{e.Id}: comment {e.CommentId} back to \"{Formatting.Collapse(Html.ToMarkdown(e.BeforeText), 60)}\"",
+        "comment-delete" => $"#{e.Id}: deleted comment added back (as a new comment): \"{Formatting.Collapse(Html.ToMarkdown(e.BeforeText), 60)}\"",
         "link-add" => $"#{e.Id}: link {Short(e.Rel)} #{e.Target} removed",
         "link-remove" => $"#{e.Id}: link {Short(e.Rel)} #{e.Target} added back",
         _ => e.Kind,
@@ -124,15 +129,23 @@ public static class Audit
 
     static string Short(string? rel) => rel?.Split('.')[^1] ?? "?";
 
-    /// <summary>The last changes ADO Lens made (latest first), which ado_undo would revert.</summary>
-    public static string List(Lens lens, string? connection, int top)
+    /// <summary>The last changes ADO Lens made (latest first), numbered for ado_undo item=; with a work item id only its changes.</summary>
+    public static string List(Lens lens, string? connection, int top, int? workItem = null)
     {
         var cfg = lens.For(connection).Config;
         var batches = Open(Read(lens, cfg.Connection));
         if (batches.Count == 0) return "no changes by ADO Lens to undo on this connection";
-        var sb = new StringBuilder($"changes by ADO Lens on {cfg.Connection}, latest first (undo reverts the first):\n");
-        foreach (var batch in batches.Take(Math.Clamp(top, 1, 20)))
-            sb.AppendLine($"- {batch[0].Utc.ToLocalTime():yyyy-MM-dd HH:mm} {batch[0].Tool}: {string.Join(" | ", batch.Take(5).Select(Describe))}{(batch.Count > 5 ? $" | … {batch.Count - 5} more" : "")}");
+        var sb = new StringBuilder($"changes by ADO Lens on {cfg.Connection}{(workItem is { } w ? $" touching #{w}" : "")}, latest first " +
+                                   "(ado_undo reverts the first; item=<n> another, id=<work item> the latest on that item):\n");
+        var shown = 0;
+        for (var i = 0; i < batches.Count && shown < Math.Clamp(top, 1, 20); i++)
+        {
+            var batch = batches[i];
+            if (workItem is { } only && !batch.Any(e => e.Id == only)) continue;
+            shown++;
+            sb.AppendLine($"{i + 1}. {batch[0].Utc.ToLocalTime():yyyy-MM-dd HH:mm} {batch[0].Tool}: {string.Join(" | ", batch.Take(5).Select(Describe))}{(batch.Count > 5 ? $" | … {batch.Count - 5} more" : "")}");
+        }
+        if (shown == 0) sb.AppendLine($"- none touching #{workItem}");
         return sb.ToString().TrimEnd();
     }
 
@@ -148,17 +161,32 @@ public static class Audit
     /// Reverts the last batch: always a preview first, written with its token. Fields someone changed after ADO Lens
     /// are left as they are and reported.
     /// </summary>
-    public static async Task<string> UndoAsync(Lens lens, string? connection, string? confirm, CancellationToken ct = default)
+    public static async Task<string> UndoAsync(Lens lens, string? connection, string? confirm, CancellationToken ct = default, int? item = null, int? workItem = null)
     {
         var session = lens.For(connection);
         var batches = Open(Read(lens, session.Config.Connection));
         if (batches.Count == 0) return "nothing to undo: no changes by ADO Lens on this connection";
-        var batch = batches[0];
+        // The token names its batch: a confirm reverts what its preview showed, whichever it was.
+        var confirmed = confirm is { Length: > 0 } c ? batches.FirstOrDefault(b => string.Equals(Token(b[0].Batch), c.Trim(), StringComparison.OrdinalIgnoreCase)) : null;
+        var index = confirmed is not null ? batches.IndexOf(confirmed)
+            : item is { } nth ? nth - 1
+            : workItem is { } w ? batches.FindIndex(b => b.Any(e => e.Id == w))
+            : 0;
+        if (index < 0 || index >= batches.Count)
+            return item is not null ? $"no change {item} to undo (ado_undo list=true shows them)" : $"no change by ADO Lens on #{workItem} to undo";
+        var batch = batches[index];
         var token = Token(batch[0].Batch);
-        if (!string.Equals(confirm?.Trim(), token, StringComparison.OrdinalIgnoreCase))
-            return $"UNDO PREVIEW - nothing written yet. The last change ({batch[0].Tool}, {batch[0].Utc.ToLocalTime():yyyy-MM-dd HH:mm}) would be reverted:\n" +
+        if (confirmed is null)
+        {
+            // An older change: say what came after it on the same items, so nothing newer is overwritten unseen.
+            var touched = batch.Select(e => e.Id).ToHashSet();
+            var later = batches.Take(index).Where(b => b.Any(e => touched.Contains(e.Id))).ToList();
+            return $"UNDO PREVIEW - nothing written yet. {(index == 0 ? "The last change" : $"Change {index + 1}")} ({batch[0].Tool}, {batch[0].Utc.ToLocalTime():yyyy-MM-dd HH:mm}) would be reverted:\n" +
                    string.Join('\n', batch.Select(e => "- " + Describe(e))) +
+                   (later.Count > 0 ? $"\nnote: {later.Count} later change(s) by ADO Lens touch the same item(s): " +
+                                      string.Join(" | ", later.Select(b => $"{b[0].Utc.ToLocalTime():MM-dd HH:mm} {b[0].Tool}")) + " - fields changed since are left as they are" : "") +
                    $"\nShow this to the user. To revert it, call again with confirm={token}.";
+        }
 
         var work = session.Work;
         var ids = batch.Select(e => e.Id).Distinct().ToList();
@@ -193,6 +221,20 @@ public static class Audit
                         await session.Client.SendAsync(HttpMethod.Delete,
                             $"{AdoClient.Scope(e.Project!)}_apis/wit/workItems/{e.Id}/comments/{e.CommentId}?api-version=7.1-preview.4", null, null, ct);
                         results.Add($"deleted the comment on #{e.Id}");
+                        break;
+                    case "comment-edit":
+                    {
+                        // Only when the comment still has the text ADO Lens wrote; an edit by someone since is kept.
+                        var now = await work.CommentAsync(e.Project!, e.Id, e.CommentId!.Value, ct);
+                        if (!Same(Html.ToMarkdown(Json.Str(now, "text")), Html.ToMarkdown(e.AfterText)))
+                        { results.Add($"#{e.Id}: comment {e.CommentId} was changed since - left as it is"); break; }
+                        await work.UpdateCommentAsync(e.Project!, e.Id, e.CommentId.Value, e.BeforeText ?? "", ct);
+                        results.Add($"#{e.Id}: comment {e.CommentId} has its old text again");
+                        break;
+                    }
+                    case "comment-delete":
+                        var back = await work.AddCommentAsync(e.Project!, e.Id, e.BeforeText ?? "", ct);
+                        results.Add($"#{e.Id}: the deleted comment is back as comment {(back.TryGetProperty("id", out var bid) ? bid.ToString() : "?")} (today's date)");
                         break;
                     case "create":
                         var s = (await session.Meta.GetAsync(e.Project!, ct)).Snapshot;
