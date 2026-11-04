@@ -30,6 +30,9 @@ sealed class DemoItems
     public readonly List<(int Id, string Body)> Patches = [];
     public readonly List<string> Created = [];
     public readonly List<string> Comments = [];
+    /// <summary>PATCH bodies (comment id, body) and deleted comment ids.</summary>
+    public readonly List<(string Id, string Body)> CommentEdits = [];
+    public readonly List<string> CommentDeletes = [];
 
     static JsonObject Item(int id, string type, string state, string title, string fields, string relations) =>
         (JsonObject)JsonNode.Parse($$"""
@@ -75,11 +78,26 @@ sealed class DemoItems
         })
         .On("/contoso/Demo/_apis/wit/workItems/1/comments", r =>
         {
-            if (r.Method == HttpMethod.Post) { Comments.Add(Body(r)); return Json("""{"id":1}"""); }
+            // One comment: /comments/<id> (GET, PATCH, DELETE with an empty 204 answer, as Azure DevOps does).
+            var last = r.RequestUri!.AbsolutePath.Split('/')[^1];
+            if (int.TryParse(last, out _))
+            {
+                if (r.Method == HttpMethod.Delete) { lock (CommentDeletes) CommentDeletes.Add(last); return new HttpResponseMessage(HttpStatusCode.NoContent); }
+                if (r.Method == HttpMethod.Patch)
+                {
+                    var body = Body(r);
+                    lock (CommentEdits) CommentEdits.Add((last, body));
+                    return Json(new JsonObject { ["id"] = int.Parse(last), ["text"] = JsonNode.Parse(body)!["text"]!.DeepClone() }.ToJsonString());
+                }
+                return Json(last == "12"
+                    ? """{"id":12,"text":"<div>Second</div>","createdBy":{"id":"p-ben","displayName":"Ben Kowalski"},"createdDate":"2026-10-02T10:00:00Z"}"""
+                    : """{"id":11,"text":"<div>First <b>idea</b></div>","createdBy":{"id":"p-anna","displayName":"Anna Nowak"},"createdDate":"2026-10-01T10:00:00Z"}""");
+            }
+            if (r.Method == HttpMethod.Post) { Comments.Add(Body(r)); return Json("""{"id":13}"""); }
             return Json("""
                 {"comments":[
-                  {"text":"<div>Second</div>","createdBy":{"displayName":"Ben Kowalski"},"createdDate":"2026-10-02T10:00:00Z"},
-                  {"text":"<div>First <b>idea</b></div>","createdBy":{"displayName":"Anna Nowak"},"createdDate":"2026-10-01T10:00:00Z"}]}
+                  {"id":12,"text":"<div>Second</div>","createdBy":{"id":"p-ben","displayName":"Ben Kowalski"},"createdDate":"2026-10-02T10:00:00Z"},
+                  {"id":11,"text":"<div>First <b>idea</b></div>","createdBy":{"id":"p-anna","displayName":"Anna Nowak"},"createdDate":"2026-10-01T10:00:00Z"}]}
                 """);
         })
         .On("/contoso/_apis/identities", r => Json(r.RequestUri!.Query.Contains("anna", StringComparison.OrdinalIgnoreCase)
@@ -99,7 +117,8 @@ public class WorkItemTests : IDisposable
 
     public WorkItemTests()
     {
-        var ado = items.Routes(demo.Routes(new FakeAdo()));
+        var ado = items.Routes(demo.Routes(new FakeAdo()))
+            .On("/contoso/_apis/connectionData", """{"authenticatedUser":{"id":"p-anna","providerDisplayName":"Anna Nowak"}}""");
         var s = new Settings { DefaultConnection = "contoso" };
         s.Connections["contoso"] = new Connection { Organization = "contoso", Project = "Demo" };
         lens = new Lens(s, "0.0.0", dir, _ => null, _ => "pat", _ => ado.Client());
@@ -147,8 +166,42 @@ public class WorkItemTests : IDisposable
     public async Task Comments_come_oldest_first_as_markdown()
     {
         var text = await WorkQueries.ItemAsync(lens, null, "1", "comments", "summary");
-        var first = text.IndexOf("Anna Nowak: First **idea**", StringComparison.Ordinal);
-        Assert.True(first > 0 && first < text.IndexOf("Ben Kowalski: Second", StringComparison.Ordinal), text);
+        var first = text.IndexOf("Anna Nowak [comment 11]: First **idea**", StringComparison.Ordinal);
+        Assert.True(first > 0 && first < text.IndexOf("Ben Kowalski [comment 12]: Second", StringComparison.Ordinal), text);
+    }
+
+    [Fact]
+    public async Task A_comment_is_replaced_deleted_after_a_preview_and_both_undone()
+    {
+        // edit=last: the user's own latest comment (Anna's 11, not Ben's newer 12).
+        var replaced = await WorkQueries.CommentAsync(lens, null, 1, "Better **idea**", edit: "last");
+        Assert.StartsWith("replaced comment 11 on #1", replaced);
+        Assert.Contains("<b>idea</b>", items.CommentEdits.Single().Body.Replace("\\u003C", "<").Replace("\\u003E", ">"));
+
+        // delete: a preview first, then the token.
+        var preview = await WorkQueries.CommentAsync(lens, null, 1, null, delete: 12);
+        Assert.StartsWith("DELETE PREVIEW - nothing deleted yet. Comment 12 on #1", preview);
+        Assert.Empty(items.CommentDeletes);
+        var token = System.Text.RegularExpressions.Regex.Match(preview, "confirm=([0-9a-f]+)").Groups[1].Value;
+        Assert.StartsWith("deleted comment 12 on #1", await WorkQueries.CommentAsync(lens, null, 1, null, delete: 12, confirm: token));
+        Assert.Equal(["12"], items.CommentDeletes);   // an empty 204 answer is a success
+
+        // The list numbers the changes; item=2 is the edit (the delete is the latest), id=1 the latest on #1.
+        var list = Audit.List(lens, null, 10);
+        Assert.Contains("1. ", list);
+        Assert.Contains("2. ", list);
+        var undoEdit = await Audit.UndoAsync(lens, null, null, default, item: 2);
+        Assert.StartsWith("UNDO PREVIEW - nothing written yet. Change 2 (ado_comment", undoEdit);
+        Assert.Contains("1 later change(s) by ADO Lens touch the same item(s)", undoEdit);
+        var editToken = System.Text.RegularExpressions.Regex.Match(undoEdit, "confirm=([0-9a-f]+)").Groups[1].Value;
+        // The comment still has another text in this fake, so the old one is not forced back.
+        Assert.Contains("was changed since - left as it is", await Audit.UndoAsync(lens, null, editToken));
+
+        var undoDelete = await Audit.UndoAsync(lens, null, null, default, workItem: 1);
+        Assert.Contains("deleted comment added back", undoDelete);
+        var deleteToken = System.Text.RegularExpressions.Regex.Match(undoDelete, "confirm=([0-9a-f]+)").Groups[1].Value;
+        Assert.Contains("the deleted comment is back as comment 13", await Audit.UndoAsync(lens, null, deleteToken));
+        Assert.Contains("Second", items.Comments.Last());
     }
 
     [Fact]

@@ -555,9 +555,13 @@ public static class WorkTools
             }, comment, confirm, lens.Settings.ConfirmBulkAbove, ct));
 
     [McpServerTool(Name = "ado_comment")]
-    [Description("Adds a markdown comment to a work item; @[name or e-mail] mentions and notifies a person.")]
-    public static Task<string> Comment(Lens lens, int id, string text, string? connection = null, CancellationToken ct = default)
-        => McpTools.Run("ado_comment", new { id, connection }, () => WorkQueries.CommentAsync(lens, connection, id, text, ct));
+    [Description("Adds a markdown comment to a work item; @[name or e-mail] mentions and notifies a person. edit=<comment id>|last replaces a comment's text (last: your latest); delete=<comment id> removes one after a preview (confirm). Comment ids: ado_work_item include=comments.")]
+    public static Task<string> Comment(Lens lens, int id, string? text = null,
+        [Description("Comment id, or 'last' for your latest comment.")] string? edit = null,
+        int? delete = null,
+        [Description("Token from the delete preview.")] string? confirm = null,
+        string? connection = null, CancellationToken ct = default)
+        => McpTools.Run("ado_comment", new { id, edit, delete, confirm, connection }, () => WorkQueries.CommentAsync(lens, connection, id, text, edit, delete, confirm, ct));
 
     [McpServerTool(Name = "ado_link")]
     [Description("Links a work item to others: parent, child, related, predecessor, successor, duplicate, duplicate-of, tested-by, tests; remove=true unlinks.")]
@@ -620,10 +624,13 @@ public static class WorkTools
         => McpTools.Run("ado_search", new { text, scope, top, project, connection }, () => Knowledge.SearchAsync(lens, connection, project, text, scope, top, ct));
 
     [McpServerTool(Name = "ado_undo")]
-    [Description("Reverts the last change ADO Lens made (fields, comment, link, created item): preview, then confirm=<token>; list=true shows recent changes.")]
-    public static Task<string> Undo(Lens lens, string? confirm = null, bool list = false, string? connection = null, CancellationToken ct = default)
-        => McpTools.Run("ado_undo", new { confirm, list, connection },
-            () => list ? Task.FromResult(Audit.List(lens, connection, 10)) : Audit.UndoAsync(lens, connection, confirm, ct));
+    [Description("Reverts a change ADO Lens made (fields, comment added, edited or deleted, link, created item): preview, then confirm=<token>. The last one by default; item=<n> from list=true, or id=<work item> for the latest on that item.")]
+    public static Task<string> Undo(Lens lens, string? confirm = null, bool list = false,
+        [Description("Number of a change in list=true.")] int? item = null,
+        [Description("Work item: its latest change (with list=true: only its changes).")] int? id = null,
+        string? connection = null, CancellationToken ct = default)
+        => McpTools.Run("ado_undo", new { confirm, list, item, id, connection },
+            () => list ? Task.FromResult(Audit.List(lens, connection, 10, id)) : Audit.UndoAsync(lens, connection, confirm, ct, item, id));
 }
 
 [McpServerToolType, Toolset(Toolsets.Tests)]

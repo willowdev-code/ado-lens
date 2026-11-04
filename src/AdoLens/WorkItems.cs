@@ -156,6 +156,15 @@ public sealed class WorkItems(AdoClient client, MetadataService meta, Identities
     public Task<JsonElement> AddCommentAsync(string project, int id, string html, CancellationToken ct = default) =>
         client.PostAsync($"{AdoClient.Scope(project)}_apis/wit/workItems/{id}/comments?{CommentsApi}", new { text = html }, ct);
 
+    public Task<JsonElement> CommentAsync(string project, int id, int commentId, CancellationToken ct = default) =>
+        client.GetAsync($"{AdoClient.Scope(project)}_apis/wit/workItems/{id}/comments/{commentId}?{CommentsApi}", ct);
+
+    public Task<JsonElement> UpdateCommentAsync(string project, int id, int commentId, string html, CancellationToken ct = default) =>
+        client.SendAsync(HttpMethod.Patch, $"{AdoClient.Scope(project)}_apis/wit/workItems/{id}/comments/{commentId}?{CommentsApi}", new { text = html }, "application/json", ct);
+
+    public Task<JsonElement> DeleteCommentAsync(string project, int id, int commentId, CancellationToken ct = default) =>
+        client.SendAsync(HttpMethod.Delete, $"{AdoClient.Scope(project)}_apis/wit/workItems/{id}/comments/{commentId}?{CommentsApi}", null, null, ct);
+
     // ---- writing ---------------------------------------------------------------------------------------------------
 
     /// <summary>

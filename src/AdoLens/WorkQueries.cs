@@ -265,19 +265,78 @@ public static partial class WorkQueries
         CommentId = comment.ValueKind == JsonValueKind.Object && comment.TryGetProperty("id", out var cid) && cid.TryGetInt32(out var n) ? n : null,
     };
 
-    public static async Task<string> CommentAsync(Lens lens, string? connection, int id, string text, CancellationToken ct = default)
+    /// <summary>
+    /// Adds a comment; with <paramref name="edit"/> (a comment id, or "last" for the user's own latest one) replaces a
+    /// comment's text; with <paramref name="delete"/> removes a comment after a preview (confirm=token). Edits and
+    /// deletes are in the audit log, so ado_undo puts the old text back.
+    /// </summary>
+    public static async Task<string> CommentAsync(Lens lens, string? connection, int id, string? text, string? edit = null, int? delete = null,
+        string? confirm = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("text is required");
         var session = lens.For(connection);
         var items = await session.Work.GetAsync([id], relations: false, ["System.Id", "System.TeamProject", "System.WorkItemType", "System.State", "System.Title"], ct);
         if (items.Count == 0) return $"no work item #{id} visible with this PAT";
         var project = WorkItems.Field(items[0], "System.TeamProject")!;
+        if (delete is { } gone) return await DeleteCommentAsync(lens, session, items[0], project, gone, confirm, ct);
+        if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("text is required");
         var html = await CommentHtmlAsync(session.People, text, ct);
+        if (!string.IsNullOrWhiteSpace(edit)) return await EditCommentAsync(lens, session, items[0], project, edit.Trim(), html, ct);
         var added = await session.Work.AddCommentAsync(project, id, html, ct);
         Audit.Write(lens, session.Config.Connection, [CommentEntry(Audit.NewBatch(), "ado_comment", items[0], project, added)]);
         var mentions = Mention().Matches(text).Count;
         var note = Html.Words(text) > 60 ? $"\nnote: {Html.Words(text)} words; comments read best at ≤ 60 (decision or question first)" : "";
         return $"commented on {WorkItemFormat.Header(items[0])}{(mentions > 0 ? $" ({mentions} mention(s) notified)" : "")}{note}";
+    }
+
+    static string Excerpt(JsonElement comment) =>
+        $"{Json.Str(Json.Obj(comment, "createdBy"), "displayName")} {Json.Str(comment, "createdDate")?[..Math.Min(10, Json.Str(comment, "createdDate")!.Length)]}: " +
+        $"\"{Formatting.Collapse(Html.ToMarkdown(Json.Str(comment, "text")), 120)}\"";
+
+    static string? ForbiddenHint(AdoApiException ex) =>
+        ex.Status is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.BadRequest
+            ? " - Azure DevOps lets only the author change or delete a comment" : null;
+
+    static async Task<string> EditCommentAsync(Lens lens, Session session, JsonElement wi, string project, string which, string html, CancellationToken ct)
+    {
+        JsonElement old;
+        if (which.Equals("last", StringComparison.OrdinalIgnoreCase))
+        {
+            // The user's own latest comment: what was written a moment ago and needs fixing.
+            var (me, _) = await new Boards(session).MeAsync(ct);
+            var mine = (await session.Work.CommentsAsync(project, WorkItems.Id(wi), 200, ct))
+                .LastOrDefault(c => string.Equals(Json.Str(Json.Obj(c, "createdBy"), "id"), me, StringComparison.OrdinalIgnoreCase));
+            if (mine.ValueKind != JsonValueKind.Object) return $"{WorkItemFormat.Header(wi)}: no comment of yours to replace";
+            old = mine;
+        }
+        else if (int.TryParse(which, out var cid)) old = await session.Work.CommentAsync(project, WorkItems.Id(wi), cid, ct);
+        else throw new ArgumentException("edit takes a comment id (ado_work_item include=comments shows them) or 'last'");
+        var commentId = old.GetProperty("id").GetInt32();
+        JsonElement now;
+        try { now = await session.Work.UpdateCommentAsync(project, WorkItems.Id(wi), commentId, html, ct); }
+        catch (AdoApiException ex) when (ForbiddenHint(ex) is { } hint) { throw new InvalidOperationException(ex.Message + hint); }
+        Audit.Write(lens, session.Config.Connection, [new AuditEntry
+        {
+            Batch = Audit.NewBatch(), Tool = "ado_comment", Kind = "comment-edit", Id = WorkItems.Id(wi), Project = project, Title = WorkItems.Field(wi, "System.Title"),
+            CommentId = commentId, BeforeText = Json.Str(old, "text"), AfterText = Json.Str(now, "text") ?? html,
+        }]);
+        return $"replaced comment {commentId} on {WorkItemFormat.Header(wi)} (was {Excerpt(old)}); ado_undo puts the old text back";
+    }
+
+    static async Task<string> DeleteCommentAsync(Lens lens, Session session, JsonElement wi, string project, int commentId, string? confirm, CancellationToken ct)
+    {
+        var old = await session.Work.CommentAsync(project, WorkItems.Id(wi), commentId, ct);
+        var token = Audit.Token($"delete-comment:{session.Config.Connection}:{WorkItems.Id(wi)}:{commentId}");
+        if (!string.Equals(confirm?.Trim(), token, StringComparison.OrdinalIgnoreCase))
+            return $"DELETE PREVIEW - nothing deleted yet. Comment {commentId} on {WorkItemFormat.Header(wi)}:\n- {Excerpt(old)}\n" +
+                   $"Show this to the user. To delete it, call again with confirm={token}. (ado_undo can add the text back later, as a new comment with today's date.)";
+        try { await session.Work.DeleteCommentAsync(project, WorkItems.Id(wi), commentId, ct); }
+        catch (AdoApiException ex) when (ForbiddenHint(ex) is { } hint) { throw new InvalidOperationException(ex.Message + hint); }
+        Audit.Write(lens, session.Config.Connection, [new AuditEntry
+        {
+            Batch = Audit.NewBatch(), Tool = "ado_comment", Kind = "comment-delete", Id = WorkItems.Id(wi), Project = project, Title = WorkItems.Field(wi, "System.Title"),
+            CommentId = commentId, BeforeText = Json.Str(old, "text"),
+        }]);
+        return $"deleted comment {commentId} on {WorkItemFormat.Header(wi)} ({Excerpt(old)})";
     }
 
     static readonly Dictionary<string, string> LinkTypes = new(StringComparer.OrdinalIgnoreCase)

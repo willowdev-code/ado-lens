@@ -45,7 +45,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           create          --type <t> --title <t> [--description <md>] [--criteria <md>] [--assign <name>] [--parent <id>]
                             [--iteration <path|current>] [--area <path>] [--tags "a; b"] [--state <s>] [--field "Name=Value"]…
           update <ids>    or --wiql "<WIQL>"; same options as create, plus --reason, --comment <md>, --confirm <token>
-          comment <id> <markdown with @[name] mentions>
+          comment <id> <markdown with @[name] mentions>   --edit <comment id>|last (replace)  --delete <comment id> --confirm <token>
           link <id> <targets>  --type parent|child|related|predecessor|successor|duplicate|duplicate-of|tested-by|tests [--remove]
           sprint [current|next|previous|<name>]   --team <t> --detail summary|normal|full
           board [<board>]  --team <t>  --move <id> --column <name>  --detail summary|normal|full
@@ -72,7 +72,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           label "<text>"   a D365 message as seen (values for %1 are fine) or @File:Id: label, languages, where used
           health           backlog hygiene of the team    --team <t>
           release-notes [current|previous|<sprint>]   or --since 14d [--until yyyy-MM-dd]   markdown for the wiki
-          undo             revert the last change made by ADO Lens (preview, then --confirm <token>)   --list
+          undo             revert a change made by ADO Lens (preview, then --confirm <token>)   --list  --item <n>  --id <work item>
           recipe           list | show <name> | save <name> --file <r.json> | delete <name>
                             run <name> [--param k=v]… [--confirm <token> | --yes (no preview: Task Scheduler)]
           api <path>      raw JSON of a GET request (development)
@@ -530,8 +530,13 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
 
     public async Task<int> CommentAsync()
     {
-        if (cl.Positional.Count < 2 || !int.TryParse(cl.Positional[0], out var id)) { Console.Error.WriteLine("usage: adolens comment <id> <text>"); return 2; }
-        Print(await WorkQueries.CommentAsync(NewLens(), cl.Opt("connection"), id, string.Join(' ', cl.Positional.Skip(1))));
+        var delete = cl.Opt("delete") is { } d && int.TryParse(d, out var dn) ? dn : (int?)null;
+        if (cl.Positional.Count < 1 || !int.TryParse(cl.Positional[0], out var id) || (cl.Positional.Count < 2 && delete is null))
+        {
+            Console.Error.WriteLine("usage: adolens comment <id> <text> [--edit <comment id>|last]  |  adolens comment <id> --delete <comment id> [--confirm <token>]");
+            return 2;
+        }
+        Print(await WorkQueries.CommentAsync(NewLens(), cl.Opt("connection"), id, string.Join(' ', cl.Positional.Skip(1)), cl.Opt("edit"), delete, cl.Opt("confirm")));
         return 0;
     }
 
@@ -1032,7 +1037,9 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
     public async Task<int> UndoAsync()
     {
         var lens = NewLens();
-        Print(cl.Flag("list") ? Audit.List(lens, cl.Opt("connection"), 20) : await Audit.UndoAsync(lens, cl.Opt("connection"), cl.Opt("confirm")));
+        var item = cl.Opt("item") is { } it && int.TryParse(it, out var itn) ? itn : (int?)null;
+        var wid = cl.Opt("id") is { } wi && int.TryParse(wi, out var win) ? win : (int?)null;
+        Print(cl.Flag("list") ? Audit.List(lens, cl.Opt("connection"), 20, wid) : await Audit.UndoAsync(lens, cl.Opt("connection"), cl.Opt("confirm"), default, item, wid));
         return 0;
     }
 
