@@ -52,6 +52,15 @@ public class ImprovementTests
     }
 
     [Theory]
+    [InlineData(@"C:\Program Files\WindowsApps\Claude_4.1_x64__abc\app\Claude.exe", true)]
+    [InlineData(@"C:\Users\x\AppData\Local\AnthropicClaude\app-1.2.3\claude.exe", true)]
+    [InlineData(@"C:\Users\x\AppData\Local\AnthropicClaude\app-1.2.3\resources\claude-code\claude.exe", false)]
+    [InlineData(@"C:\Users\x\AppData\Local\Claude-Data\claude_abc\claude-code\2.1\claude.exe", false)]
+    [InlineData(@"C:\Users\x\.local\bin\claude.exe", false)]
+    public void Only_the_desktop_app_counts_as_a_running_Claude_Desktop(string path, bool desktop) =>
+        Assert.Equal(desktop, ClaudeConfigs.IsDesktopPath(path));
+
+    [Theory]
     [InlineData("Main", "DEV")]
     [InlineData("SIT", "UAT")]
     [InlineData("Release", "PROD")]

@@ -104,17 +104,24 @@ public static class ClaudeConfigs
     }
 
     /// <summary>Claude Desktop keeps its configuration in memory and writes it back, so entries must change while it is closed.</summary>
-    public static bool IsClaudeDesktopRunning()
+    public static bool IsClaudeDesktopRunning() => ClaudeDesktopProcesses().Count > 0;
+
+    /// <summary>
+    /// The Claude Desktop processes of this Windows session: on a server with remote desktop sessions other people's
+    /// Claude runs too, and it does not hold this user's configuration. The Claude Code CLI is also claude.exe, also under
+    /// the Claude folders (…\claude-code\…), but it is not the desktop app.
+    /// </summary>
+    public static List<(int Id, string Path)> ClaudeDesktopProcesses()
     {
+        var session = Process.GetCurrentProcess().SessionId;
+        var found = new List<(int, string)>();
         foreach (var p in Process.GetProcessesByName("claude"))
         {
             try
             {
+                if (p.SessionId != session) continue;
                 var file = p.MainModule?.FileName ?? "";
-                // The Claude Code CLI is also claude.exe; only the desktop app lives in these folders.
-                if (file.Contains(@"\WindowsApps\Claude_", StringComparison.OrdinalIgnoreCase)
-                    || file.Contains(@"\AnthropicClaude\", StringComparison.OrdinalIgnoreCase))
-                    return true;
+                if (IsDesktopPath(file)) found.Add((p.Id, file));
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
@@ -125,8 +132,12 @@ public static class ClaudeConfigs
                 p.Dispose();
             }
         }
-        return false;
+        return found;
     }
+
+    internal static bool IsDesktopPath(string file) =>
+        !file.Contains(@"\claude-code\", StringComparison.OrdinalIgnoreCase)
+        && (file.Contains(@"\WindowsApps\Claude_", StringComparison.OrdinalIgnoreCase) || file.Contains(@"\AnthropicClaude\", StringComparison.OrdinalIgnoreCase));
 
     static bool IsSecretVar(string key) =>
         key.Contains("PAT", StringComparison.OrdinalIgnoreCase) || key.Contains("TOKEN", StringComparison.OrdinalIgnoreCase);

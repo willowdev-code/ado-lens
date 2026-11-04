@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.1 — 2026-11-04
+
+- Fixed: the install (`get.ps1` / `install.ps1`) could wait for Claude Desktop to close forever, although it was
+  closed:
+  - only Claude Desktop of your own Windows session counts now - on a server with remote desktop sessions another
+    user's Claude was seen too (in an elevated window even with its path), and it never closes for you;
+  - the Claude Code CLI shipped with Claude Desktop (claude.exe under …\claude-code\…) no longer counts as Claude
+    Desktop;
+  - while waiting it names what is still running (PID and path) every 20 seconds; **S** skips the registration
+    (`adolens register` later), and after 10 minutes it is skipped by itself;
+  - run from a terminal inside Claude (e.g. its Code tab, or `ado_upgrade` of a ZIP install), it installs the program
+    and says to register it from a regular window, instead of waiting for Claude to close itself.
+- `adolens register`, when Claude Desktop runs, lists its processes in this session.
+- README: run the one-line install in a regular PowerShell window, not as administrator and not inside Claude.
+
 ## 0.12.0 — 2026-11-04
 
 Comments can be fixed and removed, and any change can be undone.
