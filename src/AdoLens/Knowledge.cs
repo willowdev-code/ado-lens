@@ -19,6 +19,9 @@ public static partial class Knowledge
     /// <summary>One search over work items, wiki pages and code of a project, grouped; each part fails on its own.</summary>
     public static async Task<string> SearchAsync(Lens lens, string? connection, string? project, string text, string? scope, int top, CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.EachAsync(projects, p => SearchAsync(lens, connection, p, text, scope, top, ct));
         if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("text is required");
         var session = lens.For(connection);
         var name = session.Project(project);
@@ -284,6 +287,9 @@ public static partial class Knowledge
     public static async Task<string> FileAsync(Lens lens, string? connection, string? project, string path, string? repo, string? version,
         string? part, bool history, int top, string? detail, CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.FirstAsync(projects, p => FileAsync(lens, connection, p, path, repo, version, part, history, top, detail, ct));
         var session = lens.For(connection);
         var name = session.CodeProject(project);
         var (file, choices) = await ResolveAsync(session, name, path, repo, ct);

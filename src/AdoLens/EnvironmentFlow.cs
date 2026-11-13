@@ -36,7 +36,7 @@ public static class EnvironmentFlow
             if (!list.Contains(source)) list.Add(source);
         }
         static string Day(DateTime? d) => d?.ToLocalTime().ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "?";
-        var projects = new[] { session.Config.CodeProject, project }.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!)
+        var projects = new[] { session.Config.CodeProject, project }.Concat(session.Config.Projects).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var keys = new List<string>();
         // Long-lived branches of the repositories in use (a commit in the last half year); feature and work branches are

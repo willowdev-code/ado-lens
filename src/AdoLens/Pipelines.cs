@@ -24,6 +24,9 @@ public static partial class PipelineQueries
 
     public static async Task<string> ListAsync(Lens lens, string? connection, string? project, string? definition, string? branch, int top, CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.EachAsync(projects, p => ListAsync(lens, connection, p, definition, branch, top, ct));
         var session = lens.For(connection);
         var name = session.CodeProject(project);
         var query = new List<string> { $"$top={Math.Clamp(top, 1, 100)}", "queryOrder=queueTimeDescending" };
@@ -81,6 +84,9 @@ public static partial class PipelineQueries
     public static async Task<string> DeploymentsAsync(Lens lens, string? connection, string? project, string? definition, string? stage, int top,
         CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.EachAsync(projects, p => DeploymentsAsync(lens, connection, p, definition, stage, top, ct));
         var session = lens.For(connection);
         var name = session.CodeProject(project);
         var vsrm = session.Client.ServiceUrl("vsrm") + Uri.EscapeDataString(name) + "/";
@@ -120,6 +126,9 @@ public static partial class PipelineQueries
     public static async Task<string> ArtifactsAsync(Lens lens, string? connection, string? project, int build, string? artifact, string? part, bool save,
         CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.FirstAsync(projects, p => ArtifactsAsync(lens, connection, p, build, artifact, part, save, ct));
         var session = lens.For(connection);
         var scope = AdoClient.Scope(session.CodeProject(project));
         var list = await session.Client.GetListAsync($"{scope}_apis/build/builds/{build}/artifacts", ct);
@@ -148,6 +157,9 @@ public static partial class PipelineQueries
 
     public static async Task<string> BuildAsync(Lens lens, string? connection, string? project, int id, string? detail, CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.FirstAsync(projects, p => BuildAsync(lens, connection, p, id, detail, ct));
         var session = lens.For(connection);
         var name = session.CodeProject(project);
         var scope = AdoClient.Scope(name);
@@ -184,6 +196,9 @@ public static partial class PipelineQueries
 
     public static async Task<string> RunAsync(Lens lens, string? connection, string? project, string definition, string? branch, string? parameters, CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.FirstAsync(projects, p => RunAsync(lens, connection, p, definition, branch, parameters, ct));
         var session = lens.For(connection);
         var name = session.CodeProject(project);
         var def = await DefinitionAsync(session, name, definition, ct);

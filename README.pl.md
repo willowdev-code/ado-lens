@@ -172,6 +172,13 @@ więcej niż jedno aktywne repozytorium, i pomijają gałęzie robocze (`000000_
 adolens config --connection contoso --env "ERP:dev=DEV (sbx01)" --env "ERP:staging=UAT (sbx03)" --env "ERP:master=PROD" --env "Common:master=PROD"
 ```
 
+**Kilka projektów jednej organizacji.** Połączenie ma projekt domyślny i dowolnie wiele innych (work itemy i kod w
+obu, np. jeden na X++, drugi na aplikacje w C#): ponowne zalogowanie z innym projektem tej samej organizacji dopisuje go,
+tak samo `adolens config --connection contoso --add-project Aplikacje`, a okno ustawień ma na nie pole. Wyszukiwanie,
+pliki, pull requesty, pipeline'y i wykrywanie środowisk patrzą we wszystkie, każda odpowiedź pod nazwą swojego projektu;
+tworzenie work itemów oraz sprinty, tablice i backlogi używają domyślnego, chyba że Claude poda `project=` (dostaje listę
+projektów).
+
 **Kod w innym projekcie.** Gdy work itemy są w jednym projekcie, a kod, pull requesty i pipeline'y w innym, ustaw to
 raz: `adolens config --connection contoso --code-project ERP` (albo poproś Claude'a: `ado_settings codeProject=ERP`).
 Wtedy `ado_file`, `ado_search` (kod), `ado_pr`, `ado_pipeline` i `ado_label` szukają tam.

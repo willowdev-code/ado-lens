@@ -171,6 +171,13 @@ when a project has more than one active repository, and leave out work branches 
 adolens config --connection contoso --env "ERP:dev=DEV (sbx01)" --env "ERP:staging=UAT (sbx03)" --env "ERP:master=PROD" --env "Common:master=PROD"
 ```
 
+**Several projects of one organization.** A connection holds a default project and as many others as needed (work
+items and code in both, e.g. one for X++ and one for C# applications): signing in again with another project of the same
+organization adds it, `adolens config --connection contoso --add-project Apps` too, and the settings window has a field
+for them. Search, files, pull requests, pipelines and finding the environments look in all of them, each answer under its
+project's name; creating work items and sprints, boards and backlogs use the default unless Claude passes `project=`
+(it gets the list of projects).
+
 **Code in another project.** When the work items live in one project and the code, pull requests and pipelines in
 another, set it once: `adolens config --connection contoso --code-project ERP` (or ask Claude: `ado_settings
 codeProject=ERP`). `ado_file`, `ado_search` (code), `ado_pr`, `ado_pipeline` and `ado_label` then look there.

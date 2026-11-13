@@ -28,6 +28,42 @@ public sealed class Connection
     /// items in "Sales", code in "ERP"). Null: the default project.
     /// </summary>
     public string? CodeProject { get; set; }
+
+    /// <summary>
+    /// Other projects of the same organization, besides the default one (work items and code in both, e.g. one for
+    /// X++ and one for C# applications). Searches, files, pull requests and pipelines look in all of them; creating and
+    /// boards use the default unless a project is named.
+    /// </summary>
+    public List<string> MoreProjects { get; set; } = [];
+
+    /// <summary>
+    /// Adds a project to the connection: the default one when there is none yet, else one more - another project of
+    /// the same organization never replaces the default. Returns false when it was there already.
+    /// </summary>
+    public bool AddProject(string project)
+    {
+        project = project.Trim();
+        if (string.IsNullOrEmpty(Project)) { Project = project; return true; }
+        if (AllProjects().Contains(project, StringComparer.OrdinalIgnoreCase)) return false;
+        MoreProjects.Add(project);
+        return true;
+    }
+
+    /// <summary>Makes a project the default; the previous default stays as one of the others.</summary>
+    public void SetDefaultProject(string? project)
+    {
+        project = string.IsNullOrWhiteSpace(project) ? null : project.Trim();
+        if (project is not null) MoreProjects.RemoveAll(p => p.Equals(project, StringComparison.OrdinalIgnoreCase));
+        if (Project is { Length: > 0 } old && project is not null && !old.Equals(project, StringComparison.OrdinalIgnoreCase)
+            && !MoreProjects.Contains(old, StringComparer.OrdinalIgnoreCase))
+            MoreProjects.Insert(0, old);
+        Project = project;
+    }
+
+    /// <summary>The default project, the others and the code project, each once.</summary>
+    public List<string> AllProjects() =>
+        new[] { Project }.Concat(MoreProjects).Append(CodeProject).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 }
 
 /// <summary>Non-secret settings (adolens.json in the data folder). PATs live in Windows Credential Manager.</summary>
@@ -101,6 +137,7 @@ public sealed partial class Settings
         {
             c.Environments = new Dictionary<string, string>(c.Environments ?? [], StringComparer.OrdinalIgnoreCase);
             c.LabelLanguages ??= [];
+            c.MoreProjects ??= [];
         }
         return s;
     }
@@ -172,6 +209,9 @@ public sealed record Config(string Connection, string Organization, string Pat, 
     /// <summary>See <see cref="AdoLens.Connection.CodeProject"/>.</summary>
     public string? CodeProject { get; init; }
 
+    /// <summary>Every project of the connection, the default first (see <see cref="AdoLens.Connection.MoreProjects"/>).</summary>
+    public IReadOnlyList<string> Projects { get; init; } = [];
+
     /// <summary>Whether a missing label text in this language is worth reporting.</summary>
     public bool LabelLanguageRequired(string language) =>
         LabelLanguages.Count == 0 || LabelLanguages.Any(l => l.Equals(language, StringComparison.OrdinalIgnoreCase));
@@ -230,9 +270,10 @@ public sealed record Config(string Connection, string Organization, string Pat, 
                 Environments = conn.Environments,
                 LabelLanguages = conn.LabelLanguages ?? [],
                 CodeProject = NullIfEmpty(conn.CodeProject),
+                Projects = conn.AllProjects(),
             };
         if (envPat.Value is { } pat)
-            return new Config(name, org, pat, project, NullIfEmpty(conn.Team), $"environment variable {envPat.Var}") { Environments = conn.Environments, LabelLanguages = conn.LabelLanguages ?? [], CodeProject = NullIfEmpty(conn.CodeProject) };
+            return new Config(name, org, pat, project, NullIfEmpty(conn.Team), $"environment variable {envPat.Var}") { Environments = conn.Environments, LabelLanguages = conn.LabelLanguages ?? [], CodeProject = NullIfEmpty(conn.CodeProject), Projects = conn.AllProjects() };
 
         throw new InvalidOperationException(
             $"no PAT for connection '{name}': run 'adolens login --connection {name}' (stores it in Windows Credential Manager) or set {envVar}");

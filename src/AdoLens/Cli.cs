@@ -27,6 +27,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
           connections     list the connections
           config          show or change settings
                             --connection <name> --project <name> --team <name>   (defaults of a connection)
+                            --add-project <name> / --remove-project <name> (more projects of the organization; --project sets the default)
                             --code-project <name> (code, pull requests and pipelines in another project; "" clears)
                             --default-connection <name>  --mode po|dev|full  --usage-log true|false
                             --show-tokens true|false  --tool-loading auto|demand|all  --add-toolset <set>  --remove-toolset <set>  --confirm-above <n>
@@ -172,7 +173,10 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             project = PickProject(projects);
         if (project is not null && projects.Count > 0 && !projects.Contains(project, StringComparer.OrdinalIgnoreCase))
             Console.WriteLine($"note: project '{project}' is not visible with this PAT");
-        conn.Project = project is null ? null : projects.FirstOrDefault(p => p.Equals(project, StringComparison.OrdinalIgnoreCase)) ?? project;
+        project = project is null ? null : projects.FirstOrDefault(p => p.Equals(project, StringComparison.OrdinalIgnoreCase)) ?? project;
+        // Another project of the same organization is added to the connection, never put in place of its default.
+        var added = project is not null && stored?.Project is { } before && !before.Equals(project, StringComparison.OrdinalIgnoreCase);
+        if (project is not null) conn.AddProject(project);
         if (cl.Opt("team") is { } team) conn.Team = NullIfEmpty(team);
 
         CredentialStore.Write(name, org, pat);
@@ -183,7 +187,10 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
 
         Console.WriteLine($"connection '{name}' saved{(settings.DefaultConnection == name ? " (default)" : "")}: {SettingsPath}");
         Console.WriteLine($"PAT saved in Windows Credential Manager: {CredentialStore.TargetFor(name)}");
-        if (conn.Project is { } p)
+        if (added)
+            Console.WriteLine($"project {project} added to connection '{name}' (projects: {string.Join(", ", conn.AllProjects())}; default {conn.Project} - " +
+                              $"change with 'adolens config --connection {name} --project {project}')");
+        else if (conn.Project is { } p)
             Console.WriteLine($"default project: {p}");
         return 0;
     }
@@ -245,7 +252,7 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
         {
             var pat = CredentialStore.Read(name) is not null ? "PAT stored" : "no stored PAT";
             Console.WriteLine($"{(name.Equals(settings.DefaultConnection, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {name,-16} " +
-                              $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}{(c.CodeProject is { } cp ? $"  code in {cp}" : "")}  team {c.Team ?? "-"}  ({pat})" +
+                              $"https://dev.azure.com/{c.Organization}  project {c.Project ?? "-"}{(c.MoreProjects.Count > 0 ? $" (+ {string.Join(", ", c.MoreProjects)})" : "")}{(c.CodeProject is { } cp ? $"  code in {cp}" : "")}  team {c.Team ?? "-"}  ({pat})" +
                               (c.Environments.Count > 0 ? $"\n  {"",-16} environments: {string.Join(", ", c.Environments.Select(e => $"{e.Key} = {e.Value}"))}" : "") +
                 (c.LabelLanguages.Count > 0 ? $"\n  {"",-16} label languages: {string.Join(", ", c.LabelLanguages)}" : ""));
         }
@@ -262,7 +269,9 @@ sealed class Cli(CommandLine cl, string version, bool showTokens = false)
             {
                 if (!settings.Connections.TryGetValue(name, out var conn))
                     throw new ArgumentException($"no connection named '{name}' - add it with 'adolens login --connection {name}'");
-                if (cl.Opt("project") is { } p) { conn.Project = NullIfEmpty(p); changed = true; }
+                if (cl.Opt("project") is { } p) { conn.SetDefaultProject(p); changed = true; }
+                while (cl.Opt("add-project") is { } ap) { conn.AddProject(ap); changed = true; }
+                while (cl.Opt("remove-project") is { } rp) { conn.MoreProjects.RemoveAll(x => x.Equals(rp.Trim(), StringComparison.OrdinalIgnoreCase)); changed = true; }
                 if (cl.Opt("team") is { } t) { conn.Team = NullIfEmpty(t); changed = true; }
                 if (cl.Opt("code-project") is { } cp) { conn.CodeProject = NullIfEmpty(cp); changed = true; }
                 while (cl.Opt("env") is { } e)

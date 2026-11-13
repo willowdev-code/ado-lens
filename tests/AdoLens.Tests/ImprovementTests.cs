@@ -32,17 +32,54 @@ public class ImprovementTests
     }
 
     [Fact]
+    public void A_second_project_of_the_organization_is_added_not_put_in_place_of_the_first()
+    {
+        var c = new Connection { Organization = "contoso", Project = "Erp" };
+        Assert.True(c.AddProject("Apps"));
+        Assert.False(c.AddProject("apps"));
+        Assert.Equal("Erp", c.Project);
+        Assert.Equal(["Erp", "Apps"], c.AllProjects());
+
+        // A new default keeps the old one among the others.
+        c.SetDefaultProject("Apps");
+        Assert.Equal("Apps", c.Project);
+        Assert.Equal(["Erp"], c.MoreProjects);
+
+        var s = new Settings();
+        s.Connections["contoso"] = c;
+        Assert.Contains("contoso: Apps, Erp", McpTools.Projects(s));
+        Assert.Equal("", McpTools.Projects(new Settings()));
+    }
+
+    [Fact]
+    public async Task Several_projects_are_asked_one_after_another_or_until_one_has_it()
+    {
+        var each = await ProjectFanOut.EachAsync(["Erp", "Apps"], p => Task.FromResult(p == "Erp" ? "2 builds" : "1 build"));
+        Assert.Equal("== project Erp ==\n2 builds\n\n== project Apps ==\n1 build", each);
+        Assert.Equal("only", await ProjectFanOut.EachAsync(["Erp"], _ => Task.FromResult("only")));
+
+        // A build or file lives in one project: the first that has it; nothing anywhere: what each said.
+        var first = await ProjectFanOut.FirstAsync(["Erp", "Apps"], p => p == "Erp" ? throw new AdoApiException("404") : Task.FromResult("build 7 in Apps"));
+        Assert.Equal("build 7 in Apps", first);
+        var none = await ProjectFanOut.FirstAsync(["Erp", "Apps"], p => Task.FromResult($"no file x in {p}"));
+        Assert.StartsWith("not found in any project of the connection:\n- Erp: no file x in Erp\n- Apps:", none);
+    }
+
+    [Fact]
     public void Code_can_live_in_another_project_than_the_work_items()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"adolens-cp-{Guid.NewGuid():N}");
         try
         {
             var s = new Settings { DefaultConnection = "contoso" };
-            s.Connections["contoso"] = new Connection { Organization = "contoso", Project = "Demo", CodeProject = "ERP" };
+            s.Connections["contoso"] = new Connection { Organization = "contoso", Project = "Demo", CodeProject = "ERP", MoreProjects = ["Apps"] };
             var session = new Lens(s, "0.0.0", dir, _ => null, _ => "pat", _ => new FakeAdo().Client()).For(null);
             Assert.Equal("Demo", session.Project(null));
             Assert.Equal("ERP", session.CodeProject(null));
             Assert.Equal("Other", session.CodeProject("Other"));
+            // Nothing named: every project, the code project first; one named: that one.
+            Assert.Equal(["ERP", "Demo", "Apps"], session.SearchProjects(null));
+            Assert.Equal(["Apps"], session.SearchProjects("Apps"));
         }
         finally
         {

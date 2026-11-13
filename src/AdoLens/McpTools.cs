@@ -63,7 +63,20 @@ public static class McpTools
     public static string Instructions(Settings settings)
     {
         var groups = settings.ToolLoading == "demand" ? Toolsets.Loaded(settings) : Toolsets.Active(settings);
-        return Intro + (settings.ToolLoading == "all" ? "" : Groups) + string.Concat(Lines.Where(l => groups.Contains(l.Key)).Select(l => l.Value));
+        return Intro + (settings.ToolLoading == "all" ? "" : Groups) + string.Concat(Lines.Where(l => groups.Contains(l.Key)).Select(l => l.Value))
+               + Projects(settings);
+    }
+
+    /// <summary>
+    /// Connections with several projects of one organization: search, files, pull requests and pipelines look in all;
+    /// creating and boards need project= for any but the default.
+    /// </summary>
+    internal static string Projects(Settings settings)
+    {
+        var many = settings.Connections.Where(c => c.Value.AllProjects().Count > 1)
+            .Select(c => $"{c.Key}: {string.Join(", ", c.Value.AllProjects())}").ToList();
+        return many.Count == 0 ? "" : "\n- Projects (the first is the default): " + string.Join("; ", many) +
+            ". Search, files, pull requests and pipelines look in all of them; to create work items or read a sprint, board or backlog of another, pass project=.";
     }
 
     /// <summary>The writing and usage hints of a group, returned when the group is loaded during a conversation.</summary>

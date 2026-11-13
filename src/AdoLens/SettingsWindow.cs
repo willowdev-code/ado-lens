@@ -18,7 +18,7 @@ public sealed class SettingsWindow : Form
     readonly TextBox downloads = new() { Dock = DockStyle.Fill };
 
     readonly ListView connections = new() { View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, Dock = DockStyle.Fill };
-    readonly TextBox project = Field(), team = Field(), codeProject = Field(), labelLanguages = Field();
+    readonly TextBox project = Field(), moreProjects = Field(), team = Field(), codeProject = Field(), labelLanguages = Field();
 
     readonly ComboBox envConnection = Combo();
     readonly DataGridView envGrid = new()
@@ -200,6 +200,7 @@ public sealed class SettingsWindow : Form
         var save = Button(Ui.T("Save changes", "Zapisz zmiany"), SaveConnection);
         var details = Grid(
             (Ui.T("Default project (work items)", "Projekt domyślny (work itemy)"), project),
+            (Ui.T("Other projects of this organization (separated by ;)", "Inne projekty tej organizacji (oddzielone ;)"), moreProjects),
             (Ui.T("Team", "Zespół"), team),
             (Ui.T("Project with the code, PRs and pipelines (empty = the same)", "Projekt z kodem, PR-ami i pipeline'ami (puste = ten sam)"), codeProject),
             (Ui.T("Required label languages (e.g. en-US, pl; empty = all)", "Wymagane języki etykiet (np. en-US, pl; puste = wszystkie)"), labelLanguages));
@@ -222,7 +223,7 @@ public sealed class SettingsWindow : Form
         foreach (var (name, c) in settings.Connections.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
         {
             var item = new ListViewItem(name + (name.Equals(settings.DefaultConnection, StringComparison.OrdinalIgnoreCase) ? Ui.T(" (default)", " (domyślne)") : "")) { Tag = name };
-            item.SubItems.AddRange([c.Organization, c.Project ?? "-", c.CodeProject ?? "", c.Team ?? "", CredentialStore.Read(name) is null ? Ui.T("missing", "brak") : Ui.T("stored", "zapisany")]);
+            item.SubItems.AddRange([c.Organization, (c.Project ?? "-") + (c.MoreProjects.Count > 0 ? $" (+{string.Join(", ", c.MoreProjects)})" : ""), c.CodeProject ?? "", c.Team ?? "", CredentialStore.Read(name) is null ? Ui.T("missing", "brak") : Ui.T("stored", "zapisany")]);
             connections.Items.Add(item);
         }
         if (connections.Items.Count > 0) connections.Items[0].Selected = true;
@@ -238,8 +239,9 @@ public sealed class SettingsWindow : Form
     void ShowConnection()
     {
         var c = Selected() is { } name && settings.Connections.TryGetValue(name, out var conn) ? conn : null;
-        foreach (var box in new[] { project, team, codeProject, labelLanguages }) box.Enabled = c is not null;
+        foreach (var box in new[] { project, moreProjects, team, codeProject, labelLanguages }) box.Enabled = c is not null;
         project.Text = c?.Project ?? "";
+        moreProjects.Text = c is null ? "" : string.Join("; ", c.MoreProjects);
         team.Text = c?.Team ?? "";
         codeProject.Text = c?.CodeProject ?? "";
         labelLanguages.Text = c is null ? "" : string.Join(", ", c.LabelLanguages);
@@ -251,6 +253,8 @@ public sealed class SettingsWindow : Form
         settings = Settings.Load(path);
         if (!settings.Connections.TryGetValue(name, out var c)) return;
         c.Project = Empty(project.Text);
+        c.MoreProjects = moreProjects.Text.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !x.Equals(c.Project, StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         c.Team = Empty(team.Text);
         c.CodeProject = Empty(codeProject.Text);
         c.LabelLanguages = labelLanguages.Text.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
@@ -668,7 +672,8 @@ sealed class LoginDialog : Form
             var settings = Settings.Load(path);
             var conn = settings.Connections.TryGetValue(connection, out var stored) ? stored : new Connection();
             conn.Organization = org;
-            conn.Project = chosen is null ? conn.Project : projects.FirstOrDefault(p => p.Equals(chosen, StringComparison.OrdinalIgnoreCase)) ?? chosen;
+            // Another project of the same organization is added to the connection, never put in place of its default.
+            if (chosen is not null) conn.AddProject(projects.FirstOrDefault(p => p.Equals(chosen, StringComparison.OrdinalIgnoreCase)) ?? chosen);
             CredentialStore.Write(connection, org, pat.Text.Trim());
             settings.Connections[connection] = conn;
             if (settings.DefaultConnection is null || !settings.Connections.ContainsKey(settings.DefaultConnection)) settings.DefaultConnection = connection;

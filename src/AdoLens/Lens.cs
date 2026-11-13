@@ -18,6 +18,14 @@ public sealed record Session(Config Config, AdoClient Client, MetadataService Me
     public string CodeProject(string? project) =>
         !string.IsNullOrWhiteSpace(project) ? project.Trim() : Config.CodeProject ?? Project(null);
 
+    /// <summary>
+    /// The projects to look in when none is named: all of the connection, the code project first. One project (or one
+    /// named): just that one.
+    /// </summary>
+    public IReadOnlyList<string> SearchProjects(string? project) =>
+        !string.IsNullOrWhiteSpace(project) || Config.Projects.Count < 2 ? [CodeProject(project)]
+        : Config.Projects.OrderBy(p => p.Equals(Config.CodeProject, StringComparison.OrdinalIgnoreCase) ? 0 : 1).ToList();
+
     /// <summary>The project given, else the connection's default project.</summary>
     public string Project(string? project) =>
         !string.IsNullOrWhiteSpace(project) ? project.Trim()
