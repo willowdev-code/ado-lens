@@ -60,6 +60,7 @@ public static class Queries
         if (environments is not null || codeProject is not null) lens.SaveSettings();
         var sb = new StringBuilder(environments is null && codeProject is null ? "" : "saved (new conversations use it).\n");
         sb.AppendLine($"connection {cfg.Connection}: https://dev.azure.com/{conn.Organization}, project {conn.Project ?? "-"}" +
+                      (conn.MoreProjects.Count > 0 ? $" (also: {string.Join(", ", conn.MoreProjects)})" : "") +
                       $"{(conn.CodeProject is { } cp ? $" (code, pull requests and pipelines in {cp})" : "")}, team {conn.Team ?? "-"}, mode {lens.Settings.Mode}");
         sb.Append(conn.Environments.Count == 0 ? "local environments: not set"
             : "environments (in flow order): " + string.Join(" -> ", conn.Environments.Select(e => Flow(e.Key, e.Value))));

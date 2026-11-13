@@ -55,6 +55,9 @@ public static partial class PullRequestQueries
 
     public static async Task<string> ListAsync(Lens lens, string? connection, string? project, string? list, CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.EachAsync(projects, p => ListAsync(lens, connection, p, list, ct));
         var session = lens.For(connection);
         var name = session.CodeProject(project);
         var (me, meName) = await new Boards(session).MeAsync(ct);
@@ -83,6 +86,9 @@ public static partial class PullRequestQueries
     public static async Task<string> MergedAsync(Lens lens, string? connection, string? project, string branch, string? repo, string? since, int top,
         CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.EachAsync(projects, p => MergedAsync(lens, connection, p, branch, repo, since, top, ct));
         var session = lens.For(connection);
         var name = session.CodeProject(project);
         var target = branch.StartsWith("refs/", StringComparison.Ordinal) ? branch : "refs/heads/" + branch.Trim();

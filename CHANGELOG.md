@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.0 — 2026-11-13
+
+Several projects of one organization in one connection.
+
+- Fixed: adding a second project of the same Azure DevOps (login, the settings window, `adolens login`) replaced the
+  first one, without a word - the connection is named after the organization. Another project is now added to the
+  connection; the default stays.
+- A connection holds a default project and others (`moreProjects`): `adolens config --add-project / --remove-project`,
+  `--project` makes one the default (the previous default stays among the others), the settings window has a field
+  "Other projects of this organization", and `adolens connections`, `ado_settings` show them.
+- Without `project=`, `ado_search` (work items, wiki, code), `ado_file`, `ado_pr` (lists, merged), `ado_pipeline`
+  (builds, deployments, artifacts, runs), `ado_label` and finding the environments look in every project of the
+  connection: lists under each project's name, a build, file or pipeline in the first project that has it. Creating
+  work items, sprints, boards and backlogs use the default project unless one is named; Claude gets the list of
+  projects in its instructions.
+
 ## 0.12.2 — 2026-11-04
 
 - Fixed: newer Claude Desktop versions keep their configuration in `%LOCALAPPDATA%\Claude-Data\<app>\` and leave only a

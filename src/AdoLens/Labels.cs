@@ -73,6 +73,9 @@ public static partial class Labels
 
     public static async Task<string> FindAsync(Lens lens, string? connection, string? project, string text, string? branch, CancellationToken ct = default)
     {
+        // Several projects in the connection and none named: ask each one.
+        if (project is null && lens.For(connection).SearchProjects(null) is { Count: > 1 } projects)
+            return await ProjectFanOut.FirstAsync(projects, p => FindAsync(lens, connection, p, text, branch, ct));
         if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("give the text of the message (as seen on screen) or a label id like @Model:Id");
         var session = lens.For(connection);
         var name = session.CodeProject(project);
